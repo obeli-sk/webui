@@ -24,7 +24,6 @@ get_litestream_version() {
 rm -f dev-deps.txt
 cargo upgrade --version >> dev-deps.txt
 cargo-expand --version >> dev-deps.txt
-echo "pkg-config $(pkg-config --version)" >> dev-deps.txt
 obelisk --version >> dev-deps.txt
 protoc --version >> dev-deps.txt
 rustc --version >> dev-deps.txt
@@ -34,5 +33,3 @@ echo "trunk $(grep wasm_opt crates/webui/Trunk.toml)" >> dev-deps.txt
 trunk --version >> dev-deps.txt
 wasm-bindgen --version >> dev-deps.txt
 echo "trunk $(grep wasm_bindgen crates/webui/Trunk.toml)" >> dev-deps.txt
-
-
