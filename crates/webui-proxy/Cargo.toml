@@ -13,7 +13,6 @@ version.workspace = true
 webui-builder.workspace = true
 
 [dependencies]
-futures-concurrency.workspace = true
 wstd.workspace = true
 
 [lib]

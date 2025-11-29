@@ -43,7 +43,7 @@ yew-router.workspace = true
 yew.workspace = true
 yew_icons.workspace = true
 yewprint.workspace = true
-once_cell = "1.21.3"
+once_cell.workspace = true
 
 [build-dependencies]
 cargo_metadata.workspace = true
