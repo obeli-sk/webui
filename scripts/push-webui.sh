@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 which trunk # nix develop .#web --command
 
 TAG="$1"
-OUTPUT_FILE="$2:-/dev/stdout"
+OUTPUT_FILE="${2:-/dev/stdout}"
 rm -rf crates/webui/dist
 
 # Run trunk in webui-builder
