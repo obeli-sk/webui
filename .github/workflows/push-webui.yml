@@ -27,25 +27,25 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref }} # Use the ref if provided, otherwise defaults to the current branch/commit
 
-      # - uses: nixbuild/nix-quick-install-action@v34
-      #   with:
-      #     github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      #     nix_conf: |
-      #       extra-substituters = https://cache.garnix.io
-      #       extra-trusted-public-keys = cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g
-      # - name: Populate the nix store
-      #   run: |
-      #     nix develop .#withObelisk --command echo
+      - uses: nixbuild/nix-quick-install-action@v34
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_conf: |
+            extra-substituters = https://cache.garnix.io
+            extra-trusted-public-keys = cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g
+      - name: Populate the nix store
+        run: |
+          nix develop .#withObelisk --command echo
 
-      # - name: Log in to Docker Hub
-      #   run: |
-      #     echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
-      #   env:
-      #     DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
-      #     DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+      - name: Log in to Docker Hub
+        run: |
+          echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      # - name: Populate the nix store
-      #   run: nix develop  .#withObelisk --command echo
+      - name: Populate the nix store
+        run: nix develop  .#withObelisk --command echo
 
       - name: Generate Unique Branch Name
         id: branch-name
@@ -55,11 +55,11 @@ jobs:
         run: |
           git clone https://${{ secrets.GH_TOKEN_OBELISK_RW }}@github.com/obeli-sk/obelisk.git
 
-      # - name: Push webui
-      #   run: |
-      #     nix develop  .#withObelisk --command ./scripts/push-webui.sh $TAG obelisk/assets/webui-version.txt
-      #   env:
-      #     TAG: ${{ github.event.inputs.tag }}
+      - name: Push webui
+        run: |
+          nix develop  .#withObelisk --command ./scripts/push-webui.sh $TAG obelisk/assets/webui-version.txt
+        env:
+          TAG: ${{ github.event.inputs.tag }}
 
       - name: Configure git before push
         run: |
@@ -70,7 +70,6 @@ jobs:
       - name: Create a PR
         run: |
           git checkout -b ${{ steps.branch-name.outputs.branch_name }}
-          echo -n 'docker.io/getobelisk/webui:2025-11-29@sha256:9817c2567a7c8071ca6e36e4fec7faef32f0a9eb35a50943291de3b7e3d01ff1' > assets/webui-version.txt
           git add assets/webui-version.txt
           git commit -m "chore: Bump webui to $TAG"
           git push origin ${{ steps.branch-name.outputs.branch_name }}
