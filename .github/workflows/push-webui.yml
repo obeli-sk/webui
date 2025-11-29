@@ -39,7 +39,7 @@ jobs:
           DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Populate the nix store
-        run: nix develop --command echo
+        run: nix develop  .#withObelisk --command echo
 
       - name: Generate Unique Branch Name
         id: branch-name
@@ -47,7 +47,7 @@ jobs:
 
       - name: Push webui
         run: |
-          nix develop --command ./scripts/push-webui.sh $TAG
+          nix develop  .#withObelisk --command ./scripts/push-webui.sh $TAG
         env:
           TAG: ${{ github.event.inputs.tag }}
 

@@ -28,22 +28,28 @@
           pkgs = import nixpkgs {
             inherit system overlays;
           };
+          rustToolchain = pkgs.pkgsBuildHost.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          commonDeps = with pkgs; [
+            binaryen # wasm-opt
+            cargo-edit
+            cargo-expand
+            protobuf
+            rustToolchain
+            trunk
+            wasm-bindgen-cli
+          ];
+          withObelisk = commonDeps ++ [ obelisk.packages.${system}.default ];
+          noObeliskShell = pkgs.mkShell {
+            nativeBuildInputs = commonDeps;
+          };
+          withObeliskShell = pkgs.mkShell {
+            nativeBuildInputs = withObelisk;
+          };
         in
         {
-          devShells.default = pkgs.mkShell {
-            nativeBuildInputs = with pkgs;
-              [
-                (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
-                binaryen # wasm-opt
-                cargo-edit
-                cargo-expand
-                protobuf
-                trunk
-                wasm-bindgen-cli
-
-                obelisk.packages.${system}.default
-              ];
-          };
+          devShells.noObelisk = noObeliskShell;
+          devShells.withObelisk = withObeliskShell;
+          devShells.default = noObeliskShell;
         }
       );
 }

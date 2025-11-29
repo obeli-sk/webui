@@ -36,10 +36,10 @@ jobs:
             extra-trusted-public-keys = cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g
       - name: Populate the nix store
         run: |
-          nix develop --command echo
+          nix develop .#noObelisk --command echo
 
       - name: cargo fmt
-        run: nix develop --command cargo fmt --check
+        run: nix develop .#noObelisk --command cargo fmt --check
 
   check-dev-deps:
     runs-on: ubuntu-latest
@@ -54,9 +54,9 @@ jobs:
             extra-trusted-public-keys = cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g
       - name: Populate the nix store
         run: |
-          nix develop --command echo
+          nix develop .#noObelisk --command echo
 
-      - run: nix develop --command ./scripts/dev-deps.sh
+      - run: nix develop .#noObelisk --command ./scripts/dev-deps.sh
 
       - run: cat dev-deps.txt
 
@@ -82,7 +82,7 @@ jobs:
             extra-trusted-public-keys = cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g
       - name: Populate the nix store
         run: |
-          nix develop --command echo
+          nix develop .#noObelisk --command echo
 
       - name: cargo clippy
-        run: nix develop --command cargo clippy --workspace --all-targets -- -D warnings
+        run: nix develop .#noObelisk --command cargo clippy --workspace --all-targets -- -D warnings

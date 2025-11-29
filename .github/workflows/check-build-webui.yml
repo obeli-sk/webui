@@ -28,7 +28,7 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Populate the nix store
-        run: nix develop --command echo
+        run: nix develop .#noObelisk --command echo
 
       - name: Build webui + proxy
-        run: nix develop --command ./scripts/push-webui.sh dry-run
+        run: nix develop .#noObelisk --command ./scripts/push-webui.sh dry-run
