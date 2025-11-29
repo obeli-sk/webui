@@ -53,7 +53,7 @@ jobs:
 
       - name: Clone Obelisk repo
         run: |
-          git clone git@github.com:obeli-sk/obelisk.git
+          git clone https://x-access-token:${{ secrets.GH_TOKEN_PR_RW }}@github.com/obeli-sk/obelisk.git
 
       - name: Push webui
         run: |
@@ -73,12 +73,10 @@ jobs:
           git add assets/webui-version.txt
           git commit -m "chore: Bump webui to $TAG"
           git push origin ${{ steps.branch-name.outputs.branch_name }}
-          OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
-          REPO=$(echo "${{ github.repository }}" | cut -d'/' -f2)
           curl -v --fail -X POST \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
-            https://api.github.com/repos/$OWNER/$REPO/pulls \
+            https://api.github.com/repos/obeli-sk/obelisk/pulls \
             -d '{
               "title": "chore: Bump webui",
               "head": "'${{ steps.branch-name.outputs.branch_name }}'",
