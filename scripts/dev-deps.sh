@@ -25,6 +25,7 @@ rm -f dev-deps.txt
 cargo upgrade --version >> dev-deps.txt
 cargo-expand --version >> dev-deps.txt
 echo "pkg-config $(pkg-config --version)" >> dev-deps.txt
+obelisk --version >> dev-deps.txt
 protoc --version >> dev-deps.txt
 rustc --version >> dev-deps.txt
 

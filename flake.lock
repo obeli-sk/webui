@@ -34,10 +34,38 @@
         "type": "github"
       }
     },
+    "obelisk": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "rust-overlay": [
+          "rust-overlay"
+        ]
+      },
+      "locked": {
+        "lastModified": 1764178978,
+        "narHash": "sha256-MCKhnDc6+I+RP+MDbmth69vIcsu+OP60sIxlZUzderQ=",
+        "owner": "obeli-sk",
+        "repo": "obelisk",
+        "rev": "8d1bc295d806a7e4bdd6c08abf17cdcbaf159050",
+        "type": "github"
+      },
+      "original": {
+        "owner": "obeli-sk",
+        "ref": "latest",
+        "repo": "obelisk",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
+        "obelisk": "obelisk",
         "rust-overlay": "rust-overlay"
       }
     },
