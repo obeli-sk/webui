@@ -51,9 +51,13 @@ jobs:
         id: branch-name
         run: echo "branch_name=bump-webui-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
 
+      - name: Clone Obelisk repo
+        run: |
+          git clone https://github.com/obeli-sk/obelisk.git
+
       - name: Push webui
         run: |
-          nix develop  .#withObelisk --command ./scripts/push-webui.sh $TAG
+          nix develop  .#withObelisk --command ./scripts/push-webui.sh $TAG obelisk/assets/webui-version.txt
         env:
           TAG: ${{ github.event.inputs.tag }}
 
@@ -61,6 +65,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+        working-directory: obelisk
 
       - name: Create a PR
         run: |
@@ -83,3 +88,4 @@ jobs:
         env:
           TAG: ${{ github.event.inputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN_PR_RW }}
+        working-directory: obelisk
