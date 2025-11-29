@@ -54,9 +54,9 @@ jobs:
             extra-trusted-public-keys = cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g
       - name: Populate the nix store
         run: |
-          nix develop .#noObelisk --command echo
+          nix develop .#withObelisk --command echo
 
-      - run: nix develop .#noObelisk --command ./scripts/dev-deps.sh
+      - run: nix develop .#withObelisk --command ./scripts/dev-deps.sh
 
       - run: cat dev-deps.txt
 
