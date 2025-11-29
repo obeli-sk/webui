@@ -1,0 +1,196 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/webui",
+    "crates/webui/builder",
+    "crates/webui-proxy",
+]
+
+[workspace.package]
+version = "0.28.1"
+license = "AGPL-3.0-only"
+repository = "https://github.com/obeli-sk/webui"
+authors = ["Project Developers"]
+edition = "2024"
+rust-version = "1.91.0"
+
+[workspace.dependencies]
+val-json = { package = "obeli-sk-val-json", version = "0.28.1" }
+
+webui-builder = { path = "crates/webui/builder" }
+
+anyhow = { version = "1.0", features = ["backtrace"] }
+axum = { version = "0.8.7", features = ["http2"] }
+directories = "6.0"
+arbitrary = { version = "1.4.2", features = ["derive"] }
+assert_matches = "1.5.0"
+async-trait = "0.1"
+bytes = "1.11"
+cargo_metadata = "0.23"
+cfg-if = "1.0.4"
+chrono = { version = "0.4.42", features = ["arbitrary", "serde"] }
+clap = { version = "4.5.53", features = ["derive"] }
+config = { version = "0.15.19", default-features = false, features = [
+    "toml",
+    "preserve_order",
+    "async",
+    "convert-case",
+] }
+console-subscriber = "0.5.0"
+const_format = "0.2.35"
+criterion = "0.7"
+crossterm = "0.29.0"
+derive_more = { version = "2.0.1", features = [
+    "debug",
+    "deref",
+    "display",
+    "from_str",
+    "into",
+] }
+derive-where = "1.6.0"
+divan = { version = "3.0.5", package = "codspeed-divan-compat" }
+docker_credential = "1.3.2"
+futures = { version = "0.3.31", default-features = false }
+futures-concurrency = "7.6.3"
+futures-util = "0.3.31"
+fxhash = "0.2.1"
+getrandom = "0.2"
+hashbrown = { version = "0.16.1", features = ["serde"] }
+hdrhistogram = "7.5.4"
+http = "1.4.0"
+http-body-util = "0.1"
+hyper = "1.8.1"
+hyper-util = { version = "0.1", features = ["tokio"] }
+indexmap = { version = "2.12", features = ["serde"] }
+insta = { version = "1.44.3", features = ["json"] }
+itertools = "0.14"
+lazy_static = "1.5"
+libc = "0.2.177"
+oci-client = { version = "0.15.0", default-features = false, features = [
+    "rustls-tls",
+] }
+oci-wasm = { version = "0.3.0", default-features = false, features = [ # Dependent on matching oci-client
+    "rustls-tls",
+] }
+prost = "0.14.1"
+prost-wkt-types = "0.7"
+rand = "0.8" # yew 0.21 needs getrandom 0.2
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
+route-recognizer = "0.3.1"
+rstest = "0.26"
+rusqlite = { version = "0.37.0", features = [
+    "bundled",
+    "chrono",
+    "serde_json",
+] }
+schemars = "1.1.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+serde_with = "3.16.1"
+sha2 = "0.10.9"
+strum = { version = "0.27.2", features = ["derive"] }
+syntect = { version = "5.3.0", default-features = false, features = [
+    "parsing",
+    "default-syntaxes",
+    "default-themes",
+    "regex-fancy",
+    "yaml-load",
+] }
+tempfile = "=3.14.0" # yew 0.21 needs getrandom 0.2
+thiserror = "2.0"
+tokio = { version = "1", features = [
+    "fs",
+    "io-util",
+    "macros",
+    "process",
+    "rt-multi-thread",
+    "rt",
+    "signal",
+    "sync",
+    "time",
+    "tracing",
+] }
+tokio-stream = "0.1.17"
+toml = { version = "0.9.8", features = ["preserve_order"] }
+tonic = { version = "0.14.2", default-features = false }
+tonic-prost = "0.14.2"
+tonic-prost-build = "0.14.2"
+tonic-web = "0.14.2"
+tower = "0.5.2"
+tower-http = { version = "0.6.7", features = ["trace", "cors"] }
+tracing = { version = "0.1", features = ["log"] }
+tracing-appender = "0.2.4"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
+ulid = { version = "=1.1.4", features = ["serde"] }
+url = "2.5.7"
+waki = "0.5.1"
+waki-macros = "0.5.1"
+wasm-logger = "0.2.0"
+wiremock = "0.6"
+
+# webui
+gloo = "0.11.0"
+id-arena = "2.2.1"
+log = "0.4.28"
+semver = "1.0.27"
+tonic-web-wasm-client = "0.8.0"
+wasm-bindgen = "=0.2.104" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
+wasm-bindgen-futures = "=0.4.54" # Must match https://github.com/rustwasm/wasm-bindgen/blob/$WASM_BINDGEN_VERSION/crates/futures/Cargo.toml
+web-sys = { version = "=0.3.81", features = [
+    "HtmlInputElement",
+    "Performance",
+    "Window",
+] } # Must match https://github.com/rustwasm/wasm-bindgen/blob/$WASM_BINDGEN_VERSION/crates/web-sys/Cargo.toml
+yew = { version = "0.21.0", features = ["csr"] }
+yew_icons = { version = "0.8.0", features = ["LucideBox", "LucideFileDiff"] }
+yew-router = "0.18.0"
+yewprint = "0.5.0"
+yewprint-css = "0.4.0"
+wstd = "0.6.3"
+wit-component = "0.240.0"
+wit-parser = "0.240.0"
+
+[workspace.lints]
+# lower the priority to allow overriding later
+clippy.all = { level = "deny", priority = -1 }
+# lower the priority to allow overriding later
+clippy.dbg_macro = "deny"
+# lower the priority to allow overriding later
+clippy.pedantic = { level = "deny", priority = -1 }
+# lower the priority to allow overriding later
+clippy.explicit_deref_methods = "allow" # Lots of false positives.
+# lower the priority to allow overriding later
+clippy.missing_errors_doc = "allow" # Allow missing docs for now
+# lower the priority to allow overriding later
+clippy.missing_panics_doc = "allow" # Allow missing docs for now
+# lower the priority to allow overriding later
+clippy.trivially_copy_pass_by_ref = "allow" # Lots of false positives.
+# lower the priority to allow overriding later
+clippy.module_name_repetitions = "allow"
+# Vec::from_iter is more readable than collect::<Vec<_>>
+clippy.from_iter_instead_of_collect = "allow"
+# Happy path should be first no matter the condition.
+clippy.if_not_else = "allow"
+# Keep paths surrounded with quotes
+clippy.unnecessary_debug_formatting = "allow"
+clippy.too_many_lines = "allow"
+
+[workspace.lints.rust]
+unexpected_cfgs = "deny"
+unknown_lints = "deny"
+
+[profile.release]
+overflow-checks = true
+opt-level = "s"
+codegen-units = 1
+lto = "fat"
+strip = "debuginfo"
+
+[profile.release_trunk]
+inherits = "release"
+
+[profile.dev]
+debug = "line-tables-only"

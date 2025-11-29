@@ -1,0 +1,6 @@
+/target/
+/.direnv/
+/.envrc
+/crates/webui/dist/
+/crates/webui/dist-dev/
+/.vscode/

@@ -1,0 +1,538 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/any.proto";
+
+package obelisk;
+
+service ExecutionRepository {
+    rpc GenerateExecutionId(GenerateExecutionIdRequest) returns (GenerateExecutionIdResponse);
+    rpc Submit(SubmitRequest) returns (SubmitResponse);
+    rpc GetStatus(GetStatusRequest) returns (stream GetStatusResponse);
+    rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
+    // Get the execution log
+    rpc ListExecutionEvents(ListExecutionEventsRequest) returns (ListExecutionEventsResponse);
+    // List child execution responses
+    rpc ListResponses(ListResponsesRequest) returns (ListResponsesResponse);
+    rpc ListExecutionEventsAndResponses(ListExecutionEventsAndResponsesRequest) returns (ListExecutionEventsAndResponsesResponse);
+    rpc GetBacktrace(GetBacktraceRequest) returns (GetBacktraceResponse);
+    rpc GetBacktraceSource(GetBacktraceSourceRequest) returns (GetBacktraceSourceResponse);
+    rpc Stub(StubRequest) returns (StubResponse);
+}
+
+service FunctionRepository {
+    rpc ListComponents(ListComponentsRequest) returns (ListComponentsResponse);
+    rpc GetWit(GetWitRequest) returns (GetWitResponse);
+}
+
+message GenerateExecutionIdRequest {
+}
+
+message GenerateExecutionIdResponse {
+    ExecutionId execution_id = 1;
+}
+
+message ListExecutionsRequest {
+    message Cursor {
+        oneof cursor {
+            ExecutionId execution_id = 1;
+            google.protobuf.Timestamp created_at = 2;
+        }
+    }
+    message NewerThan {
+        uint32 length = 1;
+        Cursor cursor = 2;
+        bool including_cursor = 3;
+    }
+    message OlderThan {
+        uint32 length = 1;
+        Cursor cursor = 2;
+        bool including_cursor = 3;
+    }
+
+    optional FunctionName function_name = 1;
+    // Do not return child executions
+    bool top_level_only = 2;
+    oneof pagination { // latest by `created_at` if not set
+        NewerThan newer_than = 3;
+        OlderThan older_than = 4;
+    };
+}
+
+message ExecutionSummary {
+    ExecutionId execution_id = 1;
+    FunctionName function_name = 2;
+    ExecutionStatus current_status = 3;
+    google.protobuf.Timestamp created_at = 4;
+    google.protobuf.Timestamp scheduled_at = 5;
+}
+
+message ListExecutionsResponse {
+    repeated ExecutionSummary executions = 3;
+}
+
+message ListComponentsRequest {
+    optional FunctionName function_name = 1;
+    optional ComponentId component_id = 2;
+    bool extensions = 3;
+}
+
+message ListComponentsResponse {
+    repeated Component components = 1;
+}
+
+message Component {
+    ComponentId component_id = 1;
+    string digest = 2; // Hash of the configuration
+    string name = 3;
+    ComponentType type = 4;
+    reserved 5;
+    repeated FunctionDetail exports = 6; // Functions are sorted by their interface name
+    repeated FunctionDetail imports = 7; // Functions are sorted by their interface name
+}
+
+enum ComponentType {
+    WORKFLOW = 0;
+    ACTIVITY_WASM = 1;
+    WEBHOOK_ENDPOINT = 2;
+    ACTIVITY_STUB = 3;
+    ACTIVITY_EXTERNAL = 4;
+}
+
+message FunctionDetail {
+    FunctionName function_name = 1;
+    repeated FunctionParameter params = 2;
+    optional WitType return_type = 3;
+    optional FunctionExtension extension = 4;
+    bool submittable = 5;
+}
+
+enum FunctionExtension {
+    SUBMIT = 0;
+    AWAIT_NEXT = 1;
+    SCHEDULE = 2;
+    STUB = 3;
+    GET = 4;
+    INVOKE = 5;
+}
+
+message FunctionParameter {
+    WitType type = 1;
+    string name = 2;
+}
+
+message WitType {
+    string wit_type = 1;
+
+    // Internal information about the type serialized as JSON
+    string type_wrapper = 2;
+}
+
+message ExecutionId {
+    string id = 1;
+}
+
+message RunId {
+    string id = 1;
+}
+
+message JoinSetId {
+    enum JoinSetKind {
+        ONE_OFF = 0;
+        NAMED = 1;
+        GENERATED = 2;
+    }
+
+    JoinSetKind kind = 2;
+    string name = 3;
+}
+
+message DelayId {
+    string id = 1;
+}
+
+message ComponentId {
+    string id = 1;
+}
+
+message FunctionName {
+    // `namespace:pkg_name/ifc_name` or `namespace:pkg_name/ifc_name@version`
+    string interface_name = 1;
+    string function_name = 2;
+}
+
+message SubmitRequest {
+    ExecutionId execution_id = 1;
+    FunctionName function_name = 2;
+    google.protobuf.Any params = 3;
+}
+
+message SubmitResponse {
+}
+
+message StubRequest {
+    ExecutionId execution_id = 1;
+    google.protobuf.Any return_value = 4;
+}
+
+message StubResponse {
+}
+
+message GetStatusRequest {
+    ExecutionId execution_id = 1;
+    bool follow = 2;
+    bool send_finished_status = 3;
+}
+
+enum ResultKind {
+    OK = 0;
+    FALLIBLE_ERROR = 1;
+    TIMEOUT = 2;
+    EXECUTION_FAILURE = 3;
+    reserved 4;
+}
+
+message ExecutionStatus {
+    message Locked {
+        RunId run_id = 2;
+        google.protobuf.Timestamp lock_expires_at = 3;
+    }
+    message PendingAt {
+        google.protobuf.Timestamp scheduled_at = 1;
+    }
+    message BlockedByJoinSet {
+        JoinSetId join_set_id = 1;
+        google.protobuf.Timestamp lock_expires_at = 2;
+        bool closing = 3;
+    }
+    message Finished {
+        reserved 1;
+        reserved 2;
+        reserved 3;
+        google.protobuf.Timestamp finished_at = 4;
+        ResultKind result_kind = 5;
+    }
+    oneof status {
+        Locked locked = 1;
+        PendingAt pending_at = 2;
+        BlockedByJoinSet blocked_by_join_set = 3;
+        Finished finished = 4;
+    }
+}
+
+message FinishedStatus {
+    google.protobuf.Timestamp created_at = 1;
+    google.protobuf.Timestamp scheduled_at = 2;
+    google.protobuf.Timestamp finished_at = 3;
+    ResultDetail result_detail = 4;
+}
+
+// Mirrors SupportedFunctionReturnValue
+message ResultDetail {
+    message Ok {
+        google.protobuf.Any return_value = 1;
+    }
+    message FallibleError { // TODO: rename to Err
+        // The top level JSON attribute "err" must be present.
+        google.protobuf.Any return_value = 1;
+    }
+    // FinishedExecutionError::PermanentTimeout
+    message Timeout {
+    }
+    // FinishedExecutionError::PermanentFailure
+    message ExecutionFailure {
+        string reason = 1;
+        optional string detail = 2;
+        // TODO Add PermanentFailureKind
+    }
+    oneof value {
+        Ok ok = 1;
+        FallibleError fallible_error = 2;
+        Timeout timeout = 3;
+        ExecutionFailure execution_failure = 4;
+    }
+}
+
+message GetStatusResponse {
+    oneof message {
+        // First message in the stream
+        ExecutionSummary summary = 1;
+        // Remaining messages
+        ExecutionStatus current_status = 2;
+        // Finished status, sent only if `send_finished_status` is set.
+        FinishedStatus finished_status = 3;
+    }
+}
+
+message ExecutionEvent {
+
+    message Created {
+        FunctionName function_name = 1;
+        google.protobuf.Any params = 2;
+        google.protobuf.Timestamp scheduled_at = 3;
+        ComponentId component_id = 4;
+        optional ExecutionId scheduled_by = 5;
+    }
+
+    message Locked {
+        ComponentId component_id = 1;
+        string run_id = 4;
+        google.protobuf.Timestamp lock_expires_at = 3;
+    }
+
+    message Unlocked {
+        google.protobuf.Timestamp backoff_expires_at = 1;
+        string reason = 2;
+    }
+
+    message TemporarilyFailed {
+        string reason = 1;
+        optional string detail = 2;
+        google.protobuf.Timestamp backoff_expires_at = 3;
+        repeated HttpClientTrace http_client_traces = 4;
+    }
+
+    message TemporarilyTimedOut {
+        google.protobuf.Timestamp backoff_expires_at = 1;
+        repeated HttpClientTrace http_client_traces = 2;
+    }
+
+    message Finished {
+        ResultDetail result_detail = 1;
+        repeated HttpClientTrace http_client_traces = 2;
+    }
+
+    message HistoryEvent {
+
+        message Persist {
+            message PersistKind {
+                message RandomString {
+                }
+                message RandomU64 {
+                }
+                oneof variant {
+                    RandomString random_string = 1;
+                    RandomU64 random_u64 = 2;
+                }
+            }
+            google.protobuf.Any data = 1;
+            PersistKind kind = 2;
+        }
+
+        message JoinSetCreated {
+            enum ClosingStrategy {
+                COMPLETE = 0;
+            }
+
+            JoinSetId join_set_id = 1;
+            ClosingStrategy closing_strategy = 2;
+        }
+
+        message JoinSetRequest {
+
+            message DelayRequest {
+                DelayId delay_id = 1;
+                google.protobuf.Timestamp expires_at = 2;
+            }
+
+            message ChildExecutionRequest {
+                ExecutionId child_execution_id = 1;
+            }
+
+            JoinSetId join_set_id = 1;
+            oneof join_set_request {
+                DelayRequest delay_request = 2;
+                ChildExecutionRequest child_execution_request = 3;
+            }
+        }
+
+        message JoinNext {
+            JoinSetId join_set_id = 1;
+            google.protobuf.Timestamp run_expires_at = 2;
+            bool closing = 3;
+        }
+
+        message JoinNextTooMany {
+            JoinSetId join_set_id = 1;
+            optional FunctionName function = 2;
+        }
+
+        message Schedule {
+            message ScheduledAt {
+                message Now {}
+
+                message At {
+                    google.protobuf.Timestamp at = 1;
+                }
+
+                message In {
+                    google.protobuf.Duration in = 1;
+                }
+
+                oneof variant {
+                    Now now = 1;
+                    At at = 2;
+                    In in = 3;
+                }
+            }
+            ExecutionId execution_id = 1;
+            ScheduledAt scheduled_at = 2;
+        }
+
+        message Stub {
+            ExecutionId execution_id = 1;
+            bool success = 2;
+        }
+
+        oneof event {
+            Persist persist = 1;
+            JoinSetCreated join_set_created = 2;
+            JoinSetRequest join_set_request = 3;
+            JoinNext join_next = 4;
+            JoinNextTooMany join_next_too_many = 7;
+            Schedule schedule = 5;
+            Stub stub = 6;
+        }
+    }
+
+    google.protobuf.Timestamp created_at = 1;
+    uint32 version = 2;
+
+    oneof event {
+        Created created = 3;
+        Locked locked = 4;
+        Unlocked unlocked = 5;
+        TemporarilyFailed temporarily_failed = 6;
+        TemporarilyTimedOut temporarily_timed_out = 7;
+        Finished finished = 8;
+        HistoryEvent history_variant = 9;
+    }
+
+    optional uint32 backtrace_id = 10;
+}
+
+message HttpClientTrace {
+    google.protobuf.Timestamp sent_at = 1;
+    string uri = 2;
+    string method = 3;
+    optional google.protobuf.Timestamp finished_at = 4;
+    // present iif finished_at is sent.
+    oneof result {
+        uint32 status = 5;
+        string error = 6;
+    }
+}
+
+message ListExecutionEventsRequest {
+    ExecutionId execution_id = 1;
+    uint32 version_from = 2; // 0 to request the first page
+    uint32 length = 3;
+    bool include_backtrace_id = 4; // return version_min_including if a matching backtrace is found
+}
+message ListExecutionEventsResponse {
+    repeated ExecutionEvent events = 2;
+}
+
+message JoinSetResponseEvent {
+    message DelayFinished {
+        DelayId delay_id = 1;
+    }
+
+    message ChildExecutionFinished {
+        ExecutionId child_execution_id = 1;
+        ResultDetail result_detail = 2;
+    }
+
+    google.protobuf.Timestamp created_at = 1;
+    JoinSetId join_set_id = 2;
+    oneof response {
+        DelayFinished delay_finished = 3;
+        ChildExecutionFinished child_execution_finished = 4;
+    }
+}
+
+message ResponseWithCursor {
+    JoinSetResponseEvent event = 1;
+    uint32 cursor = 2;
+}
+
+message ListResponsesRequest {
+    ExecutionId execution_id = 1;
+    uint32 cursor_from = 2; // 0 to request the first page
+    uint32 length = 3;
+    bool including_cursor = 4; // true to request the first page
+}
+message ListResponsesResponse {
+    repeated ResponseWithCursor responses = 1;
+}
+
+message ListExecutionEventsAndResponsesRequest {
+    ExecutionId execution_id = 1;
+    uint32 version_from = 2; // 0 to request the first page of execution events
+    uint32 events_length = 3;
+    uint32 responses_cursor_from = 4; // 0 to request the first page of responses
+    uint32 responses_length = 5;
+    bool responses_including_cursor = 6; // true to request the first page of responses
+    bool include_backtrace_id = 7; // return version_min_including if a matching backtrace is found
+}
+message ListExecutionEventsAndResponsesResponse {
+    repeated ExecutionEvent events = 1;
+    repeated ResponseWithCursor responses = 2;
+}
+
+message GetWitRequest {
+    ComponentId component_id = 1;
+}
+
+message GetWitResponse {
+    string content = 1;
+}
+
+message GetBacktraceRequest {
+    message First {}
+    message Last {}
+    message Specific {
+        uint32 version = 1;
+    }
+
+    ExecutionId execution_id = 1;
+    oneof filter {
+        First first = 2;
+        Last last = 3;
+        Specific specific = 4;
+    }
+}
+
+message GetBacktraceResponse {
+    ComponentId component_id = 1;
+    WasmBacktrace wasm_backtrace = 2;
+}
+
+message WasmBacktrace {
+    repeated FrameInfo frames = 1;
+    uint32 version_min_including = 2;
+    uint32 version_max_excluding = 3;
+}
+
+message FrameInfo {
+  string module = 1;
+  string func_name = 2;
+  repeated FrameSymbol symbols = 3;
+}
+
+message FrameSymbol {
+  optional string func_name = 1;
+  optional string file = 2;
+  optional uint32 line = 3;
+  optional uint32 col = 4;
+}
+
+message GetBacktraceSourceRequest {
+    ComponentId component_id = 1;
+    string file = 2; // As appears in FrameSymbol
+}
+
+message GetBacktraceSourceResponse {
+    string content = 1;
+}
