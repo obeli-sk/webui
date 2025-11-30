@@ -40,8 +40,8 @@ yew-router = "0.18.0"
 yewprint = "0.5.0"
 yewprint-css = "0.4.0"
 wstd = "0.6.3"
-wit-component = "0.240.0"
-wit-parser = "0.240.0"
+wit-component = "0.242.0"
+wit-parser = "0.242.0"
 
 anyhow = { version = "1.0", features = ["backtrace"] }
 assert_matches = "1.5.0"
@@ -58,7 +58,7 @@ hashbrown = { version = "0.16.1", features = ["serde"] }
 indexmap = { version = "2.12", features = ["serde"] }
 prost-wkt-types = "0.7"
 prost = "0.14.1"
-rand = "0.8" # yew 0.21 needs getrandom 0.2
+rand = "=0.8" # yew 0.21 needs getrandom 0.2
 serde_json = "1.0.145"
 syntect = { version = "5.3.0", default-features = false, features = [
     "parsing",
