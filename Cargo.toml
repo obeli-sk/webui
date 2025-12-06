@@ -24,7 +24,7 @@ cargo_metadata = "0.23"
 # webui
 gloo = "0.11.0"
 id-arena = "2.2.1"
-log = "0.4.28"
+log = "0.4.29"
 semver = "1.0.27"
 tonic-web-wasm-client = "0.8.0"
 wasm-bindgen = "=0.2.104" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
@@ -40,13 +40,13 @@ yew-router = "0.18.0"
 yewprint = "0.5.0"
 yewprint-css = "0.4.0"
 wstd = "0.6.3"
-wit-component = "0.242.0"
-wit-parser = "0.242.0"
+wit-component = "0.243.0"
+wit-parser = "0.243.0"
 
 anyhow = { version = "1.0", features = ["backtrace"] }
 assert_matches = "1.5.0"
 chrono = { version = "0.4.42", features = ["arbitrary", "serde"] }
-derive_more = { version = "2.0.1", features = [
+derive_more = { version = "2.1.0", features = [
     "debug",
     "deref",
     "display",
