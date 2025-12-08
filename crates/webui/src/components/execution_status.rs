@@ -1,7 +1,7 @@
 use crate::{
     components::execution_detail::finished::FinishedEvent,
     grpc::grpc_client::{
-        self, ExecutionStatus as GExecutionStatus, ExecutionSummary, FinishedStatus, ResultKind,
+        self, ExecutionStatus as GExecutionStatus, ExecutionSummary, FinishedStatus,
         execution_status::{Finished, Locked, PendingAt},
         get_status_response,
     },
@@ -179,19 +179,39 @@ fn status_to_string(status: &grpc_client::execution_status::Status) -> Html {
             html! { "Blocked by join set"}
         }
         grpc_client::execution_status::Status::Finished(Finished { result_kind, .. }) => {
-            match ResultKind::try_from(*result_kind)
-                .expect("ResultKind must be convertible from i32")
-            {
-                ResultKind::Ok => html! {"Finished OK"},
-                ResultKind::FallibleError => {
+            let result_kind = result_kind
+                .as_ref()
+                .expect("ResultKind must be present for Finished status");
+            match &result_kind.value {
+                Some(grpc_client::result_kind::Value::Ok(_)) => html! {"Finished OK"},
+                Some(grpc_client::result_kind::Value::FallibleError(_)) => {
                     html! {"Finished with Err variant"}
                 }
-                ResultKind::Timeout => {
-                    html! {"Finished with Timeout"}
+                Some(grpc_client::result_kind::Value::ExecutionFailureKind(kind_i32)) => {
+                    match grpc_client::ExecutionFailureKind::try_from(*kind_i32) {
+                        Ok(kind) => match kind {
+                            grpc_client::ExecutionFailureKind::TimedOut => {
+                                html! {"Timeout"}
+                            }
+                            grpc_client::ExecutionFailureKind::NondeterminismDetected => {
+                                html! { "Nondeterminism Detected" }
+                            }
+                            grpc_client::ExecutionFailureKind::OutOfFuel => {
+                                html! { "Out of Fuel" }
+                            }
+                            grpc_client::ExecutionFailureKind::Cancelled => {
+                                html! { "Cancelled" }
+                            }
+                            grpc_client::ExecutionFailureKind::Uncategorized => {
+                                html! { "Execution failure" }
+                            }
+                        },
+                        Err(_) => {
+                            html! { format!("Execution failure: Unknown variant ({})", kind_i32) }
+                        }
+                    }
                 }
-                ResultKind::ExecutionFailure => {
-                    html! {"Execution failure"}
-                }
+                None => html! {"Finished with unknown result"},
             }
         }
     }

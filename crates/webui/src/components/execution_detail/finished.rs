@@ -73,18 +73,7 @@ pub fn attach_result_detail(
                 let _ = insert_json_into_tree(tree, error_node, JsonValue::Serialized(&any.value));
             }
         }
-        grpc_client::result_detail::Value::Timeout(_) => {
-            tree.insert(
-                Node::new(NodeData {
-                    icon: Icon::Time,
-                    label: with_version(version, "Execution Timed Out"),
-                    is_selected,
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(root_id),
-            )
-            .unwrap();
-        }
+
         grpc_client::result_detail::Value::ExecutionFailure(failure) => {
             let error_node = tree
                 .insert(
@@ -99,15 +88,36 @@ pub fn attach_result_detail(
                 )
                 .unwrap();
 
+            let (failure_kind, icon) = match failure.kind() {
+                grpc_client::ExecutionFailureKind::TimedOut => ("Timed out", Icon::Error),
+                grpc_client::ExecutionFailureKind::NondeterminismDetected => {
+                    ("Nondeterminism detected", Icon::Error)
+                }
+                grpc_client::ExecutionFailureKind::OutOfFuel => ("Out of fuel", Icon::Error),
+                grpc_client::ExecutionFailureKind::Cancelled => ("Cancelled", Icon::Error),
+                grpc_client::ExecutionFailureKind::Uncategorized => ("Uncategorized", Icon::Error),
+            };
             tree.insert(
                 Node::new(NodeData {
-                    icon: Icon::Error,
-                    label: failure.reason.as_str().into_html(),
+                    icon,
+                    label: failure_kind.into_html(),
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&error_node),
             )
             .unwrap();
+
+            if let Some(reason) = &failure.reason {
+                tree.insert(
+                    Node::new(NodeData {
+                        icon: Icon::Error,
+                        label: reason.as_str().into_html(),
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&error_node),
+                )
+                .unwrap();
+            }
             if let Some(detail) = &failure.detail {
                 tree.insert(
                     Node::new(NodeData {

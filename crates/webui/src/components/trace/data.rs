@@ -162,6 +162,7 @@ pub struct TraceDataChild {
 
 mod grpc {
     use super::BusyIntervalStatus;
+    use crate::grpc::grpc_client::ExecutionFailureKind;
     use crate::grpc::grpc_client::result_detail;
 
     impl From<&result_detail::Value> for BusyIntervalStatus {
@@ -171,10 +172,10 @@ mod grpc {
                 result_detail::Value::FallibleError(_) => {
                     BusyIntervalStatus::ExecutionReturnedErrorVariant
                 }
-                result_detail::Value::Timeout(_) => BusyIntervalStatus::ExecutionTimeoutPermanent,
-                result_detail::Value::ExecutionFailure(_) => {
-                    BusyIntervalStatus::ExecutionErrorPermanent
-                }
+                result_detail::Value::ExecutionFailure(failure) => match failure.kind() {
+                    ExecutionFailureKind::TimedOut => BusyIntervalStatus::ExecutionTimeoutPermanent,
+                    _ => BusyIntervalStatus::ExecutionErrorPermanent,
+                },
             }
         }
     }
