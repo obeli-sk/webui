@@ -1,7 +1,7 @@
 use crate::app::BacktraceVersions;
 use crate::components::execution_header::ExecutionLink;
-use crate::grpc::ResultValueExt;
 use crate::grpc::grpc_client::ExecutionId;
+use crate::grpc::grpc_client::join_set_response_event::{ChildExecutionFinished, DelayFinished};
 use crate::grpc::version::VersionType;
 use crate::{
     app::Route,
@@ -47,13 +47,26 @@ impl HistoryJoinNextEventProps {
                 response:
                     Some(join_set_response_event::Response::ChildExecutionFinished(
                         join_set_response_event::ChildExecutionFinished {
-                            result_detail: Some(ResultDetail { value: Some(value) }),
+                            result_detail:
+                                Some(ResultDetail {
+                                    value: Some(grpc_client::result_detail::Value::Ok(_)),
+                                }),
                             ..
                         },
                     )),
                 ..
-            }) if value.is_err() => Icon::Error,
-            Some(_) => Icon::Tick,
+            }) => Icon::Tick,
+            Some(JoinSetResponseEvent {
+                response:
+                    Some(join_set_response_event::Response::DelayFinished(DelayFinished {
+                        success: true,
+                        ..
+                    })),
+                ..
+            }) => Icon::Tick,
+
+            Some(_) => Icon::Error,
+
             None => Icon::Search,
         };
 
@@ -82,18 +95,27 @@ impl HistoryJoinNextEventProps {
                 created_at: Some(finished_at),
                 join_set_id: _,
                 response:
-                    Some(join_set_response_event::Response::ChildExecutionFinished(child_finished)),
+                    Some(join_set_response_event::Response::ChildExecutionFinished(
+                        ChildExecutionFinished {
+                            child_execution_id: Some(child_execution_id),
+                            result_detail: Some(result_detail),
+                        },
+                    )),
             }) => {
-                let child_execution_id = child_finished
-                    .child_execution_id
-                    .as_ref()
-                    .expect("`child_execution_id` of `ChildExecutionFinished` must be sent");
+                let success = matches!(
+                    result_detail.value,
+                    Some(grpc_client::result_detail::Value::Ok(_))
+                );
+                let icon = if success { Icon::Flows } else { Icon::Error };
+
                 let child_node = tree.insert(
                         Node::new(NodeData {
-                            icon: Icon::Flows,
+                            icon,
                             label: html! {
                                 <>
-                                    {"Matched Child Execution Finished: "}
+                                    {"Matched Child "}
+                                    { if success { "Finished" } else { "Failed" } }
+                                    {": "}
                                     { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
                                 </>
                             },
@@ -104,10 +126,6 @@ impl HistoryJoinNextEventProps {
                     )
                     .unwrap();
 
-                let result_detail = child_finished
-                    .result_detail
-                    .as_ref()
-                    .expect("`child_execution_id` of `ChildExecutionFinished` must be sent");
                 attach_result_detail(&mut tree, &child_node, result_detail, None, false);
 
                 let finished_at = DateTime::from(*finished_at);
@@ -124,19 +142,23 @@ impl HistoryJoinNextEventProps {
             Some(JoinSetResponseEvent {
                 created_at: Some(finished_at),
                 join_set_id: _,
-                response: Some(join_set_response_event::Response::DelayFinished(delay_finished)),
+                response:
+                    Some(join_set_response_event::Response::DelayFinished(DelayFinished {
+                        delay_id: Some(delay_id),
+                        success,
+                    })),
             }) => {
-                let delay_id = delay_finished
-                    .delay_id
-                    .as_ref()
-                    .expect("`delay_id` of `DelayFinished` must be sent");
+                let success = *success;
+                let icon = if success { Icon::Time } else { Icon::Error };
                 let delay_node = tree
                     .insert(
                         Node::new(NodeData {
-                            icon: Icon::Time,
+                            icon: icon.clone(),
                             label: html! {
                                 <>
-                                    {"Matched Delay Finished: "}
+                                    {"Matched Delay "}
+                                    { if success { "Finished" } else {"Cancelled"} }
+                                    {": "}
                                     {&delay_id.id}
                                 </>
                             },
@@ -148,10 +170,16 @@ impl HistoryJoinNextEventProps {
                     .unwrap();
 
                 let finished_at = DateTime::from(*finished_at);
+
                 tree.insert(
                     Node::new(NodeData {
-                        icon: Icon::Time,
-                        label: format!("Finished At: {finished_at}").into_html(),
+                        icon,
+                        label: if success {
+                            format!("Finished At: {finished_at}")
+                        } else {
+                            format!("Cancelled At: {finished_at}")
+                        }
+                        .into_html(),
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&delay_node),
