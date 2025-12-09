@@ -41,7 +41,6 @@ wit-component.workspace = true
 wit-parser.workspace = true
 yew-router.workspace = true
 yew.workspace = true
-yew_icons.workspace = true
 yewprint.workspace = true
 once_cell.workspace = true
 

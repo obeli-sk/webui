@@ -35,7 +35,6 @@ web-sys = { version = "=0.3.81", features = [
     "Window",
 ] } # Must match https://github.com/rustwasm/wasm-bindgen/blob/$WASM_BINDGEN_VERSION/crates/web-sys/Cargo.toml
 yew = { version = "0.21.0", features = ["csr"] }
-yew_icons = { version = "0.8.0", features = ["LucideBox", "LucideFileDiff"] }
 yew-router = "0.18.0"
 yewprint = "0.5.0"
 yewprint-css = "0.4.0"
