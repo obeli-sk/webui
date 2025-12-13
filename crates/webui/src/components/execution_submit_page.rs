@@ -74,7 +74,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                     <Link<Route> to={Route::Component { component_id: found.component_id.clone().expect("`component_id` is sent") } }>
                         <Icon icon = { found.as_type().as_icon() }/>
                         {" "}
-                        {&found.name}
+                        {&found.component_id.as_ref().expect("`component_id` is sent").name}
                     </Link<Route>>
 
                 </h3>

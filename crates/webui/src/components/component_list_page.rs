@@ -153,7 +153,7 @@ pub fn component_list_page(
                     <Link<Route> to={Route::Component { component_id: found.component_id.clone().expect("`component_id` is sent") } }>
                         <Icon icon = { found.as_type().as_icon() }/>
                         {" "}
-                        {&found.name}
+                        {&found.component_id.as_ref().expect("`component_id` is sent").name}
                     </Link<Route>>
                 }
                 </h4>
@@ -161,7 +161,7 @@ pub fn component_list_page(
 
             html! { <>
                 <h2>
-                    {&component.name}
+                    {&component.component_id.as_ref().expect("`component_id` is sent").name}
                     <span class="label">
                         <Icon icon = { component.as_type().as_icon() }/>
                         {component.as_type().to_html()}

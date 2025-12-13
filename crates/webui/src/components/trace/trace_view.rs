@@ -355,7 +355,7 @@ fn compute_root_trace(
     let component_type = app_state
         .ffqns_to_details
         .get(&ffqn)
-        .map(|(_, c)| c.as_type());
+        .map(|(_, c)| c.component_type());
     let maybe_stub_link = if events.len() == 1 // stub execution can only contain Created and Finished events
         && component_type == Some(ComponentType::ActivityStub)
     {

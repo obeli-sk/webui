@@ -185,7 +185,7 @@ pub fn execution_stub_result_page(
                 <Link<Route> to={Route::Component { component_id: component_id.clone() } }>
                     <Icon icon = { component.as_type().as_icon() }/>
                     {" "}
-                    {&component.name}
+                    {&component.component_id.as_ref().expect("`component_id` is sent").name}
                 </Link<Route>>
             </h3>
         </header>

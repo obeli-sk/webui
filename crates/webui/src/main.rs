@@ -27,7 +27,18 @@ fn main() {
             .unwrap()
             .into_inner();
         debug!("Got gRPC ListComponentsResponse");
-        response.components.sort_by(|a, b| a.name.cmp(&b.name));
+        response.components.sort_by(|a, b| {
+            a.component_id
+                .as_ref()
+                .expect("`component_id` is sent")
+                .name
+                .cmp(
+                    &b.component_id
+                        .as_ref()
+                        .expect("`component_id` is sent")
+                        .name,
+                )
+        });
         let components_by_id: HashMap<_, _> = response
             .components
             .into_iter()

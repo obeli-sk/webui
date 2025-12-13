@@ -17,8 +17,10 @@ pub const SUFFIX_PKG_STUB: &str = "-obelisk-stub"; // TODO: unify with concepts
 
 impl grpc_client::Component {
     pub fn as_type(&self) -> ComponentType {
-        ComponentType::try_from(self.r#type)
-            .expect("generated ComponentType must contain all types")
+        self.component_id
+            .as_ref()
+            .expect("`component_id` is sent")
+            .component_type()
     }
 }
 

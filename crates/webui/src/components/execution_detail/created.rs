@@ -164,14 +164,14 @@ impl ProcessedProps {
         // component id
         tree.insert(
             Node::new(NodeData {
-                icon: self.component_id.as_type().as_icon(),
+                icon: self.component_id.component_type().as_icon(),
                 label: html! {
                     if self.component_exists {
                         <Link<Route> to={Route::Component { component_id: self.component_id.clone() } }>
-                        { self.component_id.id }
+                        { self.component_id.name }
                         </Link<Route>>
                     } else {
-                        { self.component_id.id }
+                        { self.component_id.name }
                     }
                 },
                 has_caret: false,

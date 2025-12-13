@@ -115,7 +115,13 @@ impl ComponentTree {
                 .insert(
                     Node::new(NodeData {
                         icon: icon.clone(),
-                        label: component.name.clone().into(),
+                        label: component
+                            .component_id
+                            .as_ref()
+                            .expect("`component_id` is sent")
+                            .name
+                            .clone()
+                            .into(),
                         has_caret: execution_list_filtering,
                         data: Some(id.clone()),
                         ..Default::default()
