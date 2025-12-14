@@ -34,7 +34,6 @@ jobs:
 
       - name: Bump Cargo.lock, Cargo.toml
         run: |
-          nix develop .#noObelisk --command cargo upgrade --incompatible
           nix develop .#noObelisk --command cargo update
 
       - name: Configure Git
