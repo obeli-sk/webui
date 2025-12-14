@@ -34,8 +34,8 @@ web-sys = { version = "=0.3.81", features = [
     "Performance",
     "Window",
 ] } # Must match https://github.com/rustwasm/wasm-bindgen/blob/$WASM_BINDGEN_VERSION/crates/web-sys/Cargo.toml
-yew = { version = "0.21.0", features = ["csr"] }
-yew-router = "0.18.0"
+yew = { version = "0.22.0", features = ["csr"] }
+yew-router = "0.19.0"
 yewprint = "0.5.0"
 yewprint-css = "0.4.0"
 wstd = "0.6.3"
