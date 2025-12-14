@@ -1,4 +1,5 @@
 use crate::{
+    BASE_URL,
     app::{AppState, Route},
     components::{code::code_block::CodeBlock, ffqn_with_links::FfqnWithLinks},
     grpc::{
@@ -58,10 +59,9 @@ pub fn execution_stub_result_page(
         let component_id = component_id.clone();
         move |_ffqn| {
             wasm_bindgen_futures::spawn_local(async move {
-                let base_url = "/api";
                 let mut fn_client =
                     grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                        tonic_web_wasm_client::Client::new(base_url.to_string()),
+                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                     );
                 let wit = fn_client
                     .get_wit(grpc_client::GetWitRequest {
@@ -113,10 +113,9 @@ pub fn execution_stub_result_page(
                 let navigator = navigator.clone();
                 let request_processing_state = request_processing_state.clone();
                 async move {
-                    let base_url = "/api";
                     let mut client =
                         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(base_url.to_string()),
+                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                         );
                     let response = client
                         .stub(grpc_client::StubRequest {

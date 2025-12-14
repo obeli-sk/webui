@@ -1,4 +1,5 @@
 use crate::{
+    BASE_URL,
     app::{AppState, Route},
     components::{
         code::code_block::CodeBlock,
@@ -65,10 +66,9 @@ pub fn component_list_page(
                 Box::new(move |component_id: &Option<ComponentId>| {
                     let component_id = component_id.clone().expect("checked above");
                     wasm_bindgen_futures::spawn_local(async move {
-                        let base_url = "/api";
                         let mut fn_client =
                             grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                                tonic_web_wasm_client::Client::new(base_url.to_string()),
+                                tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                             );
                         let wit = fn_client
                             .get_wit(grpc_client::GetWitRequest {

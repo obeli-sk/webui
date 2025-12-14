@@ -1,5 +1,6 @@
 use super::data::{BusyIntervalStatus, TraceData};
 use crate::{
+    BASE_URL,
     app::{AppState, Route},
     components::{
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
@@ -260,10 +261,9 @@ fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
         let trace_view_state = trace_view_state.clone();
         wasm_bindgen_futures::spawn_local(async move {
             trace!("list_execution_events {cursors:?}");
-            let base_url = "/api";
             let mut execution_client =
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                    tonic_web_wasm_client::Client::new(base_url.to_string()),
+                    tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                 );
             let new_events_and_responses = execution_client
                 .list_execution_events_and_responses(

@@ -1,4 +1,5 @@
 use crate::{
+    BASE_URL,
     components::execution_detail::finished::FinishedEvent,
     grpc::grpc_client::{
         self, ExecutionStatus as GExecutionStatus, ExecutionSummary, FinishedStatus,
@@ -75,10 +76,9 @@ pub fn execution_status(
                         let connection_id = connectin_id.clone();
                         let execution_id = execution_id.clone();
                         async move {
-                            let base_url = "/api";
                             let mut execution_client =
                         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(base_url.to_string()),
+                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                         );
                             let mut response_stream = execution_client
                                 .get_status(grpc_client::GetStatusRequest {

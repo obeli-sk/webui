@@ -1,4 +1,5 @@
 use crate::{
+    BASE_URL,
     app::{BacktraceVersions, Route},
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
@@ -120,10 +121,9 @@ pub fn debugger_view(
             }
             wasm_bindgen_futures::spawn_local(async move {
                 trace!("[{hook_id}] GetBacktraceRequest {execution_id} {version:?}");
-                let base_url = "/api";
                 let mut execution_client =
                     grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                        tonic_web_wasm_client::Client::new(base_url.to_string()),
+                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                     );
                 let backtrace_response = execution_client
                     .get_backtrace(tonic::Request::new(grpc_client::GetBacktraceRequest {
@@ -193,10 +193,9 @@ pub fn debugger_view(
                 let sources_state = sources_state.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     trace!("[{trace_id}] `GetBacktraceSourceRequest` start {component_id} {file}");
-                    let base_url = "/api";
                     let mut execution_client =
                         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(base_url.to_string()),
+                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                         );
                     let backtrace_src_response = execution_client
                         .get_backtrace_source(tonic::Request::new(GetBacktraceSourceRequest {
@@ -516,10 +515,9 @@ impl EventsAndResponsesState {
                 let version_from = events.last().map(|e| e.version + 1).unwrap_or_default();
                 let (mut responses, responses_cursor_from) = responses_state.deref().clone();
                 trace!("list_execution_events_and_responses {execution_id} {version_from}");
-                let base_url = "/api";
                 let mut execution_client =
                     grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                        tonic_web_wasm_client::Client::new(base_url.to_string()),
+                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                     );
                 let new_events_and_responses = execution_client
                     .list_execution_events_and_responses(

@@ -2,6 +2,7 @@ use hashbrown::HashMap;
 use log::debug;
 use std::rc::Rc;
 use webui::{
+    BASE_URL,
     app::{App, AppProps},
     grpc::{
         function_detail::{InterfaceFilter, map_interfaces_to_fn_details},
@@ -13,10 +14,9 @@ use webui::{
 fn main() {
     init_logging();
     wasm_bindgen_futures::spawn_local(async move {
-        let base_url = "/api";
         let mut fn_repo_client =
             grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                tonic_web_wasm_client::Client::new(base_url.to_string()),
+                tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
             );
         let mut response = fn_repo_client
             .list_components(grpc_client::ListComponentsRequest {
