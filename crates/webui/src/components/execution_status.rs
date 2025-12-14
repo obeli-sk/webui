@@ -26,6 +26,7 @@ fn status_as_message(
     status.map(|s| {
         get_status_response::Message::CurrentStatus(GExecutionStatus {
             status: Some(s.clone()),
+            component_digest: None, // not displayed, not available
         })
     })
 }
@@ -139,11 +140,13 @@ pub fn execution_status(
             current_status:
                 Some(GExecutionStatus {
                     status: Some(status),
+                    component_digest: _,
                 }),
             ..
         }))
         | Some(get_status_response::Message::CurrentStatus(GExecutionStatus {
             status: Some(status),
+            component_digest: _,
         })) => status_to_string(status),
         Some(get_status_response::Message::FinishedStatus(FinishedStatus {
             created_at: _,

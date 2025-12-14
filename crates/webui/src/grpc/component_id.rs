@@ -1,4 +1,4 @@
-use crate::grpc::grpc_client::ComponentType;
+use crate::grpc::grpc_client::{ComponentType, ContentDigest};
 
 use super::grpc_client::ComponentId;
 use std::{fmt::Display, str::FromStr};
@@ -10,7 +10,7 @@ impl Display for ComponentId {
             "{}:{}:{}",
             self.component_type().as_str_name(),
             self.name,
-            self.input_sha256_digest
+            self.digest.as_ref().expect("`digest` is sent").digest
         )
     }
 }
@@ -27,12 +27,12 @@ impl FromStr for ComponentId {
             .ok_or(())?;
 
         let name = parts.next().ok_or(())?.to_string();
-        let input_sha256_digest = parts.next().ok_or(())?.to_string();
+        let digest = parts.next().ok_or(())?.to_string();
 
         Ok(Self {
             component_type: component_type.into(),
             name,
-            input_sha256_digest,
+            digest: Some(ContentDigest { digest }),
         })
     }
 }
