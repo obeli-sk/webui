@@ -46,13 +46,15 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                     );
                 let wit = fn_client
                     .get_wit(grpc_client::GetWitRequest {
-                        component_id: Some(component_id.clone()),
+                        component_digest: Some(
+                            component_id.digest.clone().expect("`digest` is sent"),
+                        ),
                     })
                     .await
                     .unwrap()
                     .into_inner()
                     .content;
-                wit_state.set(Some(wit));
+                wit_state.set(wit);
             });
         }
     });

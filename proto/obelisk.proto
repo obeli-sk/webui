@@ -114,7 +114,6 @@ enum FunctionExtension {
     SCHEDULE = 2;
     STUB = 3;
     GET = 4;
-    INVOKE = 5;
 }
 
 message FunctionParameter {
@@ -152,9 +151,9 @@ message DelayId {
     string id = 1;
 }
 
+// sha256 digest of the component
 message ContentDigest {
-    // type is always sha256
-    string digest = 1; // hex encoded without any prefix.
+    string digest = 1; // hex encoded with `sha256:` prefix.
 }
 
 message ComponentId {
@@ -502,11 +501,11 @@ message ListExecutionEventsAndResponsesResponse {
 }
 
 message GetWitRequest {
-    ComponentId component_id = 1;
+    ContentDigest component_digest = 1;
 }
 
 message GetWitResponse {
-    string content = 1;
+    optional string content = 1;
 }
 
 message GetBacktraceRequest {

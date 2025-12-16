@@ -65,6 +65,7 @@ pub fn component_list_page(
             let boxed_closure: EffectsCallback =
                 Box::new(move |component_id: &Option<ComponentId>| {
                     let component_id = component_id.clone().expect("checked above");
+                    let component_digest = component_id.digest.expect("`digest` is sent");
                     wasm_bindgen_futures::spawn_local(async move {
                         let mut fn_client =
                             grpc_client::function_repository_client::FunctionRepositoryClient::new(
@@ -72,18 +73,19 @@ pub fn component_list_page(
                             );
                         let wit = fn_client
                             .get_wit(grpc_client::GetWitRequest {
-                                component_id: Some(component_id),
+                                component_digest: Some(component_digest),
                             })
                             .await
                             .unwrap()
                             .into_inner()
                             .content;
+                        if let Some(wit) = wit {
+                            let wit = wit_highlighter::print_all(&wit, render_ffqn_with_links)
+                                .inspect_err(|err| warn!("Cannot render WIT - {err:?}"))
+                                .ok();
 
-                        let wit = wit_highlighter::print_all(&wit, render_ffqn_with_links)
-                            .inspect_err(|err| warn!("Cannot render WIT - {err:?}"))
-                            .ok();
-
-                        wit_state.set(wit);
+                            wit_state.set(wit);
+                        } // else - no WIT is associated with the component.
                     });
                 });
             boxed_closure
