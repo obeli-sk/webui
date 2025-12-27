@@ -33,3 +33,4 @@ echo "trunk $(grep wasm_opt crates/webui/Trunk.toml)" >> dev-deps.txt
 trunk --version >> dev-deps.txt
 wasm-bindgen --version >> dev-deps.txt
 echo "trunk $(grep wasm_bindgen crates/webui/Trunk.toml)" >> dev-deps.txt
+echo "cargo $(grep 'wasm-bindgen =' Cargo.toml)" >> dev-deps.txt
