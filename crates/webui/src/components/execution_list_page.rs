@@ -198,9 +198,9 @@ pub fn execution_list_page() -> Html {
             new_query.direction = None;
             new_query.include_cursor = false;
             let ffqn = ffqn_ref.cast::<HtmlInputElement>().unwrap().value();
-            new_query.ffqn_prefix = (!ffqn.is_empty()).then(|| ffqn);
+            new_query.ffqn_prefix = (!ffqn.is_empty()).then_some(ffqn);
             let prefix = prefix_ref.cast::<HtmlInputElement>().unwrap().value();
-            new_query.execution_id_prefix = (!prefix.is_empty()).then(|| prefix);
+            new_query.execution_id_prefix = (!prefix.is_empty()).then_some(prefix);
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
