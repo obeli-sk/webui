@@ -2,6 +2,7 @@ use crate::components::debugger::debugger_view::EventsAndResponsesState;
 use crate::components::execution_detail::utils::{compute_join_next_to_response, event_to_detail};
 use crate::components::execution_header::{ExecutionHeader, ExecutionLink};
 use crate::grpc::grpc_client::{self, ExecutionEvent, ExecutionId, JoinSetResponseEvent};
+use crate::util::time::{TimeGranularity, human_formatted_timedelta};
 use assert_matches::assert_matches;
 use chrono::DateTime;
 use hashbrown::HashMap;
@@ -98,16 +99,17 @@ fn render_execution_details(
             );
             let created_at =
                 DateTime::from(event.created_at.expect("`created_at` sent by the server"));
-            let since_scheduled = (created_at - execution_scheduled_at)
-                .to_std()
-                .ok()
-                .unwrap_or_default();
+            let since_scheduled = human_formatted_timedelta(
+                created_at - execution_scheduled_at,
+                TimeGranularity::Fine,
+            );
+
             html! { <tr>
                 <td>{created_at.to_string()}</td>
                 <td>
-                    if !since_scheduled.is_zero() {
-                        {format!("{since_scheduled:?}")}
-                    }
+                    <label title={execution_scheduled_at.to_string()}>
+                        { since_scheduled }
+                    </label>
                 </td>
                 <td>{detail}</td>
             </tr>}

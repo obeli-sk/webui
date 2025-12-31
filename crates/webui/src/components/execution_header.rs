@@ -1,4 +1,5 @@
 use crate::app::Route;
+use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::ExecutionStatus;
 use crate::grpc::execution_id::ExecutionIdExt;
 use crate::grpc::grpc_client::ExecutionId;
@@ -20,6 +21,13 @@ pub fn execution_header(
                 <h3>{ execution_id.render_execution_parts(false, *link) }</h3>
 
                 <div class="execution-links">
+                    <Link<Route, ExecutionQuery>
+                        to={Route::ExecutionList}
+                        query={ExecutionQuery { execution_id_prefix: Some(execution_id.to_string()), show_derived: true, ..Default::default() }}
+                    >
+                        {"Child executions"}
+                    </Link<Route, ExecutionQuery>>
+
                     { ExecutionLink::Trace.link(execution_id.clone(), "Trace") }
                     { ExecutionLink::Log.link(execution_id.clone(), "Log") }
                     { ExecutionLink::Debug.link(execution_id.clone(), "Debug") }

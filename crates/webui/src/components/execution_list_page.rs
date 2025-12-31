@@ -33,9 +33,8 @@ pub struct ExecutionQuery {
     pub show_derived: bool,
     #[serde(default)]
     pub hide_finished: bool,
-    /// Filter by Execution ID prefix.
-    pub prefix: Option<String>,
-    pub ffqn_prefix: Option<String>, // String to allow searching for functions not currently present in `FunctionRepository`.
+    pub execution_id_prefix: Option<String>,
+    pub ffqn_prefix: Option<String>,
     pub cursor: Option<ExecutionsCursor>,
     pub direction: Option<Direction>,
     #[serde(default)]
@@ -173,7 +172,7 @@ pub fn execution_list_page() -> Html {
                     top_level_only: !query_params.show_derived,
                     pagination,
                     hide_finished: query_params.hide_finished,
-                    execution_id_prefix: query_params.prefix.filter(|s| !s.is_empty()),
+                    execution_id_prefix: query_params.execution_id_prefix.filter(|s| !s.is_empty()),
                 };
                 debug!("Fetching executions with query: {req:?}");
                 let response = execution_client.list_executions(req).await;
@@ -201,7 +200,7 @@ pub fn execution_list_page() -> Html {
             let ffqn = ffqn_ref.cast::<HtmlInputElement>().unwrap().value();
             new_query.ffqn_prefix = (!ffqn.is_empty()).then(|| ffqn);
             let prefix = prefix_ref.cast::<HtmlInputElement>().unwrap().value();
-            new_query.prefix = (!prefix.is_empty()).then(|| prefix);
+            new_query.execution_id_prefix = (!prefix.is_empty()).then(|| prefix);
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
@@ -291,7 +290,7 @@ pub fn execution_list_page() -> Html {
                     </td>
                     <td>
                         <label title={first_scheduled_at.to_string()}>
-                            {relative_time(first_scheduled_at, now)}
+                            {relative_time(first_scheduled_at, now)}{" ago"}
                         </label>
                     </td>
                 </tr>
@@ -359,7 +358,7 @@ pub fn execution_list_page() -> Html {
                             type="text"
                             ref={prefix_ref.clone()}
                             placeholder="Execution ID Prefix..."
-                            value={(query.prefix).clone()}
+                            value={(query.execution_id_prefix).clone()}
                         />
                         {" "}
                         <input
