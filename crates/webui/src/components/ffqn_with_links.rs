@@ -1,4 +1,4 @@
-use crate::{app::Route, grpc::ffqn::FunctionFqn};
+use crate::{app::Route, components::execution_list_page::ExecutionQuery, grpc::ffqn::FunctionFqn};
 use yew::prelude::*;
 use yew_router::prelude::Link;
 use yewprint::Icon;
@@ -22,26 +22,33 @@ pub fn ffqn_with_links(
         hide_find,
     }: &FfqnWithLinksProps,
 ) -> Html {
-    let label = if *fully_qualified {
-        ffqn.to_string()
-    } else {
-        ffqn.function_name.clone()
-    };
     let ext = ffqn.ifc_fqn.pkg_fqn.is_extension();
     html! {
         <div style="display: inline-flex;">
             // Finding executions makes no sense when rendering an extension function.
             if !ext && !hide_find {
-                <Link<Route> to={Route::ExecutionListByFfqn { ffqn: ffqn.clone() } }>
-                    <Icon icon = { Icon::Search }/>
-                </Link<Route>>
+                <Link<Route, ExecutionQuery>
+                    to={Route::ExecutionList}
+                    query={ExecutionQuery { ffqn_prefix: Some(ffqn.ifc_fqn.to_string()), show_derived: true, ..Default::default() }}
+                >
+                    {ffqn.ifc_fqn.to_string()}
+                </Link<Route, ExecutionQuery>>
+            } else if *fully_qualified {
+                {ffqn.ifc_fqn.to_string()}
             }
             if !hide_submit {
                 <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
                     <Icon icon = { Icon::Play }/>
                 </Link<Route>>
+            } else if *fully_qualified {
+                {"."}
             }
-            { label }
+            <Link<Route, ExecutionQuery>
+                    to={Route::ExecutionList}
+                    query={ExecutionQuery { ffqn_prefix: Some(ffqn.to_string()), show_derived: true, ..Default::default() }}
+                >
+                {ffqn.function_name.to_string()}
+            </Link<Route, ExecutionQuery>>
         </div>
     }
 }

@@ -6,7 +6,9 @@ use std::{fmt::Display, str::FromStr};
 
 use super::{grpc_client::execution_event::Created, ifc_fqn::IfcFqn};
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Hash, PartialEq, Eq, serde_with::SerializeDisplay, serde_with::DeserializeFromStr,
+)]
 pub struct FunctionFqn {
     pub ifc_fqn: IfcFqn,
     pub function_name: String,

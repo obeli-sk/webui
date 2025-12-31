@@ -1,61 +1,86 @@
 use crate::{
     BASE_URL,
-    app::{Route, query::ExecutionsCursor},
+    app::{AppState, Route, query::Direction},
     components::{
         component_tree::{ComponentTree, ComponentTreeConfig},
         execution_status::ExecutionStatus,
-        ffqn_with_links::FfqnWithLinks,
     },
     grpc::{
         ffqn::FunctionFqn,
         grpc_client::{
-            self, ExecutionSummary,
+            self, ExecutionId, ExecutionSummary,
+            execution_repository_client::ExecutionRepositoryClient,
             list_executions_request::{NewerThan, OlderThan, Pagination, cursor},
         },
     },
+    util::time::relative_time,
 };
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use log::debug;
-use std::ops::Deref;
+use serde::{Deserialize, Serialize};
+use std::{ops::Deref, str::FromStr};
+use tonic_web_wasm_client::Client;
+use wasm_bindgen_futures::spawn_local;
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
-use yew_router::prelude::Link;
+use yew_router::prelude::*;
+use yewprint::Icon;
 
-#[derive(Default, Clone, PartialEq)]
-pub enum ExecutionFilter {
-    #[default]
-    Latest,
-    Older {
-        cursor: ExecutionsCursor,
-        including_cursor: bool,
-    },
-    Newer {
-        cursor: ExecutionsCursor,
-        including_cursor: bool,
-    },
-    Ffqn {
-        ffqn: FunctionFqn,
-    },
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct ExecutionQuery {
+    /// If true, shows child executions. (Maps to !top_level_only)
+    #[serde(default)]
+    pub show_derived: bool,
+    #[serde(default)]
+    pub hide_finished: bool,
+    /// Filter by Execution ID prefix.
+    pub prefix: Option<String>,
+    pub ffqn_prefix: Option<String>, // String to allow searching for functions not currently present in `FunctionRepository`.
+    pub cursor: Option<ExecutionsCursor>,
+    pub direction: Option<Direction>,
+    #[serde(default)]
+    pub include_cursor: bool,
 }
 
-impl ExecutionFilter {
-    fn get_cursor(&self) -> Option<ExecutionsCursor> {
-        match self {
-            ExecutionFilter::Older { cursor, .. } | ExecutionFilter::Newer { cursor, .. } => {
-                Some(cursor.clone())
-            }
-            _ => None,
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    derive_more::Display,
+    serde_with::SerializeDisplay,
+    serde_with::DeserializeFromStr,
+)]
+pub enum ExecutionsCursor {
+    #[display("{_0}")]
+    ExecutionId(ExecutionId),
+    #[display("Created_{_0:?}")]
+    CreatedAt(DateTime<Utc>),
+}
+
+impl FromStr for ExecutionsCursor {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once("_") {
+            Some(("E", rest)) => Ok(ExecutionsCursor::ExecutionId(ExecutionId {
+                id: format!("E_{rest}"),
+            })),
+            Some(("Created", date)) => DateTime::from_str(date)
+                .map(ExecutionsCursor::CreatedAt)
+                .map_err(|err| err.to_string()),
+            _ => Err("wrong prefix".to_string()),
         }
     }
 }
 
-#[derive(Clone, Copy, Default)]
-enum CursorType {
-    #[default]
-    CreatedAt,
-    ExecutionId,
-}
-
 impl ExecutionsCursor {
+    fn as_type(&self) -> CursorType {
+        match self {
+            ExecutionsCursor::ExecutionId(_) => CursorType::ExecutionId,
+            ExecutionsCursor::CreatedAt(_) => CursorType::CreatedAt,
+        }
+    }
+
     fn into_grpc_cursor(self) -> grpc_client::list_executions_request::Cursor {
         match self {
             ExecutionsCursor::ExecutionId(execution_id) => {
@@ -71,112 +96,8 @@ impl ExecutionsCursor {
         }
     }
 
-    fn as_type(&self) -> CursorType {
-        match self {
-            ExecutionsCursor::CreatedAt(_) => CursorType::CreatedAt,
-            ExecutionsCursor::ExecutionId(_) => CursorType::ExecutionId,
-        }
-    }
-}
-
-#[derive(Properties, PartialEq)]
-pub struct ExecutionListPageProps {
-    #[prop_or_default]
-    pub filter: ExecutionFilter,
-}
-#[function_component(ExecutionListPage)]
-pub fn execution_list_page(ExecutionListPageProps { filter }: &ExecutionListPageProps) -> Html {
-    let response_state = use_state(|| None);
-    {
-        let page_size = 20;
-        let response_state = response_state.clone();
-        use_effect_with(filter.clone(), move |filter| {
-            let filter = filter.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                let mut execution_client =
-                    grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
-                    );
-                let (ffqn, pagination) = match filter {
-                    ExecutionFilter::Latest => (None, None),
-                    ExecutionFilter::Ffqn { ffqn } => (Some(ffqn), None),
-                    ExecutionFilter::Older {
-                        cursor,
-                        including_cursor,
-                    } => (
-                        None,
-                        Some(Pagination::OlderThan(OlderThan {
-                            cursor: Some(cursor.into_grpc_cursor()),
-                            length: page_size,
-                            including_cursor,
-                        })),
-                    ),
-                    ExecutionFilter::Newer {
-                        cursor,
-                        including_cursor,
-                    } => (
-                        None,
-                        Some(Pagination::NewerThan(NewerThan {
-                            cursor: Some(cursor.into_grpc_cursor()),
-                            length: page_size,
-                            including_cursor,
-                        })),
-                    ),
-                };
-                debug!("<ExecutionListPage /> pagination {pagination:?}");
-                let response = execution_client
-                    .list_executions(grpc_client::ListExecutionsRequest {
-                        function_name: ffqn.map(grpc_client::FunctionName::from),
-                        top_level_only: true,
-                        pagination,
-                    })
-                    .await
-                    .unwrap()
-                    .into_inner();
-                debug!("Got ListExecutionsResponse");
-                response_state.set(Some(response));
-            })
-        });
-    }
-
-    if let Some(response) = response_state.deref() {
-        let rows = response.executions
-            .iter()
-            .map(|execution| {
-                let ffqn = FunctionFqn::from(
-                    execution
-                        .function_name
-                        .clone()
-                        .expect("`function_name` is sent by the server"),
-                );
-                let status = Some(execution
-                    .current_status
-                    .clone()
-                    .expect("`current_status` is sent by the server")
-                    .status
-                    .expect("`current_status.status` is sent by the server"));
-
-                let execution_id = execution
-                    .execution_id
-                    .clone()
-                    .expect("`execution_id` is sent by the server");
-                html! {
-                    <tr>
-                    <td>
-                        <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>{&execution_id}</Link<Route>>
-                    </td>
-                        <td><Link<Route> to={Route::ExecutionListByFfqn { ffqn: ffqn.clone() }}>{ffqn.to_string()}</Link<Route>></td>
-                    <td><ExecutionStatus {status} {execution_id} print_finished_status={false} /></td>
-                    </tr>
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let to_executions_cursor = |execution: &ExecutionSummary| match filter
-            .get_cursor()
-            .map(|c| c.as_type())
-            .unwrap_or_default()
-        {
+    fn from_summary(execution: &ExecutionSummary, cursor_type: CursorType) -> Self {
+        match cursor_type {
             CursorType::CreatedAt => ExecutionsCursor::CreatedAt(DateTime::from(
                 execution
                     .created_at
@@ -188,49 +109,319 @@ pub fn execution_list_page(ExecutionListPageProps { filter }: &ExecutionListPage
                     .clone()
                     .expect("`execution_id` is sent by the server"),
             ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub enum CursorType {
+    #[default]
+    CreatedAt,
+    ExecutionId,
+}
+
+#[function_component(ExecutionListPage)]
+pub fn execution_list_page() -> Html {
+    let app_state =
+        use_context::<AppState>().expect("AppState context is set when starting the App");
+
+    let location = use_location().expect("should be called inside a router");
+    let navigator = use_navigator().expect("should be called inside a router");
+
+    // Deserialize query from URL or use default
+    let query = location.query::<ExecutionQuery>().unwrap_or_default();
+
+    // State to hold the API response
+    let response_state = use_state(|| None);
+
+    let prefix_ref = use_node_ref();
+    let ffqn_ref = use_node_ref();
+
+    // Effect: Fetch data when the URL query changes
+    {
+        let query = query.clone();
+        let response_state = response_state.clone();
+
+        use_effect_with(query, move |query_params| {
+            let query_params = query_params.clone();
+            spawn_local(async move {
+                let mut execution_client =
+                    ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+
+                let page_size = 20;
+
+                let cursor = query_params
+                    .cursor
+                    .as_ref()
+                    .map(|c| c.clone().into_grpc_cursor());
+
+                // Determine pagination based on direction
+                let pagination = match query_params.direction.unwrap_or_default() {
+                    Direction::Older => Some(Pagination::OlderThan(OlderThan {
+                        cursor,
+                        length: page_size,
+                        including_cursor: query_params.include_cursor,
+                    })),
+                    Direction::Newer => Some(Pagination::NewerThan(NewerThan {
+                        cursor,
+                        length: page_size,
+                        including_cursor: query_params.include_cursor,
+                    })),
+                };
+                let req = grpc_client::ListExecutionsRequest {
+                    function_name_prefix: query_params.ffqn_prefix,
+                    top_level_only: !query_params.show_derived,
+                    pagination,
+                    hide_finished: query_params.hide_finished,
+                    execution_id_prefix: query_params.prefix.filter(|s| !s.is_empty()),
+                };
+                debug!("Fetching executions with query: {req:?}");
+                let response = execution_client.list_executions(req).await;
+
+                match response {
+                    Ok(resp) => response_state.set(Some(resp.into_inner())),
+                    Err(e) => log::error!("Failed to list executions: {:?}", e),
+                }
+            })
+        });
+    }
+
+    // Callbacks for filter updates
+    let on_apply_filters = {
+        let navigator = navigator.clone();
+        let query = query.clone();
+        let prefix_ref = prefix_ref.clone();
+        let ffqn_ref = ffqn_ref.clone();
+        Callback::from(move |_| {
+            let mut new_query = query.clone();
+            // Reset cursor when changing filters to start from top
+            new_query.cursor = None;
+            new_query.direction = None;
+            new_query.include_cursor = false;
+            let ffqn = ffqn_ref.cast::<HtmlInputElement>().unwrap().value();
+            new_query.ffqn_prefix = (!ffqn.is_empty()).then(|| ffqn);
+            let prefix = prefix_ref.cast::<HtmlInputElement>().unwrap().value();
+            new_query.prefix = (!prefix.is_empty()).then(|| prefix);
+            let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
+        })
+    };
+
+    let on_toggle_derived = {
+        let navigator = navigator.clone();
+        let query = query.clone();
+        Callback::from(move |e: Event| {
+            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+            let mut new_query = query.clone();
+            new_query.show_derived = input.checked();
+            // We usually want to reset pagination when changing view modes
+            new_query.cursor = None;
+            let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
+        })
+    };
+
+    let on_toggle_hide_finished = {
+        let navigator = navigator.clone();
+        let query = query.clone();
+        Callback::from(move |e: Event| {
+            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+            let mut new_query = query.clone();
+            new_query.hide_finished = input.checked();
+            new_query.cursor = None;
+            let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
+        })
+    };
+
+    // Render logic
+    if let Some(response) = response_state.deref() {
+        let rows = response.executions.iter().map(|execution| {
+            let ffqn = FunctionFqn::from(
+                execution.function_name.clone().expect("function_name missing"),
+            );
+            let status = Some(
+                execution.current_status.clone().expect("current_status missing")
+                    .status.expect("status detail missing")
+            );
+            let execution_id = execution.execution_id.clone().expect("execution_id missing");
+
+            let play = if app_state.ffqns_to_details.contains_key(&ffqn) {
+                html!{
+                    <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
+                        <Icon icon = { Icon::Play }/>
+                    </Link<Route>>
+                }
+            } else {
+                ".".to_html()
+            };
+
+            let first_scheduled_at: DateTime<Utc> = execution.first_scheduled_at.expect("`first_scheduled_at` is sent").into();
+            let now = Utc::now();
+            html! {
+                <tr key={execution_id.id.clone()}>
+                    <td>
+                        // Execution id column
+                        <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
+                            {&execution_id}
+                        </Link<Route>>
+                    </td>
+                    <td>
+                        // FFQN column
+                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
+                            let mut q = query.clone();
+                            q.ffqn_prefix = Some(ffqn.ifc_fqn.to_string());
+                            q.cursor = None;
+                            q
+                        }>
+                            { ffqn.ifc_fqn.to_string() }
+                        </Link<Route, ExecutionQuery>>
+
+                        {play}
+
+                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
+                            let mut q = query.clone();
+                            q.ffqn_prefix = Some(ffqn.to_string());
+                            q.cursor = None;
+                            q
+                        }>
+                            { &ffqn.function_name }
+                        </Link<Route, ExecutionQuery>>
+                    </td>
+                    <td>
+                        // Status column
+                        <ExecutionStatus {status} {execution_id} print_finished_status={false} />
+                    </td>
+                    <td>
+                        <label title={first_scheduled_at.to_string()}>
+                            {relative_time(first_scheduled_at, now)}
+                        </label>
+                    </td>
+                </tr>
+            }
+        }).collect::<Vec<_>>();
+
+        // Calculate cursors for pagination
+        let cursor_type = query
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.as_type())
+            .unwrap_or_default();
+
+        let first_item_cursor = response
+            .executions
+            .first()
+            .map(|e| ExecutionsCursor::from_summary(e, cursor_type));
+        let last_item_cursor = response
+            .executions
+            .last()
+            .map(|e| ExecutionsCursor::from_summary(e, cursor_type));
+
+        // Pagination Query Generators
+        let prev_page_query = |cursor| {
+            let mut q = query.clone();
+            q.cursor = Some(cursor);
+            q.direction = Some(Direction::Newer); // "Previous" means newer items in a log list
+            q.include_cursor = false;
+            q
         };
 
-        let cursor_later = response.executions.first().map(to_executions_cursor);
-        let cursor_prev = response.executions.last().map(to_executions_cursor);
+        let next_page_query = |cursor| {
+            let mut q = query.clone();
+            q.cursor = Some(cursor);
+            q.direction = Some(Direction::Older); // "Next" means older items
+            q.include_cursor = false;
+            q
+        };
 
-        html! {<>
-            <h3>{"Executions"}</h3>
-            if let ExecutionFilter::Ffqn{ffqn} = filter {
-                <h4>{format!("Filtered by function: ")}<FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} hide_find={true} /></h4>
-                <p><Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() }}>{"Submit new execution"}</Link<Route>></p>
-                <p><Link<Route> to={Route::ExecutionList}>{"Remove filter"}</Link<Route>></p>
-            }
-            <ComponentTree config={ComponentTreeConfig::ExecutionListFiltering} />
-            <table class="execution_list">
-                <tr><th>{"Execution ID"}</th><th>{"Function"}</th><th>{"Status"}</th></tr>
-                { rows }
-            </table>
-            <div class="pagination">
-            <Link<Route> to={Route::ExecutionList}>
-                {"<< Latest"}
-            </Link<Route>>
-            if let (Some(cursor_later), Some(cursor_prev)) = (cursor_later, cursor_prev) {
-                <Link<Route> to={Route::ExecutionListNewer { cursor: cursor_later }}>
-                    {"< Next"}
-                </Link<Route>>
-                <Link<Route> to={Route::ExecutionListOlder { cursor: cursor_prev }}>
-                    {"Prev >"}
-                </Link<Route>>
-            // If no results are shown, we neeed to go back including the cursor.
-            } else if let ExecutionFilter::Newer { cursor, including_cursor: false } = filter {
-                <Link<Route> to={Route::ExecutionListOlderIncluding { cursor: cursor.clone() }}>
-                    {"Prev >"}
-                </Link<Route>>
-            } else if let ExecutionFilter::Older { cursor, including_cursor: false } = filter {
-                <Link<Route> to={Route::ExecutionListNewerIncluding { cursor: cursor.clone() }}>
-                    {"< Next"}
-                </Link<Route>>
-            }
-            </div>
-        </>}
-    } else {
         html! {
-            <p>{"Loading"}</p>
+            <>
+                <h3>{"Executions"}</h3>
+
+                <div class="filters" style="margin-bottom: 1em; padding: 1em; border: 1px solid #ccc;">
+                    <div style="margin-bottom: 0.5em;">
+                        <label style="margin-right: 1em;">
+                            <input
+                                type="checkbox"
+                                checked={query.show_derived}
+                                onchange={on_toggle_derived}
+                            />
+                            {" Show Derived Executions"}
+                        </label>
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={query.hide_finished}
+                                onchange={on_toggle_hide_finished}
+                            />
+                            {" Hide Finished"}
+                        </label>
+                    </div>
+                    <div>
+                        <input
+                            type="text"
+                            ref={prefix_ref.clone()}
+                            placeholder="Execution ID Prefix..."
+                            value={(query.prefix).clone()}
+                        />
+                        {" "}
+                        <input
+                            type="text"
+                            ref={ffqn_ref.clone()}
+                            placeholder="Function Name Prefix..."
+                            value={query.ffqn_prefix.as_ref().map(|ffqn| ffqn.to_string())}
+                        />
+                        {" "}
+                        <button onclick={on_apply_filters}>{"Filter"}</button>
+
+                        if query != ExecutionQuery::default() {
+                            {" "}
+                            <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={Some(ExecutionQuery::default())}>
+                                {"Clear Filters"}
+                            </Link<Route, ExecutionQuery>>
+                        }
+                    </div>
+                </div>
+
+                <ComponentTree config={ComponentTreeConfig::ExecutionListFiltering} />
+
+                <table class="execution_list">
+                    <tr><th>{"Execution ID"}</th><th>{"Function"}</th><th>{"Status"}</th><th>{"First Scheduled At"}</th></tr>
+                    { rows }
+                </table>
+
+
+                <div class="pagination">
+                    <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
+                        let mut q = query.clone();
+                        q.cursor = None;
+                        q.direction = None;
+                        q
+                    }>
+                        {"<< Latest"}
+                    </Link<Route, ExecutionQuery>>
+
+                    {" | "}
+
+                    if let Some(cursor) = first_item_cursor {
+                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={prev_page_query(cursor)}>
+                            {"< Previous (Newer)"}
+                        </Link<Route, ExecutionQuery>>
+                    } else {
+                        <span class="disabled">{"< Previous"}</span>
+                    }
+
+                    {" | "}
+
+                    if let Some(cursor) = last_item_cursor {
+                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={next_page_query(cursor)}>
+                            {"Next (Older) >"}
+                        </Link<Route, ExecutionQuery>>
+                    } else {
+                        <span class="disabled">{"Next >"}</span>
+                    }
+                </div>
+
+            </>
         }
+    } else {
+        html! { <p>{"Loading..."}</p> }
     }
 }

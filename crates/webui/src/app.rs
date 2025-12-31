@@ -1,13 +1,10 @@
 use crate::{
-    app::query::{BacktraceVersions, ExecutionsCursor},
+    app::query::BacktraceVersions,
     components::{
-        component_list_page::ComponentListPage,
-        debugger::debugger_view::DebuggerView,
-        execution_detail_page::ExecutionLogPage,
-        execution_list_page::{ExecutionFilter, ExecutionListPage},
+        component_list_page::ComponentListPage, debugger::debugger_view::DebuggerView,
+        execution_detail_page::ExecutionLogPage, execution_list_page::ExecutionListPage,
         execution_stub_submit_page::ExecutionStubResultPage,
-        execution_submit_page::ExecutionSubmitPage,
-        not_found::NotFound,
+        execution_submit_page::ExecutionSubmitPage, not_found::NotFound,
         trace::trace_view::TraceView,
     },
     grpc::{
@@ -17,7 +14,6 @@ use crate::{
         version::VersionType,
     },
 };
-use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use std::{fmt::Display, ops::Deref, rc::Rc, str::FromStr};
 use yew::prelude::*;
@@ -33,30 +29,7 @@ pub struct AppState {
 
 pub mod query {
     use super::*;
-
-    #[derive(Clone, PartialEq, derive_more::Display)]
-    pub enum ExecutionsCursor {
-        #[display("{_0}")]
-        ExecutionId(ExecutionId),
-        #[display("C_{_0:?}")]
-        CreatedAt(DateTime<Utc>),
-    }
-
-    impl FromStr for ExecutionsCursor {
-        type Err = ();
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            match s.split_once("_") {
-                Some(("E", rest)) => Ok(ExecutionsCursor::ExecutionId(ExecutionId {
-                    id: format!("E_{rest}"),
-                })),
-                Some(("C", date)) => DateTime::from_str(date)
-                    .map(ExecutionsCursor::CreatedAt)
-                    .map_err(|_| ()),
-                _ => Err(()),
-            }
-        }
-    }
+    use serde::{Deserialize, Serialize};
 
     #[derive(Clone, PartialEq)]
     pub struct BacktraceVersions(Vec<VersionType>);
@@ -116,6 +89,13 @@ pub mod query {
             BacktraceVersions(vec![0])
         }
     }
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+    pub enum Direction {
+        #[default]
+        Older,
+        Newer,
+    }
 }
 
 #[derive(Clone, Routable, PartialEq)]
@@ -137,16 +117,16 @@ pub enum Route {
     },
     #[at("/execution/list")]
     ExecutionList,
-    #[at("/execution/list/older/:cursor")]
-    ExecutionListOlder { cursor: ExecutionsCursor },
-    #[at("/execution/list/older_inc/:cursor")]
-    ExecutionListOlderIncluding { cursor: ExecutionsCursor },
-    #[at("/execution/list/newer/:cursor")]
-    ExecutionListNewer { cursor: ExecutionsCursor },
-    #[at("/execution/list/newer_inc/:cursor")]
-    ExecutionListNewerIncluding { cursor: ExecutionsCursor },
-    #[at("/execution/list/ffqn/:ffqn")]
-    ExecutionListByFfqn { ffqn: FunctionFqn },
+    // #[at("/execution/list/older/:cursor")]
+    // ExecutionListOlder { cursor: ExecutionsCursor },
+    // #[at("/execution/list/older_inc/:cursor")]
+    // ExecutionListOlderIncluding { cursor: ExecutionsCursor },
+    // #[at("/execution/list/newer/:cursor")]
+    // ExecutionListNewer { cursor: ExecutionsCursor },
+    // #[at("/execution/list/newer_inc/:cursor")]
+    // ExecutionListNewerIncluding { cursor: ExecutionsCursor },
+    // #[at("/execution/list/ffqn/:ffqn")]
+    // ExecutionListByFfqn { ffqn: FunctionFqn },
     #[at("/execution/:execution_id/log")]
     ExecutionLog {
         execution_id: grpc_client::ExecutionId,
@@ -184,21 +164,21 @@ impl Route {
             Route::ExecutionLog { execution_id } => {
                 html! { <ExecutionLogPage {execution_id} /> }
             }
-            Route::ExecutionListOlder { cursor } => {
-                html! { <ExecutionListPage filter={ExecutionFilter::Older { cursor, including_cursor: false }} /> }
-            }
-            Route::ExecutionListOlderIncluding { cursor } => {
-                html! { <ExecutionListPage filter={ExecutionFilter::Older { cursor, including_cursor: true }} /> }
-            }
-            Route::ExecutionListNewer { cursor } => {
-                html! { <ExecutionListPage filter={ExecutionFilter::Newer { cursor, including_cursor: false }} /> }
-            }
-            Route::ExecutionListNewerIncluding { cursor } => {
-                html! { <ExecutionListPage filter={ExecutionFilter::Newer { cursor, including_cursor: true }} /> }
-            }
-            Route::ExecutionListByFfqn { ffqn } => {
-                html! { <ExecutionListPage filter={ExecutionFilter::Ffqn { ffqn } } /> }
-            }
+            // Route::ExecutionListOlder { cursor } => {
+            //     html! { <ExecutionListPage filter={ExecutionFilter::Older { cursor, including_cursor: false }} /> }
+            // }
+            // Route::ExecutionListOlderIncluding { cursor } => {
+            //     html! { <ExecutionListPage filter={ExecutionFilter::Older { cursor, including_cursor: true }} /> }
+            // }
+            // Route::ExecutionListNewer { cursor } => {
+            //     html! { <ExecutionListPage filter={ExecutionFilter::Newer { cursor, including_cursor: false }} /> }
+            // }
+            // Route::ExecutionListNewerIncluding { cursor } => {
+            //     html! { <ExecutionListPage filter={ExecutionFilter::Newer { cursor, including_cursor: true }} /> }
+            // }
+            // Route::ExecutionListByFfqn { ffqn } => {
+            //     html! { <ExecutionListPage filter={ExecutionFilter::Ffqn { ffqn } } /> }
+            // }
             Route::ExecutionTrace { execution_id } => {
                 html! { <TraceView {execution_id} /> }
             }

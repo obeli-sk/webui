@@ -25,7 +25,9 @@ log.workspace = true
 prost-wkt-types.workspace = true
 prost.workspace = true
 rand = { workspace = true, features = ["small_rng", "std"] }
+serde.workspace = true
 serde_json.workspace = true
+serde_with.workspace = true
 syntect = { workspace = true, features = ["html"] }
 tonic = { workspace = true, default-features = false, features = [
     "codegen",

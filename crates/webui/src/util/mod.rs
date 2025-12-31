@@ -1,3 +1,4 @@
+pub mod time;
 pub mod wit_highlighter;
 
 use std::rc::Rc;
