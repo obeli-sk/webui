@@ -1,4 +1,4 @@
-use crate::app::BacktraceVersions;
+use crate::app::query::BacktraceVersions;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::version::VersionType;
 use crate::{

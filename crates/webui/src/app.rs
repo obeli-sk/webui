@@ -1,4 +1,5 @@
 use crate::{
+    app::query::{BacktraceVersions, ExecutionsCursor},
     components::{
         component_list_page::ComponentListPage,
         debugger::debugger_view::DebuggerView,
@@ -30,86 +31,90 @@ pub struct AppState {
         hashbrown::HashMap<FunctionFqn, (grpc_client::FunctionDetail, grpc_client::ComponentId)>,
 }
 
-#[derive(Clone, PartialEq, derive_more::Display)]
-pub enum ExecutionsCursor {
-    #[display("{_0}")]
-    ExecutionId(ExecutionId),
-    #[display("C_{_0:?}")]
-    CreatedAt(DateTime<Utc>),
-}
+pub mod query {
+    use super::*;
 
-impl FromStr for ExecutionsCursor {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.split_once("_") {
-            Some(("E", rest)) => Ok(ExecutionsCursor::ExecutionId(ExecutionId {
-                id: format!("E_{rest}"),
-            })),
-            Some(("C", date)) => DateTime::from_str(date)
-                .map(ExecutionsCursor::CreatedAt)
-                .map_err(|_| ()),
-            _ => Err(()),
-        }
+    #[derive(Clone, PartialEq, derive_more::Display)]
+    pub enum ExecutionsCursor {
+        #[display("{_0}")]
+        ExecutionId(ExecutionId),
+        #[display("C_{_0:?}")]
+        CreatedAt(DateTime<Utc>),
     }
-}
 
-#[derive(Clone, PartialEq)]
-pub struct BacktraceVersions(Vec<VersionType>);
-const BACKTRACE_VERSIONS_SEPARATOR: char = '_';
-impl Display for BacktraceVersions {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (idx, version) in self.0.iter().enumerate() {
-            if idx == 0 {
-                write!(f, "{version}")?;
-            } else {
-                write!(f, "{BACKTRACE_VERSIONS_SEPARATOR}{version}")?;
+    impl FromStr for ExecutionsCursor {
+        type Err = ();
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s.split_once("_") {
+                Some(("E", rest)) => Ok(ExecutionsCursor::ExecutionId(ExecutionId {
+                    id: format!("E_{rest}"),
+                })),
+                Some(("C", date)) => DateTime::from_str(date)
+                    .map(ExecutionsCursor::CreatedAt)
+                    .map_err(|_| ()),
+                _ => Err(()),
             }
         }
-        Ok(())
     }
-}
 
-impl FromStr for BacktraceVersions {
-    type Err = ();
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let mut versions = Vec::new();
-        for split in input.split(BACKTRACE_VERSIONS_SEPARATOR) {
-            let version: VersionType = split.parse().map_err(|_| ())?;
-            versions.push(version);
+    #[derive(Clone, PartialEq)]
+    pub struct BacktraceVersions(Vec<VersionType>);
+    const BACKTRACE_VERSIONS_SEPARATOR: char = '_';
+    impl Display for BacktraceVersions {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for (idx, version) in self.0.iter().enumerate() {
+                if idx == 0 {
+                    write!(f, "{version}")?;
+                } else {
+                    write!(f, "{BACKTRACE_VERSIONS_SEPARATOR}{version}")?;
+                }
+            }
+            Ok(())
         }
-        Ok(BacktraceVersions(versions))
     }
-}
-impl From<VersionType> for BacktraceVersions {
-    fn from(value: VersionType) -> Self {
-        BacktraceVersions(vec![value])
+
+    impl FromStr for BacktraceVersions {
+        type Err = ();
+
+        fn from_str(input: &str) -> Result<Self, Self::Err> {
+            let mut versions = Vec::new();
+            for split in input.split(BACKTRACE_VERSIONS_SEPARATOR) {
+                let version: VersionType = split.parse().map_err(|_| ())?;
+                versions.push(version);
+            }
+            Ok(BacktraceVersions(versions))
+        }
     }
-}
-impl BacktraceVersions {
-    pub fn last(&self) -> VersionType {
-        *self.0.last().expect("must contain at least one element")
+    impl From<VersionType> for BacktraceVersions {
+        fn from(value: VersionType) -> Self {
+            BacktraceVersions(vec![value])
+        }
     }
-    pub fn step_into(&self) -> BacktraceVersions {
-        let mut ret = self.clone();
-        ret.0.push(0);
-        ret
+    impl BacktraceVersions {
+        pub fn last(&self) -> VersionType {
+            *self.0.last().expect("must contain at least one element")
+        }
+        pub fn step_into(&self) -> BacktraceVersions {
+            let mut ret = self.clone();
+            ret.0.push(0);
+            ret
+        }
+        pub fn change(&self, version: VersionType) -> BacktraceVersions {
+            let mut ret = self.clone();
+            *ret.0.last_mut().expect("must contain at least one element") = version;
+            ret
+        }
+        pub fn step_out(&self) -> Option<BacktraceVersions> {
+            let mut ret = self.clone();
+            ret.0.pop();
+            if ret.0.is_empty() { None } else { Some(ret) }
+        }
     }
-    pub fn change(&self, version: VersionType) -> BacktraceVersions {
-        let mut ret = self.clone();
-        *ret.0.last_mut().expect("must contain at least one element") = version;
-        ret
-    }
-    pub fn step_out(&self) -> Option<BacktraceVersions> {
-        let mut ret = self.clone();
-        ret.0.pop();
-        if ret.0.is_empty() { None } else { Some(ret) }
-    }
-}
-impl Default for BacktraceVersions {
-    fn default() -> Self {
-        BacktraceVersions(vec![0])
+    impl Default for BacktraceVersions {
+        fn default() -> Self {
+            BacktraceVersions(vec![0])
+        }
     }
 }
 

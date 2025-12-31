@@ -1,6 +1,6 @@
 use crate::{
     BASE_URL,
-    app::{ExecutionsCursor, Route},
+    app::{Route, query::ExecutionsCursor},
     components::{
         component_tree::{ComponentTree, ComponentTreeConfig},
         execution_status::ExecutionStatus,

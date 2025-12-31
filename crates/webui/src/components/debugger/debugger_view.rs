@@ -1,6 +1,6 @@
 use crate::{
     BASE_URL,
-    app::{BacktraceVersions, Route},
+    app::{Route, query::BacktraceVersions},
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},

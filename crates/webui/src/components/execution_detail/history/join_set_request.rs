@@ -1,5 +1,5 @@
 use crate::{
-    app::{BacktraceVersions, Route},
+    app::{Route, query::BacktraceVersions},
     components::{
         execution_detail::tree_component::TreeComponent, execution_header::ExecutionLink,
     },

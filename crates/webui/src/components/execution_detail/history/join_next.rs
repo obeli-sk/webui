@@ -1,4 +1,4 @@
-use crate::app::BacktraceVersions;
+use crate::app::query::BacktraceVersions;
 use crate::components::execution_header::ExecutionLink;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::grpc_client::join_set_response_event::{ChildExecutionFinished, DelayFinished};
