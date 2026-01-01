@@ -30,6 +30,7 @@ use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{debug, trace};
 use std::{ops::Deref as _, rc::Rc};
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
@@ -74,6 +75,7 @@ enum TraceviewStateAction {
         execution_id: ExecutionId,
         cursors: Cursors,
     },
+    SetAutoload(bool),
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -83,6 +85,7 @@ struct TraceViewState {
     responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
     statuses: HashMap<ExecutionId, grpc_client::execution_status::Status>,
     execution_ids_to_show_http_traces: HashMap<ExecutionId, bool>,
+    autoload: bool,
 }
 impl Reducible for TraceViewState {
     type Action = TraceviewStateAction;
@@ -161,6 +164,11 @@ impl Reducible for TraceViewState {
                     .insert(execution_id, show);
                 Rc::from(this)
             }
+            TraceviewStateAction::SetAutoload(autoload) => {
+                let mut this = self.as_ref().clone();
+                this.autoload = autoload;
+                Rc::from(this)
+            }
         }
     }
 }
@@ -183,6 +191,11 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
 
+    // Container to collect IDs that need loading during tree computation
+    let missing_executions = use_mut_ref(Vec::new);
+    // Clear previous render's collection
+    missing_executions.borrow_mut().clear();
+
     let root_trace = {
         compute_root_trace(
             execution_id,
@@ -191,8 +204,26 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             &trace_view.statuses,
             &trace_view_state,
             &app_state,
+            &mut missing_executions.borrow_mut(),
         )
     };
+
+    // Effect to handle autoloading
+    use_effect({
+        let trace_view_state = trace_view_state.clone();
+        let missing_executions = missing_executions.clone();
+        move || {
+            if trace_view_state.autoload {
+                let missing = missing_executions.borrow();
+                if !missing.is_empty() {
+                    for id in missing.iter() {
+                        trace_view_state.dispatch(TraceviewStateAction::AddExecutionId(id.clone()));
+                    }
+                }
+            }
+            || {}
+        }
+    });
 
     let execution_log = {
         let events = &trace_view.events;
@@ -227,11 +258,30 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             .collect::<Vec<_>>()
     };
 
+    let on_autoload_change = {
+        let trace_view_state = trace_view_state.clone();
+        Callback::from(move |e: Event| {
+            let target: HtmlInputElement = e.target_unchecked_into();
+            trace_view_state.dispatch(TraceviewStateAction::SetAutoload(target.checked()));
+        })
+    };
+
     html! {<>
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
 
         <div class="trace-layout-container">
             <div class="trace-view">
+                <div class="trace-controls" style="margin-bottom: 10px;">
+                    <label style="cursor: pointer; user-select: none;">
+                        <input
+                            type="checkbox"
+                            checked={trace_view.autoload}
+                            onchange={on_autoload_change}
+                            style="margin-right: 5px;"
+                        />
+                        {"Autoload children"}
+                    </label>
+                </div>
                 if let Some(root_trace) = root_trace {
                     <ExecutionTrace
                         root_scheduled_at={root_trace.scheduled_at}
@@ -335,6 +385,7 @@ fn compute_root_trace(
     statuses_map: &HashMap<ExecutionId, grpc_client::execution_status::Status>,
     trace_view_state: &UseReducerHandle<TraceViewState>,
     app_state: &AppState,
+    missing_ids: &mut Vec<ExecutionId>,
 ) -> Option<TraceDataRoot> {
     let events = match events_map.get(execution_id) {
         Some(events) if !events.is_empty() => events,
@@ -486,6 +537,7 @@ fn compute_root_trace(
 
                         if !trace_view_state.deref().execution_ids_to_fetch_state.contains_key(child_execution_id) {
                             loadable_child_ids.push(child_execution_id.clone());
+                            missing_ids.push(child_execution_id.clone());
                         }
 
                         if let Some(child_root) = compute_root_trace(
@@ -494,7 +546,8 @@ fn compute_root_trace(
                             responses_map,
                             statuses_map,
                             trace_view_state,
-                            app_state
+                            app_state,
+                            missing_ids,
                         ) {
                             last_event_at = last_event_at.max(child_root.last_event_at);
                             Some(vec![TraceData::Root(child_root)])
