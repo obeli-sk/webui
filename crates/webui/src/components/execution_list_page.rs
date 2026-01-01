@@ -254,8 +254,6 @@ pub fn execution_list_page() -> Html {
             let input: web_sys::HtmlInputElement = e.target_unchecked_into();
             let mut new_query = query.clone();
             new_query.show_derived = input.checked();
-            // We usually want to reset pagination when changing view modes
-            new_query.cursor = None;
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
@@ -267,7 +265,6 @@ pub fn execution_list_page() -> Html {
             let input: web_sys::HtmlInputElement = e.target_unchecked_into();
             let mut new_query = query.clone();
             new_query.hide_finished = input.checked();
-            new_query.cursor = None;
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
