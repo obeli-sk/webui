@@ -290,7 +290,7 @@ pub fn execution_list_page() -> Html {
                 ".".to_html()
             };
 
-            let first_scheduled_at: DateTime<Utc> = execution.first_scheduled_at.expect("`first_scheduled_at` is sent").into();
+            let created_at: DateTime<Utc> = execution.created_at.expect("`created_at` is sent").into();
             let now = Utc::now();
             html! {
                 <tr key={execution_id.id.clone()}>
@@ -327,8 +327,9 @@ pub fn execution_list_page() -> Html {
                         <ExecutionStatus {status} {execution_id} print_finished_status={false} />
                     </td>
                     <td>
-                        <label title={first_scheduled_at.to_string()}>
-                            {relative_time(first_scheduled_at, now)}{" ago"}
+                        // Created At column
+                        <label title={created_at.to_string()}>
+                            {relative_time(created_at, now)}{" ago"}
                         </label>
                     </td>
                 </tr>
@@ -425,7 +426,7 @@ pub fn execution_list_page() -> Html {
                 <ComponentTree config={ComponentTreeConfig::ExecutionListFiltering} />
 
                 <table class="execution_list">
-                    <tr><th>{"Execution ID"}</th><th>{"Function"}</th><th>{"Status"}</th><th>{"First Scheduled At"}</th></tr>
+                    <tr><th>{"Execution ID"}</th><th>{"Function"}</th><th>{"Status"}</th><th>{"Created At"}</th></tr>
                     { rows }
                 </table>
 
