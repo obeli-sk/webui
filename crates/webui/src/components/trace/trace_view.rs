@@ -60,11 +60,14 @@ enum TraceviewStateAction {
         execution_id: ExecutionId,
         show: bool,
     },
+    // About to fetch the data.
     SetPending(ExecutionId),
+    // Got data
     SavePage {
         execution_id: ExecutionId,
         new_events: Vec<ExecutionEvent>,
         new_responses: Vec<ResponseWithCursor>,
+        current_status: grpc_client::execution_status::Status,
         is_finished: bool,
     },
     RequestNextPage {
@@ -78,6 +81,7 @@ struct TraceViewState {
     execution_ids_to_fetch_state: HashMap<ExecutionId, ExecutionFetchState>,
     events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
     responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
+    statuses: HashMap<ExecutionId, grpc_client::execution_status::Status>,
     execution_ids_to_show_http_traces: HashMap<ExecutionId, bool>,
 }
 impl Reducible for TraceViewState {
@@ -119,10 +123,11 @@ impl Reducible for TraceViewState {
                 execution_id,
                 new_events,
                 new_responses,
+                current_status,
                 is_finished: finished,
             } => {
                 let mut this = self.as_ref().clone();
-
+                this.statuses.insert(execution_id.clone(), current_status);
                 this.events
                     .entry(execution_id.clone())
                     .or_default()
@@ -140,14 +145,14 @@ impl Reducible for TraceViewState {
                     let execution_responses = join_set_to_resps.entry(join_set_id).or_default();
                     execution_responses.push(response);
                 }
-                let new_state = if finished {
+                let new_fetch_state = if finished {
                     ExecutionFetchState::Finished
                 } else {
                     ExecutionFetchState::Pending
+                    // Will be followed by ExecutionFetchState::Requested
                 };
-                // Will be followed by ExecutionFetchState::RequestNextPage
                 this.execution_ids_to_fetch_state
-                    .insert(execution_id, new_state);
+                    .insert(execution_id, new_fetch_state);
                 Rc::from(this)
             }
             TraceviewStateAction::HttpTracesSwitch { execution_id, show } => {
@@ -179,12 +184,11 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         use_context::<AppState>().expect("AppState context is set when starting the App");
 
     let root_trace = {
-        let events_map = &trace_view.events;
-        let responses_map = &trace_view.responses;
         compute_root_trace(
             execution_id,
-            events_map,
-            responses_map,
+            &trace_view.events,
+            &trace_view.responses,
+            &trace_view.statuses,
             &trace_view_state,
             &app_state,
         )
@@ -265,7 +269,7 @@ fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
                     tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                 );
-            let new_events_and_responses = execution_client
+            let server_resp = execution_client
                 .list_execution_events_and_responses(
                     grpc_client::ListExecutionEventsAndResponsesRequest {
                         execution_id: Some(execution_id.clone()),
@@ -282,11 +286,11 @@ fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
                 .into_inner();
             debug!(
                 "{execution_id} Got {} events, {} responses",
-                new_events_and_responses.events.len(),
-                new_events_and_responses.responses.len()
+                server_resp.events.len(),
+                server_resp.responses.len()
             );
 
-            let last_event = new_events_and_responses.events.last();
+            let last_event = server_resp.events.last();
             let is_finished = matches!(
                 last_event.and_then(|e| e.event.as_ref()),
                 Some(execution_event::Event::Finished(_))
@@ -295,7 +299,7 @@ fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
                 version_from: last_event
                     .map(|e| e.version + 1)
                     .unwrap_or(cursors.version_from),
-                responses_cursor_from: new_events_and_responses
+                responses_cursor_from: server_resp
                     .responses
                     .last()
                     .map(|resp| resp.cursor)
@@ -303,8 +307,13 @@ fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
             };
             trace_view_state.dispatch(TraceviewStateAction::SavePage {
                 execution_id: execution_id.clone(),
-                new_events: new_events_and_responses.events,
-                new_responses: new_events_and_responses.responses,
+                new_events: server_resp.events,
+                new_responses: server_resp.responses,
+                current_status: server_resp
+                    .current_status
+                    .expect("`current_status` is sent")
+                    .status
+                    .expect("`status` is sent"),
                 is_finished,
             });
             if !is_finished {
@@ -323,6 +332,7 @@ fn compute_root_trace(
     execution_id: &ExecutionId,
     events_map: &HashMap<ExecutionId, Vec<ExecutionEvent>>,
     responses_map: &HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
+    statuses_map: &HashMap<ExecutionId, grpc_client::execution_status::Status>,
     trace_view_state: &UseReducerHandle<TraceViewState>,
     app_state: &AppState,
 ) -> Option<TraceDataRoot> {
@@ -482,6 +492,7 @@ fn compute_root_trace(
                             child_execution_id,
                             events_map,
                             responses_map,
+                            statuses_map,
                             trace_view_state,
                             app_state
                         ) {
@@ -490,14 +501,14 @@ fn compute_root_trace(
                         } else {
                             // Child execution has no events loaded yet.
                             let started_at = DateTime::from(event.created_at.expect("event.created_at must be sent"));
-                            let (status, finished_at, interval_title) =
+                            let (interval_title, status, finished_at) =
                                 if let Some((result_detail_value, finished_at)) = child_ids_to_results.get(child_execution_id) {
                                     let status = BusyIntervalStatus::from(result_detail_value);
                                     let duration = (*finished_at - started_at).to_std().expect("started_at must be <= finished_at");
-                                    (status, Some(*finished_at), format!("{status} in {duration:?}"))
+                                    (format!("{status} in {duration:?}"), status, Some(*finished_at))
                                 } else {
                                     let status = BusyIntervalStatus::ExecutionUnfinishedWithoutPendingState; // We don't know the pending state yet.
-                                    (status, None, status.to_string())
+                                    (status.to_string(), status, None)
                                 };
                             Some(vec![
                                 TraceData::Child(TraceDataChild {
@@ -673,7 +684,7 @@ fn compute_root_trace(
     let name = html! {
         <>
             {execution_id.render_execution_parts(true, ExecutionLink::Trace)}
-            {" "}{&ffqn.ifc_fqn.ifc_name}{"."}{&ffqn.function_name}
+            {" .../"}{&ffqn.ifc_fqn.ifc_name}{"."}{&ffqn.function_name}
             {" "}
             {maybe_stub_link}
         </>
@@ -687,6 +698,7 @@ fn compute_root_trace(
         children,
         load_button,
         expand_collapse: http_traces_button,
+        current_status: statuses_map.get(execution_id).cloned(),
     })
 }
 

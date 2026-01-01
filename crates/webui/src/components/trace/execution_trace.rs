@@ -53,7 +53,7 @@ pub fn execution_trace(props: &ExecutionStepProps) -> Html {
     } else {
         format!("{:?}", props.data.busy_duration(props.root_last_event_at))
     };
-    let last_status = props.data.busy().last().map(|interval| interval.status);
+    let last_status = props.data.current_status();
 
     html! {
         <div class="execution-trace">
@@ -69,7 +69,7 @@ pub fn execution_trace(props: &ExecutionStepProps) -> Html {
                 if let Some(status) = last_status {
                     <span class="step-status">
                         {props.data.load_button()}
-                        {status.to_string()}
+                        {status}
                     </span>
                 }
                 <div class="relative-duration-container">

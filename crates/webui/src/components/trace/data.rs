@@ -1,6 +1,7 @@
+use crate::{components::execution_status::status_to_string, grpc::grpc_client};
 use chrono::{DateTime, TimeDelta, Utc};
 use std::time::Duration;
-use yew::Html;
+use yew::{Html, ToHtml};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TraceData {
@@ -58,9 +59,23 @@ impl TraceData {
             TraceData::Child(_) => None,
         }
     }
+
+    pub fn current_status(&self) -> Option<Html> {
+        if let TraceData::Root(TraceDataRoot {
+            current_status: Some(status),
+            ..
+        }) = self
+        {
+            Some(status_to_string(status))
+        } else {
+            self.busy()
+                .last()
+                .map(|interval| interval.status.to_string().to_html())
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, derive_more::Display)]
+#[derive(Debug, Clone, PartialEq, derive_more::Display)]
 pub enum BusyIntervalStatus {
     #[display("Finished")]
     HttpTraceFinished(u32),
@@ -140,6 +155,7 @@ pub struct TraceDataRoot {
     pub children: Vec<TraceData>,
     pub load_button: Option<Html>,
     pub expand_collapse: Option<Html>,
+    pub current_status: Option<grpc_client::execution_status::Status>,
 }
 impl TraceDataRoot {
     pub fn total_duration(&self) -> Duration {

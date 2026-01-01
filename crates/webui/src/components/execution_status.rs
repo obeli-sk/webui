@@ -168,7 +168,7 @@ pub fn execution_status(
     }
 }
 
-fn status_to_string(status: &grpc_client::execution_status::Status) -> Html {
+pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html {
     match status {
         grpc_client::execution_status::Status::Locked(Locked {
             lock_expires_at, ..
@@ -191,7 +191,7 @@ fn status_to_string(status: &grpc_client::execution_status::Status) -> Html {
             match &result_kind.value {
                 Some(grpc_client::result_kind::Value::Ok(_)) => html! {"Finished OK"},
                 Some(grpc_client::result_kind::Value::FallibleError(_)) => {
-                    html! {"Finished with Err variant"}
+                    html! {"Finished with error"}
                 }
                 Some(grpc_client::result_kind::Value::ExecutionFailureKind(kind_i32)) => {
                     match grpc_client::ExecutionFailureKind::try_from(*kind_i32) {
@@ -200,10 +200,10 @@ fn status_to_string(status: &grpc_client::execution_status::Status) -> Html {
                                 html! {"Timeout"}
                             }
                             grpc_client::ExecutionFailureKind::NondeterminismDetected => {
-                                html! { "Nondeterminism Detected" }
+                                html! { "Nondeterminism detected" }
                             }
                             grpc_client::ExecutionFailureKind::OutOfFuel => {
-                                html! { "Out of Fuel" }
+                                html! { "Out of fuel" }
                             }
                             grpc_client::ExecutionFailureKind::Cancelled => {
                                 html! { "Cancelled" }
