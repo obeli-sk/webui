@@ -13,7 +13,7 @@ use crate::{
             list_executions_request::{NewerThan, OlderThan, Pagination, cursor},
         },
     },
-    util::time::relative_time,
+    util::time::{TimeGranularity, human_formatted_timedelta, relative_time},
 };
 use chrono::{DateTime, Utc};
 use log::debug;
@@ -292,6 +292,14 @@ pub fn execution_list_page() -> Html {
             };
 
             let created_at: DateTime<Utc> = execution.created_at.expect("`created_at` is sent").into();
+            let durated = if let Some( grpc_client::ExecutionStatus{ status: Some(status),..}) = &execution.current_status
+                && let grpc_client::execution_status::Status::Finished(finished) = status
+
+             {
+                Some(DateTime::from(finished.finished_at.unwrap()) - DateTime::from(execution.first_scheduled_at.unwrap()))
+            } else {
+                None
+            };
             let now = Utc::now();
             html! {
                 <tr key={execution_id.id.clone()}>
@@ -329,9 +337,17 @@ pub fn execution_list_page() -> Html {
                     </td>
                     <td>
                         // Created At column
-                        <label title={created_at.to_string()}>
+                        <div title={created_at.to_string()}>
+                            {"Created "}
                             {relative_time(created_at, now)}{" ago"}
-                        </label>
+                        </div>
+                        // Duration
+                        if let Some(durated) = durated {
+                            <div title={durated.to_string()}>
+                                {"Took "}
+                                {human_formatted_timedelta(durated, TimeGranularity::Fine)}
+                            </div>
+                        }
                     </td>
                 </tr>
             }
@@ -432,7 +448,12 @@ pub fn execution_list_page() -> Html {
                 <ComponentTree config={ComponentTreeConfig::ExecutionListFiltering} />
 
                 <table class="execution_list">
-                    <tr><th>{"Execution ID"}</th><th>{"Function"}</th><th>{"Status"}</th><th>{"Created At"}</th></tr>
+                    <tr>
+                        <th>{"Execution ID"}</th>
+                        <th>{"Function"}</th>
+                        <th>{"Status"}</th>
+                        <th>{"Timing"}</th>
+                    </tr>
                     { rows }
                 </table>
 
