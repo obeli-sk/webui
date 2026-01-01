@@ -93,8 +93,8 @@ pub enum BusyIntervalStatus {
     ExecutionErrorPermanent,
     #[display("Locked")]
     ExecutionLocked,
-    #[display("Finished")]
-    ExecutionFinished,
+    #[display("Finished OK")]
+    ExecutionFinishedOk,
     #[display("Finished with error")]
     ExecutionReturnedErrorVariant,
     #[display("Unfinished")]
@@ -184,7 +184,7 @@ mod grpc {
     impl From<&result_detail::Value> for BusyIntervalStatus {
         fn from(result_detail_value: &result_detail::Value) -> Self {
             match result_detail_value {
-                result_detail::Value::Ok(_) => BusyIntervalStatus::ExecutionFinished,
+                result_detail::Value::Ok(_) => BusyIntervalStatus::ExecutionFinishedOk,
                 result_detail::Value::FallibleError(_) => {
                     BusyIntervalStatus::ExecutionReturnedErrorVariant
                 }
@@ -211,7 +211,7 @@ mod css {
                 BusyIntervalStatus::ExecutionErrorTemporary => "busy-execution-error-temporary",
                 BusyIntervalStatus::ExecutionErrorPermanent => "busy-execution-error-permanent",
                 BusyIntervalStatus::ExecutionLocked => "busy-execution-locked",
-                BusyIntervalStatus::ExecutionFinished => "busy-execution-finished",
+                BusyIntervalStatus::ExecutionFinishedOk => "busy-execution-finished",
                 BusyIntervalStatus::ExecutionReturnedErrorVariant => {
                     "busy-execution-returned-error-variant"
                 }
