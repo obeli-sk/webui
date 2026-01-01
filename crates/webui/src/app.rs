@@ -29,7 +29,6 @@ pub struct AppState {
 
 pub mod query {
     use super::*;
-    use serde::{Deserialize, Serialize};
 
     #[derive(Clone, PartialEq)]
     pub struct BacktraceVersions(Vec<VersionType>);
@@ -88,13 +87,6 @@ pub mod query {
         fn default() -> Self {
             BacktraceVersions(vec![0])
         }
-    }
-
-    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
-    pub enum Direction {
-        #[default]
-        Older,
-        Newer,
     }
 }
 

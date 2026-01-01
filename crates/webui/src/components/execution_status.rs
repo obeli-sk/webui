@@ -47,7 +47,7 @@ pub fn execution_status(
     );
     // If the status was passed in props, store it inside `status_state`.
     let status_state = use_state(move || {
-        debug!("ExecutionStatus {execution_id} use_state status:{status:?}");
+        trace!("ExecutionStatus {execution_id} use_state status:{status:?}");
         status_as_message(status.as_ref())
     });
     {
@@ -119,7 +119,7 @@ pub fn execution_status(
                     })
                 }
                 move || {
-                    debug!("Cleaning up {execution_id}");
+                    trace!("Cleaning up {execution_id}");
                     if let Some(cancel_tx) = cancel_tx {
                         let res = cancel_tx.send(());
                         debug!("[{connectin_id}] <ExecutionStatus /> cacelling: {res:?}");

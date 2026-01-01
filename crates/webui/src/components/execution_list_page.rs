@@ -1,6 +1,6 @@
 use crate::{
     BASE_URL,
-    app::{AppState, Route, query::Direction},
+    app::{AppState, Route},
     components::{
         component_tree::{ComponentTree, ComponentTreeConfig},
         execution_status::ExecutionStatus,
@@ -39,6 +39,28 @@ pub struct ExecutionQuery {
     pub direction: Option<Direction>,
     #[serde(default)]
     pub include_cursor: bool,
+}
+impl ExecutionQuery {
+    fn flip(mut self, old_direction: Direction) -> ExecutionQuery {
+        self.direction = Some(old_direction.flip());
+        self.include_cursor = !self.include_cursor;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub enum Direction {
+    #[default]
+    Older,
+    Newer,
+}
+impl Direction {
+    fn flip(&self) -> Direction {
+        match self {
+            Direction::Older => Direction::Newer,
+            Direction::Newer => Direction::Older,
+        }
+    }
 }
 
 #[derive(
@@ -304,30 +326,35 @@ pub fn execution_list_page() -> Html {
             .map(|cursor| cursor.as_type())
             .unwrap_or_default();
 
-        let first_item_cursor = response
-            .executions
-            .first()
-            .map(|e| ExecutionsCursor::from_summary(e, cursor_type));
-        let last_item_cursor = response
-            .executions
-            .last()
-            .map(|e| ExecutionsCursor::from_summary(e, cursor_type));
-
-        // Pagination Query Generators
-        let prev_page_query = |cursor| {
-            let mut q = query.clone();
-            q.cursor = Some(cursor);
-            q.direction = Some(Direction::Newer); // "Previous" means newer items in a log list
-            q.include_cursor = false;
-            q
+        let newer_page_query = if let Some(exe) = response.executions.first() {
+            let mut query = query.clone();
+            query.cursor = Some(ExecutionsCursor::from_summary(exe, cursor_type));
+            query.direction = Some(Direction::Newer);
+            query.include_cursor = false;
+            Some(query)
+        } else if let Some(direction) = query.direction
+            && direction == Direction::Older
+            && !query.include_cursor
+            && query.cursor.is_some()
+        {
+            Some(query.clone().flip(direction))
+        } else {
+            None
         };
-
-        let next_page_query = |cursor| {
-            let mut q = query.clone();
-            q.cursor = Some(cursor);
-            q.direction = Some(Direction::Older); // "Next" means older items
-            q.include_cursor = false;
-            q
+        let older_page_query = if let Some(exe) = response.executions.last() {
+            let mut query = query.clone();
+            query.cursor = Some(ExecutionsCursor::from_summary(exe, cursor_type));
+            query.direction = Some(Direction::Older);
+            query.include_cursor = false;
+            Some(query)
+        } else if let Some(direction) = query.direction
+            && direction == Direction::Newer
+            && !query.include_cursor
+            && query.cursor.is_some()
+        {
+            Some(query.clone().flip(direction))
+        } else {
+            None
         };
 
         html! {
@@ -399,22 +426,22 @@ pub fn execution_list_page() -> Html {
 
                     {" | "}
 
-                    if let Some(cursor) = first_item_cursor {
-                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={prev_page_query(cursor)}>
-                            {"< Previous (Newer)"}
+                    if let Some(query) = newer_page_query {
+                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} {query}>
+                            {"< Newer"}
                         </Link<Route, ExecutionQuery>>
                     } else {
-                        <span class="disabled">{"< Previous"}</span>
+                        <span class="disabled">{"< Newer"}</span>
                     }
 
                     {" | "}
 
-                    if let Some(cursor) = last_item_cursor {
-                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={next_page_query(cursor)}>
-                            {"Next (Older) >"}
+                    if let Some(query) = older_page_query {
+                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} {query}>
+                            {"Older >"}
                         </Link<Route, ExecutionQuery>>
                     } else {
-                        <span class="disabled">{"Next >"}</span>
+                        <span class="disabled">{"Older >"}</span>
                     }
                 </div>
 
