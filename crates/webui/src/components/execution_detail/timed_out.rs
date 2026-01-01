@@ -1,5 +1,5 @@
 use crate::{
-    components::execution_detail::tree_component::TreeComponent,
+    components::execution_detail::{http_trace::attach_http_traces, tree_component::TreeComponent},
     grpc::{grpc_client, version::VersionType},
 };
 use chrono::DateTime;
@@ -58,6 +58,9 @@ impl TemporarilyTimedOutEventProps {
             InsertBehavior::UnderNode(&timed_out_node),
         )
         .unwrap();
+
+        // Add HTTP Traces
+        attach_http_traces(&mut tree, &timed_out_node, &self.event.http_client_traces);
 
         TreeData::from(tree)
     }

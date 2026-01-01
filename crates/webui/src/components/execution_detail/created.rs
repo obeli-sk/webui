@@ -159,7 +159,7 @@ impl ProcessedProps {
                 )
                 .unwrap();
             let _ =
-                insert_json_into_tree(&mut tree, param_name_node, JsonValue::Parsed(&param_value));
+                insert_json_into_tree(&mut tree, &param_name_node, JsonValue::Parsed(&param_value));
         }
         // component id
         tree.insert(

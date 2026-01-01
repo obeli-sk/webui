@@ -1,17 +1,12 @@
-use crate::{components::execution_detail::tree_component::TreeComponent, grpc::grpc_client};
+use crate::grpc::grpc_client;
 use chrono::DateTime;
 use yew::prelude::*;
 use yewprint::{
-    Icon, NodeData, TreeData,
-    id_tree::{InsertBehavior, Node, NodeId, Tree, TreeBuilder},
+    Icon, NodeData,
+    id_tree::{InsertBehavior, Node, NodeId, Tree},
 };
 
-#[derive(Properties, PartialEq, Clone)]
-pub struct HttpTraceEventProps {
-    pub http_client_traces: Vec<grpc_client::HttpClientTrace>,
-}
-
-fn attach_http_traces(
+pub fn attach_http_traces(
     tree: &mut Tree<NodeData<u32>>,
     root_id: &NodeId,
     traces: &[grpc_client::HttpClientTrace],
@@ -114,24 +109,5 @@ fn attach_http_traces(
             }
             None => {}
         }
-    }
-}
-
-impl HttpTraceEventProps {
-    fn construct_tree(&self) -> TreeData<u32> {
-        let mut tree = TreeBuilder::new().build();
-        let root_id = tree
-            .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
-            .unwrap();
-        attach_http_traces(&mut tree, &root_id, &self.http_client_traces);
-        TreeData::from(tree)
-    }
-}
-
-#[function_component(HttpTraceEvent)]
-pub fn http_trace(props: &HttpTraceEventProps) -> Html {
-    let tree = props.construct_tree();
-    html! {
-        <TreeComponent {tree} />
     }
 }

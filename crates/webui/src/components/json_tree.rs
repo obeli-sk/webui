@@ -92,7 +92,7 @@ impl JsonValue<'_> {
 
 pub fn insert_json_into_tree(
     tree: &mut id_tree::Tree<NodeData<u32>>,
-    parent_node: NodeId,
+    parent_node: &NodeId,
     json_data: JsonValue<'_>,
 ) -> Result<(), serde_json::Error> {
     let value_node = tree
@@ -103,7 +103,7 @@ pub fn insert_json_into_tree(
                 has_caret: true,
                 ..Default::default()
             }),
-            InsertBehavior::UnderNode(&parent_node),
+            InsertBehavior::UnderNode(parent_node),
         )
         .unwrap();
 
@@ -114,7 +114,7 @@ pub fn insert_json_into_tree(
             label: html! {<> {"Serialized: "} <input type="text" readonly=true value={json_string} /> </>},
             ..Default::default()
         }),
-        InsertBehavior::UnderNode(&parent_node),
+        InsertBehavior::UnderNode(parent_node),
     )
     .unwrap();
 

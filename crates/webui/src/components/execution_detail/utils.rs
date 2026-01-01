@@ -7,7 +7,6 @@ use crate::components::execution_detail::history::join_set_created::HistoryJoinS
 use crate::components::execution_detail::history::join_set_request::HistoryJoinSetRequestEvent;
 use crate::components::execution_detail::history::persist::HistoryPersistEvent;
 use crate::components::execution_detail::history::schedule::HistoryScheduleEvent;
-use crate::components::execution_detail::http_trace::HttpTraceEvent;
 use crate::components::execution_detail::locked::LockedEvent;
 use crate::components::execution_detail::temporarily_failed::TemporarilyFailedEvent;
 use crate::components::execution_detail::timed_out::TemporarilyTimedOutEvent;
@@ -70,13 +69,11 @@ pub fn event_to_detail(
         execution_event::Event::TemporarilyFailed(inner_event) => {
             html! {
                 <>
-                    <HttpTraceEvent http_client_traces={inner_event.http_client_traces.clone()} />
                     <TemporarilyFailedEvent event={inner_event.clone()} version={event.version} {is_selected} />
                 </>
             }
         }
         execution_event::Event::TemporarilyTimedOut(inner_event) => html! {<>
-            <HttpTraceEvent http_client_traces={inner_event.http_client_traces.clone()} />
             <TemporarilyTimedOutEvent event={inner_event.clone()} version={event.version} {is_selected} />
         </>},
         execution_event::Event::Finished(inner_event) => {
@@ -85,9 +82,9 @@ pub fn event_to_detail(
                 .as_ref()
                 .expect("`result_detail` is sent in the `Finished` message")
                 .clone();
+            let http_client_traces = inner_event.http_client_traces.clone();
             html! {<>
-                <HttpTraceEvent http_client_traces={inner_event.http_client_traces.clone()} />
-                <FinishedEvent {result_detail} version={event.version} {is_selected} />
+                <FinishedEvent {result_detail} {http_client_traces} version={event.version} {is_selected} />
                 </>
             }
         }

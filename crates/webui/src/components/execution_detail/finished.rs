@@ -1,6 +1,6 @@
 use crate::{
     components::{
-        execution_detail::tree_component::TreeComponent,
+        execution_detail::{http_trace::attach_http_traces, tree_component::TreeComponent},
         json_tree::{JsonValue, insert_json_into_tree},
     },
     grpc::{grpc_client, version::VersionType},
@@ -16,6 +16,8 @@ pub struct FinishedEventProps {
     pub result_detail: grpc_client::ResultDetail,
     pub version: Option<VersionType>,
     pub is_selected: bool,
+    #[prop_or_default]
+    pub http_client_traces: Vec<grpc_client::HttpClientTrace>,
 }
 
 fn with_version(version: Option<VersionType>, label: &'static str) -> Html {
@@ -32,7 +34,7 @@ pub fn attach_result_detail(
     result_detail: &grpc_client::ResultDetail,
     version: Option<VersionType>,
     is_selected: bool,
-) {
+) -> NodeId {
     match &result_detail
         .value
         .as_ref()
@@ -53,8 +55,9 @@ pub fn attach_result_detail(
                 .unwrap();
 
             if let Some(any) = &ok.return_value {
-                let _ = insert_json_into_tree(tree, ok_node, JsonValue::Serialized(&any.value));
+                let _ = insert_json_into_tree(tree, &ok_node, JsonValue::Serialized(&any.value));
             }
+            ok_node
         }
         grpc_client::result_detail::Value::FallibleError(fallible) => {
             let error_node = tree
@@ -70,12 +73,13 @@ pub fn attach_result_detail(
                 )
                 .unwrap();
             if let Some(any) = &fallible.return_value {
-                let _ = insert_json_into_tree(tree, error_node, JsonValue::Serialized(&any.value));
+                let _ = insert_json_into_tree(tree, &error_node, JsonValue::Serialized(&any.value));
             }
+            error_node
         }
 
         grpc_client::result_detail::Value::ExecutionFailure(failure) => {
-            let error_node = tree
+            let failure_node = tree
                 .insert(
                     Node::new(NodeData {
                         icon: Icon::Error,
@@ -103,7 +107,7 @@ pub fn attach_result_detail(
                     label: failure_kind.into_html(),
                     ..Default::default()
                 }),
-                InsertBehavior::UnderNode(&error_node),
+                InsertBehavior::UnderNode(&failure_node),
             )
             .unwrap();
 
@@ -114,7 +118,7 @@ pub fn attach_result_detail(
                         label: reason.as_str().into_html(),
                         ..Default::default()
                     }),
-                    InsertBehavior::UnderNode(&error_node),
+                    InsertBehavior::UnderNode(&failure_node),
                 )
                 .unwrap();
             }
@@ -125,10 +129,11 @@ pub fn attach_result_detail(
                         label: html! {<> {"Detail: "} <input type="text" readonly=true value={detail.clone()} /> </>},
                         ..Default::default()
                     }),
-                    InsertBehavior::UnderNode(&error_node),
+                    InsertBehavior::UnderNode(&failure_node),
                 )
                 .unwrap();
             }
+            failure_node
         }
     }
 }
@@ -139,13 +144,15 @@ impl FinishedEventProps {
         let root_id = tree
             .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
             .unwrap();
-        attach_result_detail(
+
+        let node_id = attach_result_detail(
             &mut tree,
             &root_id,
             &self.result_detail,
             self.version,
             self.is_selected,
         );
+        attach_http_traces(&mut tree, &node_id, &self.http_client_traces);
         TreeData::from(tree)
     }
 }

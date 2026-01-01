@@ -1,5 +1,5 @@
 use crate::{
-    components::execution_detail::tree_component::TreeComponent,
+    components::execution_detail::{http_trace::attach_http_traces, tree_component::TreeComponent},
     grpc::{grpc_client, version::VersionType},
 };
 use chrono::DateTime;
@@ -76,6 +76,9 @@ impl TemporarilyFailedEventProps {
             InsertBehavior::UnderNode(&failed_node),
         )
         .unwrap();
+
+        // Add HTTP Traces
+        attach_http_traces(&mut tree, &failed_node, &self.event.http_client_traces);
 
         TreeData::from(tree)
     }
