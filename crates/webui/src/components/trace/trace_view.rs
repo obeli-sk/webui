@@ -76,6 +76,7 @@ enum TraceviewStateAction {
         cursors: Cursors,
     },
     SetAutoload(bool),
+    SetHideFinished(bool),
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -86,6 +87,7 @@ struct TraceViewState {
     statuses: HashMap<ExecutionId, grpc_client::execution_status::Status>,
     execution_ids_to_show_http_traces: HashMap<ExecutionId, bool>,
     autoload: bool,
+    hide_finished: bool,
 }
 impl Reducible for TraceViewState {
     type Action = TraceviewStateAction;
@@ -167,6 +169,11 @@ impl Reducible for TraceViewState {
             TraceviewStateAction::SetAutoload(autoload) => {
                 let mut this = self.as_ref().clone();
                 this.autoload = autoload;
+                Rc::from(this)
+            }
+            TraceviewStateAction::SetHideFinished(hide) => {
+                let mut this = self.as_ref().clone();
+                this.hide_finished = hide;
                 Rc::from(this)
             }
         }
@@ -266,12 +273,20 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         })
     };
 
+    let on_hide_finished_change = {
+        let trace_view_state = trace_view_state.clone();
+        Callback::from(move |e: Event| {
+            let target: HtmlInputElement = e.target_unchecked_into();
+            trace_view_state.dispatch(TraceviewStateAction::SetHideFinished(target.checked()));
+        })
+    };
+
     html! {<>
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
 
         <div class="trace-layout-container">
             <div class="trace-view">
-                <div class="trace-controls" style="margin-bottom: 10px;">
+                <div class="trace-controls" style="margin-bottom: 10px; display: flex; gap: 15px;">
                     <label style="cursor: pointer; user-select: none;">
                         <input
                             type="checkbox"
@@ -280,6 +295,15 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                             style="margin-right: 5px;"
                         />
                         {"Autoload children"}
+                    </label>
+                    <label style="cursor: pointer; user-select: none;">
+                        <input
+                            type="checkbox"
+                            checked={trace_view.hide_finished}
+                            onchange={on_hide_finished_change}
+                            style="margin-right: 5px;"
+                        />
+                        {"Hide finished"}
                     </label>
                 </div>
                 if let Some(root_trace) = root_trace {
@@ -534,6 +558,12 @@ fn compute_root_trace(
                         } else {
                             child_execution_id.to_string()
                         };
+
+                        // Based on responses to parent execution.
+                        let is_finished = child_ids_to_results.contains_key(child_execution_id);
+                        if trace_view_state.hide_finished && is_finished {
+                            return None;
+                        }
 
                         if !trace_view_state.deref().execution_ids_to_fetch_state.contains_key(child_execution_id) {
                             loadable_child_ids.push(child_execution_id.clone());
