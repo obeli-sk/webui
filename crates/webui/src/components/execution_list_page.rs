@@ -162,10 +162,26 @@ pub fn execution_list_page() -> Html {
     {
         let query = query.clone();
         let response_state = response_state.clone();
+        let prefix_ref = prefix_ref.clone();
+        let ffqn_ref = ffqn_ref.clone();
 
         use_effect_with(query, move |query_params| {
             let query_params = query_params.clone();
+
             spawn_local(async move {
+                // Attempt to sync text values from the actual filter.
+                if let Some(input) = ffqn_ref.cast::<HtmlInputElement>() {
+                    input.set_value(query_params.ffqn_prefix.as_deref().unwrap_or_default())
+                }
+                if let Some(input) = prefix_ref.cast::<HtmlInputElement>() {
+                    input.set_value(
+                        query_params
+                            .execution_id_prefix
+                            .as_deref()
+                            .unwrap_or_default(),
+                    )
+                }
+
                 let mut execution_client =
                     ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
 
