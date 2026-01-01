@@ -155,6 +155,8 @@ pub fn execution_list_page() -> Html {
     // State to hold the API response
     let response_state = use_state(|| None);
 
+    let refresh_counter_state = use_state(|| 0); // Force calling use_effect
+
     let prefix_ref = use_node_ref();
     let ffqn_ref = use_node_ref();
 
@@ -164,8 +166,8 @@ pub fn execution_list_page() -> Html {
         let response_state = response_state.clone();
         let prefix_ref = prefix_ref.clone();
         let ffqn_ref = ffqn_ref.clone();
-
-        use_effect_with(query, move |query_params| {
+        let refresh_counter_state = refresh_counter_state.clone();
+        use_effect_with((query, *refresh_counter_state), move |(query_params, _)| {
             let query_params = query_params.clone();
 
             spawn_local(async move {
@@ -229,6 +231,7 @@ pub fn execution_list_page() -> Html {
         let query = query.clone();
         let prefix_ref = prefix_ref.clone();
         let ffqn_ref = ffqn_ref.clone();
+        let refresh_counter_state = refresh_counter_state.clone();
         Callback::from(move |_| {
             let mut new_query = query.clone();
             // Reset cursor when changing filters to start from top
@@ -239,6 +242,7 @@ pub fn execution_list_page() -> Html {
             new_query.ffqn_prefix = (!ffqn.is_empty()).then_some(ffqn);
             let prefix = prefix_ref.cast::<HtmlInputElement>().unwrap().value();
             new_query.execution_id_prefix = (!prefix.is_empty()).then_some(prefix);
+            refresh_counter_state.set(*refresh_counter_state + 1);
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
@@ -373,7 +377,12 @@ pub fn execution_list_page() -> Html {
         } else {
             None
         };
-
+        let on_page_change = {
+            let navigator = navigator.clone();
+            Callback::from(move |query: ExecutionQuery| {
+                let _ = navigator.push_with_query(&Route::ExecutionList, &query);
+            })
+        };
         html! {
             <>
                 <h3>{"Executions"}</h3>
@@ -412,7 +421,7 @@ pub fn execution_list_page() -> Html {
                             value={query.ffqn_prefix.as_ref().map(|ffqn| ffqn.to_string())}
                         />
                         {" "}
-                        <button onclick={on_apply_filters}>{"Filter"}</button>
+                        <button onclick={&on_apply_filters}>{"Filter / Refresh"}</button>
 
                         if query != ExecutionQuery::default() {
                             {" "}
@@ -430,35 +439,35 @@ pub fn execution_list_page() -> Html {
                     { rows }
                 </table>
 
-
                 <div class="pagination">
-                    <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
-                        let mut q = query.clone();
-                        q.cursor = None;
-                        q.direction = None;
-                        q
-                    }>
+                    <button onclick={&on_apply_filters}>
                         {"<< Latest"}
-                    </Link<Route, ExecutionQuery>>
-
-                    {" | "}
+                    </button>
 
                     if let Some(query) = newer_page_query {
-                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} {query}>
+                        <button onclick={
+                            let on_page_change = on_page_change.clone();
+                            move |_| on_page_change.emit(query.clone())
+                        }>
                             {"< Newer"}
-                        </Link<Route, ExecutionQuery>>
+                        </button>
                     } else {
-                        <span class="disabled">{"< Newer"}</span>
+                        <button disabled={true}>
+                            {"< Newer"}
+                        </button>
                     }
 
-                    {" | "}
-
                     if let Some(query) = older_page_query {
-                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} {query}>
+                        <button onclick={
+                            let on_page_change = on_page_change.clone();
+                            move |_| on_page_change.emit(query.clone())
+                        }>
                             {"Older >"}
-                        </Link<Route, ExecutionQuery>>
+                        </button>
                     } else {
-                        <span class="disabled">{"Older >"}</span>
+                        <button disabled={true}>
+                            {"Older >"}
+                        </button>
                     }
                 </div>
 

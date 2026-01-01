@@ -144,20 +144,24 @@ table.execution_list th {
     margin-top: 20px;
 }
 
-.container>div.pagination a {
+.container>div.pagination button {
     padding: 10px;
     margin: 0 5px;
     text-decoration: none;
     color: #8be9fd;
     border: 1px solid #44475a;
     border-radius: 4px;
+    background: none;
+    cursor: pointer;
 }
 
-.container>div.pagination a:hover {
-    background-color: #44475a;
-    color: #f1fa8c;
+.container>div.pagination button:disabled {
+    color: #6272a4;
+    border-color: #44475a;
+    background: transparent;
+    cursor: not-allowed;
+    opacity: 0.5;
 }
-
 
 .label {
     background-color: #6272a4;
