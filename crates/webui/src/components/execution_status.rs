@@ -178,8 +178,11 @@ fn status_to_string(status: &grpc_client::execution_status::Status) -> Html {
         grpc_client::execution_status::Status::PendingAt(PendingAt { scheduled_at }) => html! {
             format!("Pending{}", convert_date(" at ", scheduled_at.as_ref()))
         },
-        grpc_client::execution_status::Status::BlockedByJoinSet(_) => {
-            html! { "Blocked by join set"}
+        grpc_client::execution_status::Status::BlockedByJoinSet(
+            grpc_client::execution_status::BlockedByJoinSet { join_set_id, .. },
+        ) => {
+            let join_set_id = join_set_id.clone().expect("`join_set_id` is sent");
+            format!("Blocked by {join_set_id}").to_html()
         }
         grpc_client::execution_status::Status::Finished(Finished { result_kind, .. }) => {
             let result_kind = result_kind
