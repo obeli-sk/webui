@@ -318,6 +318,7 @@ fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
     }
 }
 
+/// Return `None` if there are no events yet associated with the requested execution.
 fn compute_root_trace(
     execution_id: &ExecutionId,
     events_map: &HashMap<ExecutionId, Vec<ExecutionEvent>>,
@@ -487,6 +488,7 @@ fn compute_root_trace(
                             last_event_at = last_event_at.max(child_root.last_event_at);
                             Some(vec![TraceData::Root(child_root)])
                         } else {
+                            // Child execution has no events loaded yet.
                             let started_at = DateTime::from(event.created_at.expect("event.created_at must be sent"));
                             let (status, finished_at, interval_title) =
                                 if let Some((result_detail_value, finished_at)) = child_ids_to_results.get(child_execution_id) {
@@ -494,7 +496,7 @@ fn compute_root_trace(
                                     let duration = (*finished_at - started_at).to_std().expect("started_at must be <= finished_at");
                                     (status, Some(*finished_at), format!("{status} in {duration:?}"))
                                 } else {
-                                    let status = BusyIntervalStatus::ExecutionUnfinished;
+                                    let status = BusyIntervalStatus::ExecutionUnfinishedWithoutPendingState; // We don't know the pending state yet.
                                     (status, None, status.to_string())
                                 };
                             Some(vec![
@@ -600,11 +602,12 @@ fn compute_root_trace(
     // If there is locked without unlocked, add the unfinished interval.
     // Ignore the lock_expires_at as it might be in the future or beyond the last seen event.
     if let Some((locked_at, _lock_expires_at)) = current_locked_at {
+        let status = BusyIntervalStatus::ExecutionUnfinishedWithoutPendingState;
         busy.push(BusyInterval {
             started_at: locked_at,
             finished_at: None,
-            title: Some("unfinished".to_string()),
-            status: BusyIntervalStatus::ExecutionUnfinished,
+            title: Some(status.to_string()),
+            status,
         });
     }
 

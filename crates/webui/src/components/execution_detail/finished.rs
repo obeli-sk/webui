@@ -43,7 +43,7 @@ pub fn attach_result_detail(
                 .insert(
                     Node::new(NodeData {
                         icon: Icon::Tick,
-                        label: with_version(version, "Execution Successful"),
+                        label: with_version(version, "Succeeded"),
                         has_caret: ok.return_value.is_some(),
                         is_selected,
                         ..Default::default()
@@ -61,7 +61,7 @@ pub fn attach_result_detail(
                 .insert(
                     Node::new(NodeData {
                         icon: Icon::Error,
-                        label: with_version(version, "Fallible Error"),
+                        label: with_version(version, "Returned Error"),
                         has_caret: fallible.return_value.is_some(),
                         is_selected,
                         ..Default::default()
@@ -79,7 +79,7 @@ pub fn attach_result_detail(
                 .insert(
                     Node::new(NodeData {
                         icon: Icon::Error,
-                        label: with_version(version, "Execution Failure"),
+                        label: with_version(version, "Execution Failed"),
                         has_caret: true,
                         is_selected,
                         ..Default::default()

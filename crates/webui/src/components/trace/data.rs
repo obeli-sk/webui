@@ -70,11 +70,11 @@ pub enum BusyIntervalStatus {
     HttpTraceError,
     #[display("Temporary timeout")]
     ExecutionTimeoutTemporary,
-    #[display("Permanent timeout")]
+    #[display("Execution timeout")]
     ExecutionTimeoutPermanent,
     #[display("Temporary error")]
     ExecutionErrorTemporary,
-    #[display("Permanent error")]
+    #[display("Execution error")]
     ExecutionErrorPermanent,
     #[display("Locked")]
     ExecutionLocked,
@@ -83,7 +83,7 @@ pub enum BusyIntervalStatus {
     #[display("Finished with error")]
     ExecutionReturnedErrorVariant,
     #[display("Unfinished")]
-    ExecutionUnfinished,
+    ExecutionUnfinishedWithoutPendingState,
     #[display("Since scheduled")]
     ExecutionSinceScheduled,
 }
@@ -199,7 +199,9 @@ mod css {
                 BusyIntervalStatus::ExecutionReturnedErrorVariant => {
                     "busy-execution-returned-error-variant"
                 }
-                BusyIntervalStatus::ExecutionUnfinished => "busy-execution-unfinished",
+                BusyIntervalStatus::ExecutionUnfinishedWithoutPendingState => {
+                    "busy-execution-unfinished"
+                }
                 BusyIntervalStatus::ExecutionSinceScheduled => "busy-execution-since-scheduled",
             }
         }
