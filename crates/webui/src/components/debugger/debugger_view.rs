@@ -706,18 +706,18 @@ fn get_parent_execution_bounds(
     parent_id: &ExecutionId,
     execution_id: &ExecutionId,
 ) -> (Option<u32>, Option<u32>) {
-    let events = debugger_state.events.get(parent_id);
-    let responses = debugger_state.responses.get(parent_id);
+    let parent_events = debugger_state.events.get(parent_id);
+    let parent_responses = debugger_state.responses.get(parent_id);
 
-    let (Some(events), Some(responses)) = (events, responses) else {
+    let (Some(parent_events), Some(parent_responses)) = (parent_events, parent_responses) else {
         return (None, None);
     };
 
-    let join_next_map = compute_join_next_to_response(events, responses);
+    let join_next_map = compute_join_next_to_response(parent_events, parent_responses);
     let mut start = None;
     let mut end = None;
 
-    for event in events {
+    for event in parent_events {
         match &event.event {
             // Check Start: JoinSetRequest -> ChildExecutionRequest
             Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
@@ -726,12 +726,12 @@ fn get_parent_execution_bounds(
                         join_set_request:
                             Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
                                 history_event::join_set_request::ChildExecutionRequest {
-                                    child_execution_id: Some(cid),
+                                    child_execution_id: Some(found_id),
                                 },
                             )),
                         ..
                     })),
-            })) if cid == execution_id => {
+            })) if found_id == execution_id => {
                 start = Some(event.version);
             }
 
@@ -743,18 +743,16 @@ fn get_parent_execution_bounds(
                     response:
                         Some(join_set_response_event::Response::ChildExecutionFinished(
                             join_set_response_event::ChildExecutionFinished {
-                                child_execution_id: Some(cid),
+                                child_execution_id: Some(found_id),
                                 ..
                             },
                         )),
                     ..
                 }) = join_next_map.get(&event.version)
-                {
-                    if cid == execution_id {
+                    && found_id == execution_id {
                         end = Some(event.version);
                         break;
                     }
-                }
             }
             _ => {}
         }

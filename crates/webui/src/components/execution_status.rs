@@ -69,22 +69,21 @@ fn is_finished_detailed(msg: &get_status_response::Message) -> bool {
 }
 
 fn is_finished_any(msg: &get_status_response::Message) -> bool {
-    match msg {
-        get_status_response::Message::FinishedStatus(_) => true,
-        get_status_response::Message::CurrentStatus(GExecutionStatus {
-            status: Some(grpc_client::execution_status::Status::Finished(_)),
-            ..
-        }) => true,
-        get_status_response::Message::Summary(ExecutionSummary {
-            current_status:
-                Some(GExecutionStatus {
+    matches!(
+        msg,
+        get_status_response::Message::FinishedStatus(_)
+            | get_status_response::Message::CurrentStatus(GExecutionStatus {
+                status: Some(grpc_client::execution_status::Status::Finished(_)),
+                ..
+            })
+            | get_status_response::Message::Summary(ExecutionSummary {
+                current_status: Some(GExecutionStatus {
                     status: Some(grpc_client::execution_status::Status::Finished(_)),
                     ..
                 }),
-            ..
-        }) => true,
-        _ => false,
-    }
+                ..
+            })
+    )
 }
 
 async fn run_status_subscription(
