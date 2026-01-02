@@ -379,21 +379,104 @@ pub fn debugger_view(
         })
     );
 
-    // Step Out
-    let step_out = if let Some(parent_id) = execution_id.parent_id() {
-        let versions = versions.step_out().unwrap_or_default();
-        html! {
-            <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id, versions }}>
-            {"Step Out"}
-            </Link<Route>>
+    // Step Out Calculation
+    let parent_id = execution_id.parent_id();
+    let (parent_start_version, parent_end_version) = if let Some(parent_id) = &parent_id {
+        let events = debugger_state.events.get(parent_id);
+        let responses = debugger_state.responses.get(parent_id);
+
+        if let (Some(events), Some(responses)) = (events, responses) {
+            let join_next_map = compute_join_next_to_response(events, responses);
+            let mut start = None;
+            let mut end = None;
+
+            for event in events {
+                // Start: JoinSetRequest -> ChildExecutionRequest
+                if let Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+                    event:
+                        Some(history_event::Event::JoinSetRequest(history_event::JoinSetRequest {
+                            join_set_request:
+                                Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
+                                    history_event::join_set_request::ChildExecutionRequest {
+                                        child_execution_id: Some(cid),
+                                    },
+                                )),
+                            ..
+                        })),
+                })) = &event.event
+                {
+                    if cid == execution_id {
+                        start = Some(event.version);
+                    }
+                }
+
+                // End: JoinNext -> Response == ChildExecutionFinished
+                if let Some(execution_event::Event::HistoryVariant(
+                    execution_event::HistoryEvent {
+                        event: Some(history_event::Event::JoinNext(_)),
+                    },
+                )) = &event.event
+                {
+                    if let Some(JoinSetResponseEvent {
+                        response:
+                            Some(join_set_response_event::Response::ChildExecutionFinished(
+                                join_set_response_event::ChildExecutionFinished {
+                                    child_execution_id: Some(cid),
+                                    ..
+                                },
+                            )),
+                        ..
+                    }) = join_next_map.get(&event.version)
+                    {
+                        if cid == execution_id {
+                            end = Some(event.version);
+                            break;
+                        }
+                    }
+                }
+            }
+            (start, end)
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+
+    let step_out = if let Some(parent_id) = parent_id {
+        let parent_versions = versions.step_out().unwrap_or_default();
+        let requested_parent_version = parent_versions.last();
+        html! {<>
+
+               if let Some(v) = parent_start_version {
+                   <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions.change(v) }}
+                        classes={if v == requested_parent_version { "bold" } else { "" }}
+                   >
+                       {"Step Out (Start)"}
+                   </Link<Route>>
+               } else {
+                   <span class="disabled">{"Step Out (Start)"}</span>
+               }
+
+               if let Some(v) = parent_end_version {
+                   <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions.change(v) }}
+                        classes={if v == requested_parent_version { "bold" } else { "" }}
+                   >
+                       {"Step Out (End)"}
+                   </Link<Route>>
+               } else {
+                   <span class="disabled">{"Step Out (End)"}</span>
+               }
+           </>
         }
     } else {
         html! {
-            <div class="disabled">
+            <span class="disabled">
                 {"Step Out"}
-            </div>
+            </span>
         }
     };
+
     let backtrace = if let Some(backtrace_response) = backtrace_response {
         let mut htmls = Vec::new();
         let mut seen_positions = hashbrown::HashSet::new();
@@ -424,9 +507,9 @@ pub fn debugger_view(
             }
         } else {
             html! {
-                <div class="disabled">
+                <span class="disabled">
                  {"Step Prev"}
-                </div>
+                </span>
             }
         });
         htmls.push(if let Some(backtrace_next) = backtrace_versions
@@ -442,9 +525,9 @@ pub fn debugger_view(
             }
         } else {
             html! {
-                <div class="disabled">
+                <span class="disabled">
                     {"Step Next"}
-                </div>
+                </span>
             }
         });
 
@@ -566,9 +649,17 @@ pub fn debugger_view(
         }
         htmls.to_html()
     } else if is_finished {
-        "No backtrace found for this execution".to_html()
+        html! {
+            <p>
+                {"No backtrace found for this execution"}
+            </p>
+        }
     } else {
-        "Loading...".to_html()
+        html! {
+            <p>
+                {"Loading..."}
+            </p>
+        }
     };
 
     html! {<>

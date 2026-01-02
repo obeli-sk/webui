@@ -288,12 +288,15 @@ ul li span {
     transition: background-color 0.2s ease;
 }
 
+.trace-view>a.bold {
+    font-weight: bold;
+}
+
 .trace-view>a:hover {
     background-color: #6272a4;
 }
 
-.trace-view>div.disabled {
-    display: inline-block;
+.trace-view>span.disabled {
     padding: 0.4em 0.8em;
     margin-right: 0.75rem;
     margin-bottom: 1.5rem;
