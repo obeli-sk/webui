@@ -179,14 +179,17 @@ pub struct TraceDataChild {
 mod grpc {
     use super::BusyIntervalStatus;
     use crate::grpc::grpc_client::ExecutionFailureKind;
-    use crate::grpc::grpc_client::result_detail;
+    use crate::grpc::grpc_client::supported_function_result;
 
-    impl From<&result_detail::Value> for BusyIntervalStatus {
-        fn from(result_detail_value: &result_detail::Value) -> Self {
-            match result_detail_value {
-                result_detail::Value::Ok(_) => BusyIntervalStatus::ExecutionFinishedOk,
-                result_detail::Value::Error(_) => BusyIntervalStatus::ExecutionReturnedErrorVariant,
-                result_detail::Value::ExecutionFailure(failure) => match failure.kind() {
+    impl From<&supported_function_result::Value> for BusyIntervalStatus {
+        fn from(supported_function_result_value: &supported_function_result::Value) -> Self {
+            match supported_function_result_value {
+                supported_function_result::Value::Ok(_) => BusyIntervalStatus::ExecutionFinishedOk,
+                supported_function_result::Value::Error(_) => {
+                    BusyIntervalStatus::ExecutionReturnedErrorVariant
+                }
+                supported_function_result::Value::ExecutionFailure(failure) => match failure.kind()
+                {
                     ExecutionFailureKind::TimedOut => BusyIntervalStatus::ExecutionTimeoutPermanent,
                     _ => BusyIntervalStatus::ExecutionErrorPermanent,
                 },

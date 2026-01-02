@@ -6,7 +6,9 @@ use crate::grpc::version::VersionType;
 use crate::{
     app::Route,
     components::execution_detail::{finished::attach_result_detail, tree_component::TreeComponent},
-    grpc::grpc_client::{self, JoinSetResponseEvent, ResultDetail, join_set_response_event},
+    grpc::grpc_client::{
+        self, JoinSetResponseEvent, SupportedFunctionResult, join_set_response_event,
+    },
 };
 use chrono::DateTime;
 use log::error;
@@ -47,9 +49,10 @@ impl HistoryJoinNextEventProps {
                 response:
                     Some(join_set_response_event::Response::ChildExecutionFinished(
                         join_set_response_event::ChildExecutionFinished {
-                            result_detail:
-                                Some(ResultDetail {
-                                    value: Some(grpc_client::result_detail::Value::Ok(_)),
+                            value:
+                                Some(SupportedFunctionResult {
+                                    value:
+                                        Some(grpc_client::supported_function_result::Value::Ok(_)),
                                 }),
                             ..
                         },
@@ -98,13 +101,13 @@ impl HistoryJoinNextEventProps {
                     Some(join_set_response_event::Response::ChildExecutionFinished(
                         ChildExecutionFinished {
                             child_execution_id: Some(child_execution_id),
-                            result_detail: Some(result_detail),
+                            value: Some(result_detail),
                         },
                     )),
             }) => {
                 let success = matches!(
                     result_detail.value,
-                    Some(grpc_client::result_detail::Value::Ok(_))
+                    Some(grpc_client::supported_function_result::Value::Ok(_))
                 );
                 let icon = if success { Icon::Flows } else { Icon::Error };
 

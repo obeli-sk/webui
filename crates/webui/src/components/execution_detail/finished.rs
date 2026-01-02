@@ -13,7 +13,7 @@ use yewprint::{
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct FinishedEventProps {
-    pub result_detail: grpc_client::ResultDetail,
+    pub result_detail: grpc_client::SupportedFunctionResult,
     pub version: Option<VersionType>,
     pub is_selected: bool,
     #[prop_or_default]
@@ -31,7 +31,7 @@ fn with_version(version: Option<VersionType>, label: &'static str) -> Html {
 pub fn attach_result_detail(
     tree: &mut Tree<NodeData<u32>>,
     root_id: &NodeId,
-    result_detail: &grpc_client::ResultDetail,
+    result_detail: &grpc_client::SupportedFunctionResult,
     version: Option<VersionType>,
     is_selected: bool,
 ) -> NodeId {
@@ -40,7 +40,7 @@ pub fn attach_result_detail(
         .as_ref()
         .expect("`value` is sent in `ResultDetail` message")
     {
-        grpc_client::result_detail::Value::Ok(ok) => {
+        grpc_client::supported_function_result::Value::Ok(ok) => {
             let ok_node = tree
                 .insert(
                     Node::new(NodeData {
@@ -59,7 +59,7 @@ pub fn attach_result_detail(
             }
             ok_node
         }
-        grpc_client::result_detail::Value::Error(fallible) => {
+        grpc_client::supported_function_result::Value::Error(fallible) => {
             let error_node = tree
                 .insert(
                     Node::new(NodeData {
@@ -78,7 +78,7 @@ pub fn attach_result_detail(
             error_node
         }
 
-        grpc_client::result_detail::Value::ExecutionFailure(failure) => {
+        grpc_client::supported_function_result::Value::ExecutionFailure(failure) => {
             let failure_node = tree
                 .insert(
                     Node::new(NodeData {

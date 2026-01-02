@@ -239,7 +239,7 @@ pub fn execution_status(
             created_at: _,
             scheduled_at: Some(scheduled_at),
             finished_at: Some(finished_at),
-            result_detail: Some(result_detail),
+            value: Some(result_detail),
         })) => {
             let finished_at = DateTime::from(*finished_at);
             let scheduled_at = DateTime::from(*scheduled_at);

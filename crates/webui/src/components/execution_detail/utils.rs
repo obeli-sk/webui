@@ -78,7 +78,7 @@ pub fn event_to_detail(
         </>},
         execution_event::Event::Finished(inner_event) => {
             let result_detail = inner_event
-                .result_detail
+                .value
                 .as_ref()
                 .expect("`result_detail` is sent in the `Finished` message")
                 .clone();

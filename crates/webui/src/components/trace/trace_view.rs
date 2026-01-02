@@ -15,12 +15,12 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{
             self, ComponentType, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent,
-            ResponseWithCursor, ResultDetail,
+            ResponseWithCursor, SupportedFunctionResult,
             execution_event::{
                 self, Finished, TemporarilyFailed, TemporarilyTimedOut,
                 history_event::{JoinSetRequest, join_set_request},
             },
-            http_client_trace, join_set_response_event, result_detail,
+            http_client_trace, join_set_response_event, supported_function_result,
         },
     },
 };
@@ -674,8 +674,8 @@ fn compute_root_trace(
                         BusyIntervalStatus::ExecutionTimeoutTemporary
                     }
                     execution_event::Event::Finished(Finished {
-                        result_detail:
-                            Some(ResultDetail {
+                        value:
+                            Some(SupportedFunctionResult {
                                 value: Some(result_detail_value),
                             }),
                         ..
@@ -787,7 +787,7 @@ fn compute_root_trace(
 
 fn compute_child_execution_id_to_child_execution_finished(
     responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
-) -> HashMap<ExecutionId, (result_detail::Value, DateTime<Utc>)> {
+) -> HashMap<ExecutionId, (supported_function_result::Value, DateTime<Utc>)> {
     responses
         .into_iter()
         .flat_map(|map| {
@@ -797,8 +797,8 @@ fn compute_child_execution_id_to_child_execution_finished(
                         Some(join_set_response_event::Response::ChildExecutionFinished(
                             join_set_response_event::ChildExecutionFinished {
                                 child_execution_id: Some(child_execution_id),
-                                result_detail:
-                                    Some(ResultDetail {
+                                value:
+                                    Some(SupportedFunctionResult {
                                         value: Some(result_detail_value),
                                     }),
                             },
