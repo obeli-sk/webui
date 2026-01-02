@@ -311,43 +311,44 @@ fn render_execution_details(
                     ..
                 })) => {
                     let task_id = match inner_req {
-                        join_set_request::JoinSetRequest::ChildExecutionRequest(req) => {
-                            req.child_execution_id.as_ref().map(|id| id.to_string())
-                        }
-                        join_set_request::JoinSetRequest::DelayRequest(req) => {
-                            req.delay_id.as_ref().map(|id| id.to_string())
-                        }
+                        join_set_request::JoinSetRequest::ChildExecutionRequest(req) => req
+                            .child_execution_id
+                            .as_ref()
+                            .expect("id is always sent")
+                            .to_string(),
+                        join_set_request::JoinSetRequest::DelayRequest(req) => req
+                            .delay_id
+                            .as_ref()
+                            .expect("id is always sent")
+                            .to_string(),
                     };
-
-                    if let Some(tid) = task_id {
-                        task_rails.insert(
-                            tid.clone(),
-                            TaskRailMetadata {
-                                start_version: event.version,
-                                end_version: last_known_version,
-                                track_index: 0,
-                                color: color_for_string(&tid),
-                                is_completed: false,
-                            },
-                        );
-                    }
+                    let color = color_for_string(&task_id);
+                    task_rails.insert(
+                        task_id,
+                        TaskRailMetadata {
+                            start_version: event.version,
+                            end_version: last_known_version,
+                            track_index: 0,
+                            color,
+                            is_completed: false,
+                        },
+                    );
                 }
                 Some(HistoryEventEnum::JoinNext(_)) => {
                     if let Some(resp) = join_next_version_to_response.get(&event.version)
                         && let Some(response_enum) = &resp.response
                     {
                         let completed_task_id = match response_enum {
-                            join_set_response_event::Response::ChildExecutionFinished(c) => {
-                                c.child_execution_id.as_ref().map(|id| id.to_string())
-                            }
+                            join_set_response_event::Response::ChildExecutionFinished(c) => c
+                                .child_execution_id
+                                .as_ref()
+                                .expect("id is always sent")
+                                .to_string(),
                             join_set_response_event::Response::DelayFinished(d) => {
-                                d.delay_id.as_ref().map(|id| id.to_string())
+                                d.delay_id.as_ref().expect("id is always sent").to_string()
                             }
                         };
-
-                        if let Some(tid) = completed_task_id
-                            && let Some(meta) = task_rails.get_mut(&tid)
-                        {
+                        if let Some(meta) = task_rails.get_mut(&completed_task_id) {
                             meta.end_version = event.version;
                             meta.is_completed = true;
                         }
