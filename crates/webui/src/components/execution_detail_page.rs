@@ -484,7 +484,7 @@ fn render_execution_details(
                                          let _ = style.set_property("box-shadow", &format!("0 0 8px {}", color_clone));
                                          let _ = html_el.offset_height();
                                          let _ = style.set_property("transition", "border-color 1.5s ease-out, box-shadow 1.5s ease-out");
-                                         let _ = style.set_property("border-color", "#e9ecef");
+                                         let _ = style.set_property("border-color", "#44475a"); // Return to original .timeline-content
                                          let _ = style.set_property("box-shadow", "none");
                                      }
                                  }
