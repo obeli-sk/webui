@@ -188,11 +188,14 @@ pub fn debugger_view(
 ) -> Html {
     let debugger_state = use_reducer_eq(DebuggerState::default);
 
-    // Fill the current execution id
+    // Fill the current execution id and its parent
     use_effect_with(execution_id.clone(), {
         let debugger_state = debugger_state.clone();
         move |execution_id| {
             debugger_state.dispatch(DebuggerStateAction::AddExecutionId(execution_id.clone()));
+            if let Some(parent_id) = execution_id.parent_id() {
+                debugger_state.dispatch(DebuggerStateAction::AddExecutionId(parent_id));
+            }
         }
     });
 
