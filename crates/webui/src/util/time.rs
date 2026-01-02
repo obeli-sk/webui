@@ -24,11 +24,10 @@ pub fn human_formatted_timedelta(duration: TimeDelta, granularity: TimeGranulari
         0 if granularity == TimeGranularity::Fine => {
             format!("{millisecods} ms")
         }
-        0..=59 if granularity == TimeGranularity::Fine => {
+        0..=59 => {
             let plural = if seconds == 1 { "" } else { "s" };
             format!("{seconds} sec{plural}")
         }
-        0..=59 => "just now".to_string(),
         60..=3599 => {
             let plural = if minutes == 1 { "" } else { "s" };
             format!("{minutes} min{plural}")

@@ -5,14 +5,22 @@ use crate::components::trace::trace_view::{PAGE, SLEEP_MILLIS};
 use crate::grpc::grpc_client::{
     self, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
     execution_event,
+    execution_event::history_event::{
+        Event as HistoryEventEnum, JoinNext, JoinNextTooMany, JoinSetCreated, JoinSetRequest,
+        join_set_request,
+    },
+    join_set_response_event,
 };
 use crate::util::time::{TimeGranularity, human_formatted_timedelta};
 use assert_matches::assert_matches;
-use chrono::DateTime;
+use chrono::{DateTime, TimeDelta};
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
-use log::{debug, trace};
+use log::trace;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
@@ -118,7 +126,6 @@ impl Reducible for ExecutionLogState {
                     ExecutionFetchState::Finished
                 } else {
                     ExecutionFetchState::Pending
-                    // Will be followed by ExecutionFetchState::Requested
                 };
                 this.execution_ids_to_fetch_state
                     .insert(execution_id, new_fetch_state);
@@ -128,11 +135,41 @@ impl Reducible for ExecutionLogState {
     }
 }
 
+struct TaskRailMetadata {
+    start_version: u32,
+    end_version: u32,
+    track_index: usize,
+    color: String,
+    is_completed: bool,
+}
+
+fn color_for_join_set(id: &JoinSetId) -> String {
+    generate_color(&id.to_string())
+}
+
+fn color_for_string(s: &str) -> String {
+    generate_color(s)
+}
+
+fn generate_color(s: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    // Hue: 0-360
+    let h = hash % 360;
+    // Saturation: 70-100% (Vibrant)
+    let s = 70 + ((hash >> 16) % 31);
+    // Lightness: 65-85% (Readable on dark background)
+    let l = 65 + ((hash >> 32) % 21);
+
+    format!("hsl({}, {}%, {}%)", h, s, l)
+}
+
 #[function_component(ExecutionLogPage)]
 pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogPageProps) -> Html {
     let log_state = use_reducer_eq(ExecutionLogState::default);
 
-    // Fill the current execution id
     use_effect_with(execution_id.clone(), {
         let log_state = log_state.clone();
         move |execution_id| {
@@ -144,7 +181,6 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
 
     let dummy_events = Vec::new();
     let events = log_state.events.get(execution_id).unwrap_or(&dummy_events);
-    log::debug!("rendering ExecutionDetailPage {:?}", events.iter().next());
 
     let dummy_response_map = HashMap::new();
     let responses = log_state
@@ -154,19 +190,20 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
 
     let join_next_version_to_response = compute_join_next_to_response(events, responses);
 
-    let details_html =
-        render_execution_details(execution_id, events, &join_next_version_to_response);
+    let details_html = if !events.is_empty() {
+        render_execution_details(execution_id, events, &join_next_version_to_response)
+    } else {
+        html! { <div class="loading-details">{"Loading execution details..."}</div> }
+    };
 
     html! {
         <>
-        <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Log} />
-
-        if !events.is_empty() {
-            {details_html}
-        } else {
-            <p>{"Loading details..."}</p>
-        }
-    </>}
+            <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Log} />
+            <div class="timeline-container">
+                {details_html}
+            </div>
+        </>
+    }
 }
 
 fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
@@ -184,7 +221,6 @@ fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
         let execution_id = execution_id.clone();
         let log_state = log_state.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            trace!("list_execution_events {cursors:?}");
             let mut execution_client =
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
                     tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
@@ -204,11 +240,6 @@ fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
                 .await
                 .unwrap()
                 .into_inner();
-            debug!(
-                "{execution_id} Got {} events, {} responses",
-                server_resp.events.len(),
-                server_resp.responses.len()
-            );
 
             let last_event = server_resp.events.last();
             let is_finished = matches!(
@@ -242,75 +273,374 @@ fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
     }
 }
 
+const MAX_EVENTS_FOR_RAILS: usize = (PAGE - 1) as usize;
+
 fn render_execution_details(
-    execution_id: &ExecutionId,
+    current_execution_id: &ExecutionId,
     events: &[ExecutionEvent],
     join_next_version_to_response: &HashMap<u32, &JoinSetResponseEvent>,
-) -> Option<Html> {
-    if events.is_empty() {
-        return None;
-    }
+) -> Html {
     let create_event = events
         .first()
-        .expect("not found is sent as an error")
+        .expect("not found")
         .event
         .as_ref()
-        .expect("`event` is sent by the server");
+        .expect("event sent");
     let create_event = assert_matches!(
         create_event,
         grpc_client::execution_event::Event::Created(created) => created
     );
+    let execution_scheduled_at =
+        DateTime::from(create_event.scheduled_at.expect("scheduled_at sent"));
 
-    let execution_scheduled_at = {
-        DateTime::from(
-            create_event
-                .scheduled_at
-                .expect("`scheduled_at` is sent by the server"),
-        )
+    let last_known_version = events.last().map(|e| e.version).unwrap_or(0);
+
+    let should_render_rails = events.len() <= MAX_EVENTS_FOR_RAILS;
+
+    // --- Pass 1: Identify Tasks ---
+    let mut task_rails: HashMap<String, TaskRailMetadata> = HashMap::new();
+
+    // Always run identifying logic to support "Go to" buttons
+    for event in events {
+        let event_inner = event.event.as_ref().unwrap();
+
+        if let execution_event::Event::HistoryVariant(h) = event_inner {
+            match &h.event {
+                Some(HistoryEventEnum::JoinSetRequest(JoinSetRequest {
+                    join_set_request: Some(inner_req),
+                    ..
+                })) => {
+                    let task_id = match inner_req {
+                        join_set_request::JoinSetRequest::ChildExecutionRequest(req) => {
+                            req.child_execution_id.as_ref().map(|id| id.to_string())
+                        }
+                        join_set_request::JoinSetRequest::DelayRequest(req) => {
+                            req.delay_id.as_ref().map(|id| id.to_string())
+                        }
+                    };
+
+                    if let Some(tid) = task_id {
+                        task_rails.insert(
+                            tid.clone(),
+                            TaskRailMetadata {
+                                start_version: event.version,
+                                end_version: last_known_version,
+                                track_index: 0,
+                                color: color_for_string(&tid),
+                                is_completed: false,
+                            },
+                        );
+                    }
+                }
+                Some(HistoryEventEnum::JoinNext(_)) => {
+                    if let Some(resp) = join_next_version_to_response.get(&event.version)
+                        && let Some(response_enum) = &resp.response
+                    {
+                        let completed_task_id = match response_enum {
+                            join_set_response_event::Response::ChildExecutionFinished(c) => {
+                                c.child_execution_id.as_ref().map(|id| id.to_string())
+                            }
+                            join_set_response_event::Response::DelayFinished(d) => {
+                                d.delay_id.as_ref().map(|id| id.to_string())
+                            }
+                        };
+
+                        if let Some(tid) = completed_task_id
+                            && let Some(meta) = task_rails.get_mut(&tid)
+                        {
+                            meta.end_version = event.version;
+                            meta.is_completed = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // --- Pass 1.5: Build Links Map for Navigation ---
+    // Always run this
+    let mut event_links: HashMap<u32, (u32, String)> = HashMap::new();
+    for meta in task_rails.values() {
+        if meta.is_completed {
+            event_links.insert(meta.start_version, (meta.end_version, meta.color.clone()));
+            event_links.insert(meta.end_version, (meta.start_version, meta.color.clone()));
+        }
+    }
+
+    // --- Pass 2: Assign Tracks ---
+    // Only run if we are actually rendering rails
+    let mut active_tracks: Vec<u32> = Vec::new();
+    if should_render_rails {
+        let mut sorted_rails: Vec<&mut TaskRailMetadata> = task_rails.values_mut().collect();
+        sorted_rails.sort_by_key(|meta| meta.start_version);
+
+        for meta in sorted_rails {
+            let mut assigned = false;
+            for (i, free_at) in active_tracks.iter_mut().enumerate() {
+                if *free_at < meta.start_version {
+                    *free_at = meta.end_version;
+                    meta.track_index = i;
+                    assigned = true;
+                    break;
+                }
+            }
+            if !assigned {
+                active_tracks.push(meta.end_version);
+                meta.track_index = active_tracks.len() - 1;
+            }
+        }
+    }
+
+    let total_active_tracks = active_tracks.len();
+
+    const MAX_VISUAL_TRACKS: usize = 10;
+    const TRACK_WIDTH: usize = 12;
+
+    let max_visual_cols = if total_active_tracks > 0 {
+        std::cmp::min(total_active_tracks, MAX_VISUAL_TRACKS)
+    } else {
+        0
     };
 
+    let max_shift = if total_active_tracks > 0 {
+        ((total_active_tracks - 1) / MAX_VISUAL_TRACKS) * 2
+    } else {
+        0
+    };
+
+    let container_width = max_visual_cols * TRACK_WIDTH + max_shift + 10;
+
+    // --- Pass 3: Render ---
     let rows: Vec<_> = events
         .iter()
         .map(|event| {
             let detail = event_to_detail(
-                execution_id,
+                current_execution_id,
                 event,
                 join_next_version_to_response,
                 ExecutionLink::Log,
                 false,
             );
-            let created_at =
-                DateTime::from(event.created_at.expect("`created_at` sent by the server"));
+            let created_at = DateTime::from(event.created_at.expect("created_at sent"));
             let since_scheduled = human_formatted_timedelta(
                 created_at - execution_scheduled_at,
                 TimeGranularity::Fine,
             );
 
-            html! { <tr>
-                <td>{created_at.to_string()}</td>
-                <td>
-                    <label title={execution_scheduled_at.to_string()}>
-                        { since_scheduled }
-                    </label>
-                </td>
-                <td>{detail}</td>
-            </tr>}
+            let event_inner = event.event.as_ref().unwrap();
+            let mut circle_class = "version-circle";
+            let mut circle_color_style = "".to_string();
+
+            match event_inner {
+                execution_event::Event::Created(_) => circle_class = "version-circle is-created",
+                execution_event::Event::Finished(_) => circle_class = "version-circle is-finished",
+                execution_event::Event::TemporarilyFailed(_) | execution_event::Event::TemporarilyTimedOut(_) => {
+                    circle_class = "version-circle is-error"
+                },
+                execution_event::Event::HistoryVariant(h) => {
+                    if let Some(history_event) = &h.event {
+                        let maybe_jid = match history_event {
+                            HistoryEventEnum::JoinSetRequest(JoinSetRequest { join_set_id: Some(jid), .. }) => Some(jid),
+                            HistoryEventEnum::JoinNext(JoinNext { join_set_id: Some(jid), .. }) => Some(jid),
+                            HistoryEventEnum::JoinSetCreated(JoinSetCreated { join_set_id: Some(jid), .. }) => Some(jid),
+                            HistoryEventEnum::JoinNextTooMany(JoinNextTooMany { join_set_id: Some(jid), .. }) => Some(jid),
+                            _ => None
+                        };
+
+                        if let Some(jid) = maybe_jid {
+                            circle_class = "version-circle is-join";
+                            let color = color_for_join_set(jid);
+                            circle_color_style = format!("border-color: {0}; color: {0};", color);
+                        }
+                    }
+                },
+                _ => {}
+            }
+
+            // Scroll Button
+            let scroll_button = if let Some((target_version, color)) = event_links.get(&event.version) {
+                let diff = (*target_version).abs_diff(event.version);
+
+                if diff > 1 {
+                    let label = if *target_version > event.version {
+                        "Go to response ↓"
+                    } else {
+                        "Go to request ↑"
+                    };
+
+                    let target_element_id = format!("event-content-{}", target_version);
+                    let color_clone = color.clone();
+
+                    let onclick = Callback::from(move |_| {
+                        if let Some(window) = web_sys::window()
+                             && let Some(document) = window.document()
+                                 && let Some(element) = document.get_element_by_id(&target_element_id) {
+                                     element.scroll_into_view();
+                                     if let Some(html_el) = element.dyn_ref::<web_sys::HtmlElement>() {
+                                         let style = html_el.style();
+                                         let _ = style.set_property("transition", "none");
+                                         let _ = style.set_property("border-color", &color_clone);
+                                         let _ = style.set_property("box-shadow", &format!("0 0 8px {}", color_clone));
+                                         let _ = html_el.offset_height();
+                                         let _ = style.set_property("transition", "border-color 1.5s ease-out, box-shadow 1.5s ease-out");
+                                         let _ = style.set_property("border-color", "#e9ecef");
+                                         let _ = style.set_property("box-shadow", "none");
+                                     }
+                                 }
+                    });
+
+                    let button_style = format!("color: {0}; border-color: {0};", color);
+                    Some(html! {
+                        <button class="scroll-link" style={button_style} {onclick}>{label}</button>
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Rails - Condition check added for rendering
+            let rails = if should_render_rails && total_active_tracks > 0 {
+                let rail_elements: Vec<_> = task_rails.values().filter_map(|meta| {
+                    let is_active = event.version >= meta.start_version && event.version <= meta.end_version;
+                    if !is_active { return None; }
+
+                    let visual_track = meta.track_index % MAX_VISUAL_TRACKS;
+                    let overlap_offset = (meta.track_index / MAX_VISUAL_TRACKS) * 2;
+
+                    let left_pos = visual_track * TRACK_WIDTH + (TRACK_WIDTH / 2) + overlap_offset;
+                    let color = &meta.color;
+
+                    let mut elements = Vec::new();
+
+                    let top = if event.version == meta.start_version { "25px" } else { "0" };
+                    let height = if event.version == meta.end_version { "25px" } else { "100%" };
+
+                    elements.push(html! {
+                         <div class="rail-segment"
+                              style={format!("left: {}px; background: {}; top: {}; height: {};", left_pos, color, top, height)}>
+                         </div>
+                    });
+
+                    let is_submission = if event.version == meta.start_version {
+                         if let execution_event::Event::HistoryVariant(h) = event_inner {
+                            matches!(h.event, Some(HistoryEventEnum::JoinSetRequest(_)))
+                         } else { false }
+                    } else { false };
+
+                    if is_submission {
+                        let conn_width = container_width.saturating_sub(left_pos);
+                        elements.push(html! {
+                            <>
+                                <div class="rail-connector"
+                                     style={format!("left: {}px; width: {}px; background: {};",
+                                     left_pos,
+                                     conn_width,
+                                     color)}>
+                                </div>
+                                <div class="rail-dot-start" style={format!("left: {}px; background: {};", left_pos - 3, color)}></div>
+                            </>
+                        });
+                    }
+
+                    let is_completion = if event.version == meta.end_version {
+                         if let execution_event::Event::HistoryVariant(h) = event_inner {
+                            matches!(h.event, Some(HistoryEventEnum::JoinNext(_)))
+                         } else { false }
+                    } else { false };
+
+                    if is_completion {
+                         let conn_width = container_width.saturating_sub(left_pos);
+                         elements.push(html! {
+                            <>
+                                <div class="rail-connector"
+                                     style={format!("left: {}px; width: {}px; background: {};",
+                                     left_pos,
+                                     conn_width,
+                                     color)}>
+                                </div>
+                                <div class="rail-dot-end" style={format!("left: {}px; background: {};", left_pos - 3, color)}></div>
+                            </>
+                        });
+                    }
+
+                    Some(html! { <>{elements}</> })
+                }).collect();
+
+                html! {
+                    <div class="rails-container" style={format!("width: {}px;", container_width)}>
+                        {rail_elements}
+                    </div>
+                }
+            } else {
+                html! {}
+            };
+
+            let class = format!("{} {}", circle_class, if circle_color_style.is_empty() { ""}else { "is-join" });
+            let content_id = format!("event-content-{}", event.version);
+
+            // Timeline Line Logic
+            // Do not show line if this is the last event OR if the event is Finished
+            let is_finished = matches!(event_inner, execution_event::Event::Finished(_));
+
+            let timeline_line = if !is_finished {
+                 html! { <div class="timeline-line"></div> }
+            } else {
+                 html! {}
+            };
+
+            let event_duration = if let Some(next_event) = events.get(usize::try_from(event.version + 1).unwrap()) {
+                let next_created_at = DateTime::from(next_event.created_at.expect("created_at sent"));
+                let duration = next_created_at - created_at;
+                if duration >= TimeDelta::seconds(1) {
+                    Some(human_formatted_timedelta(
+                        duration,
+                        TimeGranularity::Coarse,
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            html! {
+                <div class="timeline-row">
+                    <div class="timeline-left">
+                        <div class={class} style={circle_color_style}>
+                            {event.version}
+                        </div>
+                        {timeline_line}
+                    </div>
+                    {rails}
+                    <div class="timeline-content" id={content_id}>
+                        <div class="timeline-meta">
+                            <div>
+                                if event.version == 0 {
+                                    <span>{created_at.format("%Y-%m-%d %H:%M:%S%.3f").to_string()}</span>
+                                } else {
+                                    <span title={format!("Scheduled at: {}", execution_scheduled_at)}>
+                                        {" +"}{since_scheduled}
+                                    </span>
+                                }
+                                if let Some(event_duration) = event_duration {
+                                    <span class="event-duration">
+                                        {", took "}{event_duration}
+                                    </span>
+                                }
+                            </div>
+                            {scroll_button}
+                        </div>
+                        <div class="detail-body">
+                            {detail}
+                        </div>
+                    </div>
+                </div>
+            }
         })
         .collect();
-    Some(html! {
-        <div class="table-wrapper">
-        <table>
-        <thead>
-        <tr>
-            <th>{"Timestamp"}</th>
-            <th>{"Since scheduled"}</th>
-            <th>{"Detail"}</th>
-        </tr>
-        </thead>
-        <tbody>
-        {rows}
-        </tbody>
-        </table>
-        </div>
-    })
+
+    html! { <>{rows}</> }
 }
