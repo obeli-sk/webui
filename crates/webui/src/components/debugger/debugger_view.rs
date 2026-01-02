@@ -386,26 +386,39 @@ pub fn debugger_view(
 
         let parent_versions_path = versions.step_out().unwrap_or_default();
         let requested_parent_version = parent_versions_path.last();
-        html! {<>
-            if let Some(v) = parent_version_created {
-                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(v) }}
-                        classes={if v == requested_parent_version { "bold" } else { "" }}
-                >
-                    {"Step Out (Start)"}
-                </Link<Route>>
-            } else {
-                <span class="disabled">{"Step Out (Start)"}</span>
+        match (parent_version_created, parent_version_consumed) {
+            (Some(start), Some(end)) if start + 1 == end => {
+                // Merge into one button
+                html! {
+                    <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(start) }}>
+                        {"Step Out"}
+                    </Link<Route>>
+                }
             }
-            if let Some(v) = parent_version_consumed {
-                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(v) }}
-                        classes={if v == requested_parent_version { "bold" } else { "" }}
-                >
-                    {"Step Out (End)"}
-                </Link<Route>>
-            } else {
-                <span class="disabled">{"Step Out (End)"}</span>
+            (Some(start), maybe_end) => {
+                html! {<>
+                    <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(start) }}
+                            classes={if start == requested_parent_version { "bold" } else { "" }}
+                    >
+                        {"Step Out (Start)"}
+                    </Link<Route>>
+                    if let Some(end) = maybe_end {
+                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(end) }}
+                                classes={if end == requested_parent_version { "bold" } else { "" }}
+                        >
+                            {"Step Out (End)"}
+                        </Link<Route>>
+                    }
+                </>}
             }
-        </>
+            _ => {
+                // Use the backtrace path
+                html! {
+                    <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path }}>
+                        {"Step Out"}
+                    </Link<Route>>
+                }
+            }
         }
     } else {
         html! {
