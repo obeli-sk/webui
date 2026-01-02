@@ -185,9 +185,7 @@ mod grpc {
         fn from(result_detail_value: &result_detail::Value) -> Self {
             match result_detail_value {
                 result_detail::Value::Ok(_) => BusyIntervalStatus::ExecutionFinishedOk,
-                result_detail::Value::FallibleError(_) => {
-                    BusyIntervalStatus::ExecutionReturnedErrorVariant
-                }
+                result_detail::Value::Error(_) => BusyIntervalStatus::ExecutionReturnedErrorVariant,
                 result_detail::Value::ExecutionFailure(failure) => match failure.kind() {
                     ExecutionFailureKind::TimedOut => BusyIntervalStatus::ExecutionTimeoutPermanent,
                     _ => BusyIntervalStatus::ExecutionErrorPermanent,

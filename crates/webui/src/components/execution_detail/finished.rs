@@ -59,7 +59,7 @@ pub fn attach_result_detail(
             }
             ok_node
         }
-        grpc_client::result_detail::Value::FallibleError(fallible) => {
+        grpc_client::result_detail::Value::Error(fallible) => {
             let error_node = tree
                 .insert(
                     Node::new(NodeData {

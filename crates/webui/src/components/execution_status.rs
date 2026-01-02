@@ -277,7 +277,7 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
                 .expect("ResultKind must be present for Finished status");
             match &result_kind.value {
                 Some(grpc_client::result_kind::Value::Ok(_)) => html! {"Finished OK"},
-                Some(grpc_client::result_kind::Value::FallibleError(_)) => {
+                Some(grpc_client::result_kind::Value::Error(_)) => {
                     html! {"Finished with error"}
                 }
                 Some(grpc_client::result_kind::Value::ExecutionFailureKind(kind_i32)) => {
