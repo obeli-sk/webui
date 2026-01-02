@@ -33,7 +33,7 @@ fn status_as_message(
     })
 }
 
-enum StatusStateAction {
+pub enum StatusStateAction {
     Update {
         execution_id: grpc_client::ExecutionId,
         message: get_status_response::Message,
@@ -41,8 +41,8 @@ enum StatusStateAction {
 }
 
 #[derive(Default, PartialEq)]
-struct StatusState {
-    statuses: HashMap<grpc_client::ExecutionId, get_status_response::Message>,
+pub struct StatusState {
+    pub statuses: HashMap<grpc_client::ExecutionId, get_status_response::Message>,
 }
 
 impl Reducible for StatusState {
@@ -61,6 +61,8 @@ impl Reducible for StatusState {
         }
     }
 }
+
+pub type StatusCacheContext = UseReducerHandle<StatusState>;
 
 fn is_finished_detailed(msg: &get_status_response::Message) -> bool {
     matches!(msg, get_status_response::Message::FinishedStatus(_))
@@ -141,7 +143,13 @@ pub fn execution_status(
     }: &ExecutionStatusProps,
 ) -> Html {
     let print_finished_status = *print_finished_status;
-    let status_state = use_reducer_eq(StatusState::default);
+
+    // Both hooks must be called unconditionally
+    let context_state = use_context::<StatusCacheContext>();
+    let local_state = use_reducer_eq(StatusState::default);
+
+    // Prefer shared context if available, otherwise use local state
+    let status_state = context_state.unwrap_or(local_state);
 
     // Sync status from props to state (if provided and better than current)
     use_effect_with((execution_id.clone(), status.clone()), {

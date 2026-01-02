@@ -3,7 +3,7 @@ use crate::{
     app::{AppState, Route},
     components::{
         component_tree::{ComponentTree, ComponentTreeConfig},
-        execution_status::ExecutionStatus,
+        execution_status::{ExecutionStatus, StatusCacheContext, StatusState},
     },
     grpc::{
         ffqn::FunctionFqn,
@@ -156,6 +156,9 @@ pub fn execution_list_page() -> Html {
     let response_state = use_state(|| None);
 
     let refresh_counter_state = use_state(|| 0); // Force calling use_effect
+
+    // Cache status to persist across pagination/refresh
+    let status_cache = use_reducer_eq(StatusState::default);
 
     let prefix_ref = use_node_ref();
     let ffqn_ref = use_node_ref();
@@ -397,7 +400,7 @@ pub fn execution_list_page() -> Html {
             })
         };
         html! {
-            <>
+            <ContextProvider<StatusCacheContext> context={status_cache}>
                 <h3>{"Executions"}</h3>
 
                 <div class="filters" style="margin-bottom: 1em; padding: 1em; border: 1px solid #ccc;">
@@ -489,7 +492,7 @@ pub fn execution_list_page() -> Html {
                     }
                 </div>
 
-            </>
+            </ContextProvider<StatusCacheContext>>
         }
     } else {
         html! { <p>{"Loading..."}</p> }
