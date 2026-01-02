@@ -1,5 +1,5 @@
 use crate::{
-    app::query::BacktraceVersions,
+    app::query::BacktraceVersionsPath,
     components::{
         component_list_page::ComponentListPage, debugger::debugger_view::DebuggerView,
         execution_detail_page::ExecutionLogPage, execution_list_page::ExecutionListPage,
@@ -31,9 +31,9 @@ pub mod query {
     use super::*;
 
     #[derive(Clone, PartialEq)]
-    pub struct BacktraceVersions(Vec<VersionType>);
+    pub struct BacktraceVersionsPath(Vec<VersionType>);
     const BACKTRACE_VERSIONS_SEPARATOR: char = '_';
-    impl Display for BacktraceVersions {
+    impl Display for BacktraceVersionsPath {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             for (idx, version) in self.0.iter().enumerate() {
                 if idx == 0 {
@@ -46,7 +46,7 @@ pub mod query {
         }
     }
 
-    impl FromStr for BacktraceVersions {
+    impl FromStr for BacktraceVersionsPath {
         type Err = ();
 
         fn from_str(input: &str) -> Result<Self, Self::Err> {
@@ -55,37 +55,37 @@ pub mod query {
                 let version: VersionType = split.parse().map_err(|_| ())?;
                 versions.push(version);
             }
-            Ok(BacktraceVersions(versions))
+            Ok(BacktraceVersionsPath(versions))
         }
     }
-    impl From<VersionType> for BacktraceVersions {
+    impl From<VersionType> for BacktraceVersionsPath {
         fn from(value: VersionType) -> Self {
-            BacktraceVersions(vec![value])
+            BacktraceVersionsPath(vec![value])
         }
     }
-    impl BacktraceVersions {
+    impl BacktraceVersionsPath {
         pub fn last(&self) -> VersionType {
             *self.0.last().expect("must contain at least one element")
         }
-        pub fn step_into(&self) -> BacktraceVersions {
+        pub fn step_into(&self) -> BacktraceVersionsPath {
             let mut ret = self.clone();
             ret.0.push(0);
             ret
         }
-        pub fn change(&self, version: VersionType) -> BacktraceVersions {
+        pub fn change(&self, version: VersionType) -> BacktraceVersionsPath {
             let mut ret = self.clone();
             *ret.0.last_mut().expect("must contain at least one element") = version;
             ret
         }
-        pub fn step_out(&self) -> Option<BacktraceVersions> {
+        pub fn step_out(&self) -> Option<BacktraceVersionsPath> {
             let mut ret = self.clone();
             ret.0.pop();
             if ret.0.is_empty() { None } else { Some(ret) }
         }
     }
-    impl Default for BacktraceVersions {
+    impl Default for BacktraceVersionsPath {
         fn default() -> Self {
-            BacktraceVersions(vec![0])
+            BacktraceVersionsPath(vec![0])
         }
     }
 }
@@ -134,7 +134,7 @@ pub enum Route {
     #[at("/execution/:execution_id/debug/:versions")]
     ExecutionDebuggerWithVersions {
         execution_id: grpc_client::ExecutionId,
-        versions: BacktraceVersions,
+        versions: BacktraceVersionsPath,
     },
     #[not_found]
     #[at("/404")]
@@ -175,7 +175,7 @@ impl Route {
                 html! { <TraceView {execution_id} /> }
             }
             Route::ExecutionDebugger { execution_id } => {
-                html! { <DebuggerView {execution_id} versions={BacktraceVersions::from(0)} /> }
+                html! { <DebuggerView {execution_id} versions={BacktraceVersionsPath::from(0)} /> }
             }
             Route::ExecutionDebuggerWithVersions {
                 execution_id,

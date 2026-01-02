@@ -1,4 +1,4 @@
-use crate::app::query::BacktraceVersions;
+use crate::app::query::BacktraceVersionsPath;
 use crate::components::execution_header::ExecutionLink;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::grpc_client::join_set_response_event::{ChildExecutionFinished, DelayFinished};
@@ -207,7 +207,7 @@ impl HistoryJoinNextEventProps {
                 Node::new(NodeData {
                     icon: Icon::Flows,
                     label: html! {
-                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: self.execution_id.clone(), versions: BacktraceVersions::from(backtrace_id) } }>
+                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: self.execution_id.clone(), versions: BacktraceVersionsPath::from(backtrace_id) } }>
                             {"Backtrace"}
                         </Link<Route>>
                     },

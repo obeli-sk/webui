@@ -1,6 +1,6 @@
 use crate::{
     BASE_URL,
-    app::{Route, query::BacktraceVersions},
+    app::{Route, query::BacktraceVersionsPath},
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
@@ -29,7 +29,7 @@ use yew_router::prelude::Link;
 #[derive(Properties, PartialEq)]
 pub struct DebuggerViewProps {
     pub execution_id: grpc_client::ExecutionId,
-    pub versions: BacktraceVersions,
+    pub versions: BacktraceVersionsPath,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
