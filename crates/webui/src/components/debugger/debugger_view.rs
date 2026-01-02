@@ -11,7 +11,7 @@ use crate::{
         execution_id::ExecutionIdExt as _,
         grpc_client::{
             self, ComponentId, ExecutionEvent, ExecutionId, GetBacktraceResponse,
-            GetBacktraceSourceRequest, JoinSetResponseEvent,
+            GetBacktraceSourceRequest, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
             execution_event::{self, history_event},
             get_backtrace_request, join_set_response_event,
         },
@@ -30,6 +30,114 @@ use yew_router::prelude::Link;
 pub struct DebuggerViewProps {
     pub execution_id: grpc_client::ExecutionId,
     pub versions: BacktraceVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Cursors {
+    version_from: u32,
+    responses_cursor_from: u32,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ExecutionFetchState {
+    Requested(Cursors),
+    Pending,
+    Finished,
+}
+
+enum DebuggerStateAction {
+    AddExecutionId(ExecutionId),
+    SetPending(ExecutionId),
+    SavePage {
+        execution_id: ExecutionId,
+        new_events: Vec<ExecutionEvent>,
+        new_responses: Vec<ResponseWithCursor>,
+        is_finished: bool,
+    },
+    RequestNextPage {
+        execution_id: ExecutionId,
+        cursors: Cursors,
+    },
+}
+
+#[derive(Default, Clone, PartialEq)]
+struct DebuggerState {
+    execution_ids_to_fetch_state: HashMap<ExecutionId, ExecutionFetchState>,
+    events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
+    responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
+}
+
+impl Reducible for DebuggerState {
+    type Action = DebuggerStateAction;
+
+    fn reduce(self: Rc<Self>, action: Self::Action) -> Rc<Self> {
+        match action {
+            DebuggerStateAction::AddExecutionId(execution_id) => {
+                if !self
+                    .execution_ids_to_fetch_state
+                    .contains_key(&execution_id)
+                {
+                    let mut this = self.as_ref().clone();
+                    this.execution_ids_to_fetch_state.insert(
+                        execution_id,
+                        ExecutionFetchState::Requested(Cursors::default()),
+                    );
+                    Rc::from(this)
+                } else {
+                    self
+                }
+            }
+            DebuggerStateAction::SetPending(execution_id) => {
+                let mut this = self.as_ref().clone();
+                this.execution_ids_to_fetch_state
+                    .insert(execution_id, ExecutionFetchState::Pending);
+                Rc::from(this)
+            }
+            DebuggerStateAction::RequestNextPage {
+                execution_id,
+                cursors,
+            } => {
+                let mut this = self.as_ref().clone();
+                this.execution_ids_to_fetch_state
+                    .insert(execution_id, ExecutionFetchState::Requested(cursors));
+                Rc::from(this)
+            }
+            DebuggerStateAction::SavePage {
+                execution_id,
+                new_events,
+                new_responses,
+                is_finished,
+            } => {
+                let mut this = self.as_ref().clone();
+                this.events
+                    .entry(execution_id.clone())
+                    .or_default()
+                    .extend(new_events);
+
+                let join_set_to_resps = this.responses.entry(execution_id.clone()).or_default();
+                for response in new_responses {
+                    let response = response
+                        .event
+                        .expect("`event` is sent in `ResponseWithCursor`");
+                    let join_set_id = response
+                        .join_set_id
+                        .clone()
+                        .expect("`join_set_id` is sent in `JoinSetResponseEvent`");
+                    let execution_responses = join_set_to_resps.entry(join_set_id).or_default();
+                    execution_responses.push(response);
+                }
+                let new_fetch_state = if is_finished {
+                    ExecutionFetchState::Finished
+                } else {
+                    ExecutionFetchState::Pending
+                    // Will be followed by ExecutionFetchState::Requested
+                };
+                this.execution_ids_to_fetch_state
+                    .insert(execution_id, new_fetch_state);
+                Rc::from(this)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,30 +186,17 @@ pub fn debugger_view(
         versions,
     }: &DebuggerViewProps,
 ) -> Html {
-    let events_state: UseStateHandle<Vec<ExecutionEvent>> = use_state(Vec::new);
-    let responses_state: UseStateHandle<(
-        HashMap<grpc_client::JoinSetId, Vec<JoinSetResponseEvent>>,
-        u32, /* Cursor */
-    )> = use_state(|| (HashMap::new(), 0));
-    let is_fetching_state = use_state(|| (execution_id.clone(), 0)); // Retrigger if not on the last page
+    let debugger_state = use_reducer_eq(DebuggerState::default);
 
-    let events_and_responses_state = EventsAndResponsesState {
-        events_state,
-        responses_state,
-        is_fetching_state,
-    };
-    use_effect_with(
-        (
-            execution_id.clone(),
-            events_and_responses_state.is_fetching_state.deref().clone(),
-        ),
-        {
-            let events_and_responses_state = events_and_responses_state.clone();
-            move |(execution_id, is_fetching)| {
-                events_and_responses_state.hook(execution_id, is_fetching, true)
-            }
-        },
-    );
+    // Fill the current execution id
+    use_effect_with(execution_id.clone(), {
+        let debugger_state = debugger_state.clone();
+        move |execution_id| {
+            debugger_state.dispatch(DebuggerStateAction::AddExecutionId(execution_id.clone()));
+        }
+    });
+
+    use_effect_with(debugger_state.clone(), on_state_change);
 
     let backtraces_state: UseStateHandle<
         HashMap<(ExecutionId, VersionType), GetBacktraceResponse>,
@@ -231,8 +326,17 @@ pub fn debugger_view(
         }
     });
 
-    let events = events_and_responses_state.events_state.deref();
-    let responses = &events_and_responses_state.responses_state.0;
+    let dummy_events = Vec::new();
+    let events = debugger_state
+        .events
+        .get(execution_id)
+        .unwrap_or(&dummy_events);
+    let dummy_response_map = HashMap::new();
+    let responses = debugger_state
+        .responses
+        .get(execution_id)
+        .unwrap_or(&dummy_response_map);
+
     let join_next_version_to_response = compute_join_next_to_response(events, responses);
     let backtrace_response = backtraces_state
         .deref()
@@ -480,99 +584,74 @@ pub fn debugger_view(
     </>}
 }
 
-#[derive(Clone)]
-pub struct EventsAndResponsesState {
-    pub events_state: UseStateHandle<Vec<ExecutionEvent>>,
-    pub responses_state: UseStateHandle<(
-        HashMap<grpc_client::JoinSetId, Vec<JoinSetResponseEvent>>,
-        u32, /* Cursor */
-    )>,
-    pub is_fetching_state: UseStateHandle<(ExecutionId, usize)>,
-}
-impl EventsAndResponsesState {
-    pub fn hook(
-        &self,
-        execution_id: &ExecutionId,
-        is_fetching: &(ExecutionId, usize),
-        include_backtrace_id: bool,
-    ) {
-        if execution_id != &is_fetching.0 {
-            debug!("Cleaning up the state after execution id change");
-            self.events_state.set(Default::default());
-            self.responses_state.set(Default::default());
-            self.is_fetching_state.set((execution_id.clone(), 0)); // retrigger
-            return;
-        }
-        trace!("Setting is_fetching_state=true {execution_id}");
-        {
-            let execution_id = execution_id.clone();
-            let events_state = self.events_state.clone();
-            let responses_state = self.responses_state.clone();
-            let is_fetching_state = self.is_fetching_state.clone();
-            let is_fetching = is_fetching.1;
-            wasm_bindgen_futures::spawn_local(async move {
-                let mut events = events_state.deref().clone();
-                let version_from = events.last().map(|e| e.version + 1).unwrap_or_default();
-                let (mut responses, responses_cursor_from) = responses_state.deref().clone();
-                trace!("list_execution_events_and_responses {execution_id} {version_from}");
-                let mut execution_client =
-                    grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
-                    );
-                let new_events_and_responses = execution_client
-                    .list_execution_events_and_responses(
-                        grpc_client::ListExecutionEventsAndResponsesRequest {
-                            execution_id: Some(execution_id.clone()),
-                            version_from,
-                            events_length: PAGE,
-                            responses_cursor_from,
-                            responses_length: PAGE,
-                            responses_including_cursor: responses_cursor_from == 0,
-                            include_backtrace_id,
-                        },
-                    )
-                    .await
-                    .unwrap()
-                    .into_inner();
-                debug!(
-                    "Got {} events, {} responses",
-                    new_events_and_responses.events.len(),
-                    new_events_and_responses.responses.len()
+fn on_state_change(debugger_state: &UseReducerHandle<DebuggerState>) {
+    trace!("Triggered use_effects");
+    for (execution_id, cursors) in debugger_state
+        .execution_ids_to_fetch_state
+        .iter()
+        .filter_map(|(id, state)| match state {
+            ExecutionFetchState::Requested(cursors) => Some((id, *cursors)),
+            ExecutionFetchState::Pending | ExecutionFetchState::Finished => None,
+        })
+    {
+        debugger_state.dispatch(DebuggerStateAction::SetPending(execution_id.clone()));
+        let execution_id = execution_id.clone();
+        let debugger_state = debugger_state.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            trace!("list_execution_events {cursors:?}");
+            let mut execution_client =
+                grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
+                    tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                 );
-                events.extend(new_events_and_responses.events);
-                let last_event = events.last().expect("not found is sent as an error");
-                let is_finished =
-                    matches!(last_event.event, Some(execution_event::Event::Finished(_)));
-                debug!("Setting events of {execution_id} to {:?}", events.first());
-                events_state.set(events);
-                {
-                    let responses_cursor_from = new_events_and_responses
-                        .responses
-                        .last()
-                        .map(|r| r.cursor)
-                        .unwrap_or(responses_cursor_from);
-                    for response in new_events_and_responses.responses {
-                        let response = response
-                            .event
-                            .expect("`event` is sent in `ResponseWithCursor`");
-                        let join_set_id = response
-                            .join_set_id
-                            .clone()
-                            .expect("`join_set_id` is sent in `JoinSetResponseEvent`");
-                        let execution_responses = responses.entry(join_set_id).or_default();
-                        execution_responses.push(response);
-                    }
-                    responses_state.set((responses, responses_cursor_from));
-                }
-                if is_finished {
-                    debug!("Execution Finished {execution_id} ");
-                } else {
-                    trace!("Sleep start");
-                    TimeoutFuture::new(SLEEP_MILLIS).await;
-                    trace!("Triggering refetch");
-                    is_fetching_state.set((execution_id, is_fetching + 1)); // Retrigger
-                }
+            let server_resp = execution_client
+                .list_execution_events_and_responses(
+                    grpc_client::ListExecutionEventsAndResponsesRequest {
+                        execution_id: Some(execution_id.clone()),
+                        version_from: cursors.version_from,
+                        events_length: PAGE,
+                        responses_cursor_from: cursors.responses_cursor_from,
+                        responses_length: PAGE,
+                        responses_including_cursor: cursors.responses_cursor_from == 0,
+                        include_backtrace_id: true,
+                    },
+                )
+                .await
+                .unwrap()
+                .into_inner();
+            debug!(
+                "{execution_id} Got {} events, {} responses",
+                server_resp.events.len(),
+                server_resp.responses.len()
+            );
+
+            let last_event = server_resp.events.last();
+            let is_finished = matches!(
+                last_event.and_then(|e| e.event.as_ref()),
+                Some(execution_event::Event::Finished(_))
+            );
+            let cursors = Cursors {
+                version_from: last_event
+                    .map(|e| e.version + 1)
+                    .unwrap_or(cursors.version_from),
+                responses_cursor_from: server_resp
+                    .responses
+                    .last()
+                    .map(|resp| resp.cursor)
+                    .unwrap_or(cursors.responses_cursor_from),
+            };
+            debugger_state.dispatch(DebuggerStateAction::SavePage {
+                execution_id: execution_id.clone(),
+                new_events: server_resp.events,
+                new_responses: server_resp.responses,
+                is_finished,
             });
-        }
+            if !is_finished {
+                TimeoutFuture::new(SLEEP_MILLIS).await;
+                debugger_state.dispatch(DebuggerStateAction::RequestNextPage {
+                    execution_id,
+                    cursors,
+                });
+            };
+        });
     }
 }
