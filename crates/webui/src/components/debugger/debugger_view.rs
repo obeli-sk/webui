@@ -380,94 +380,32 @@ pub fn debugger_view(
     );
 
     // Step Out Calculation
-    let parent_id = execution_id.parent_id();
-    let (parent_start_version, parent_end_version) = if let Some(parent_id) = &parent_id {
-        let events = debugger_state.events.get(parent_id);
-        let responses = debugger_state.responses.get(parent_id);
+    let step_out = if let Some(parent_id) = execution_id.parent_id() {
+        let (parent_version_created, parent_version_consumed) =
+            get_parent_execution_bounds(&debugger_state, &parent_id, execution_id);
 
-        if let (Some(events), Some(responses)) = (events, responses) {
-            let join_next_map = compute_join_next_to_response(events, responses);
-            let mut start = None;
-            let mut end = None;
-
-            for event in events {
-                // Start: JoinSetRequest -> ChildExecutionRequest
-                if let Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
-                    event:
-                        Some(history_event::Event::JoinSetRequest(history_event::JoinSetRequest {
-                            join_set_request:
-                                Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
-                                    history_event::join_set_request::ChildExecutionRequest {
-                                        child_execution_id: Some(cid),
-                                    },
-                                )),
-                            ..
-                        })),
-                })) = &event.event
-                {
-                    if cid == execution_id {
-                        start = Some(event.version);
-                    }
-                }
-
-                // End: JoinNext -> Response == ChildExecutionFinished
-                if let Some(execution_event::Event::HistoryVariant(
-                    execution_event::HistoryEvent {
-                        event: Some(history_event::Event::JoinNext(_)),
-                    },
-                )) = &event.event
-                {
-                    if let Some(JoinSetResponseEvent {
-                        response:
-                            Some(join_set_response_event::Response::ChildExecutionFinished(
-                                join_set_response_event::ChildExecutionFinished {
-                                    child_execution_id: Some(cid),
-                                    ..
-                                },
-                            )),
-                        ..
-                    }) = join_next_map.get(&event.version)
-                    {
-                        if cid == execution_id {
-                            end = Some(event.version);
-                            break;
-                        }
-                    }
-                }
-            }
-            (start, end)
-        } else {
-            (None, None)
-        }
-    } else {
-        (None, None)
-    };
-
-    let step_out = if let Some(parent_id) = parent_id {
-        let parent_versions = versions.step_out().unwrap_or_default();
-        let requested_parent_version = parent_versions.last();
+        let parent_versions_path = versions.step_out().unwrap_or_default();
+        let requested_parent_version = parent_versions_path.last();
         html! {<>
-
-               if let Some(v) = parent_start_version {
-                   <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions.change(v) }}
+            if let Some(v) = parent_version_created {
+                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(v) }}
                         classes={if v == requested_parent_version { "bold" } else { "" }}
-                   >
-                       {"Step Out (Start)"}
-                   </Link<Route>>
-               } else {
-                   <span class="disabled">{"Step Out (Start)"}</span>
-               }
-
-               if let Some(v) = parent_end_version {
-                   <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions.change(v) }}
+                >
+                    {"Step Out (Start)"}
+                </Link<Route>>
+            } else {
+                <span class="disabled">{"Step Out (Start)"}</span>
+            }
+            if let Some(v) = parent_version_consumed {
+                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(v) }}
                         classes={if v == requested_parent_version { "bold" } else { "" }}
-                   >
-                       {"Step Out (End)"}
-                   </Link<Route>>
-               } else {
-                   <span class="disabled">{"Step Out (End)"}</span>
-               }
-           </>
+                >
+                    {"Step Out (End)"}
+                </Link<Route>>
+            } else {
+                <span class="disabled">{"Step Out (End)"}</span>
+            }
+        </>
         }
     } else {
         html! {
@@ -489,7 +427,7 @@ pub fn debugger_view(
             .as_ref()
             .expect("`GetBacktraceResponse.component_id` is sent");
 
-        // Add Step Prev, Next, Into, Out
+        // Add Step Prev, Next, Into
         let backtrace_versions: BTreeSet<VersionType> = events
             .iter()
             .filter_map(|event| event.backtrace_id)
@@ -748,4 +686,66 @@ fn on_state_change(debugger_state: &UseReducerHandle<DebuggerState>) {
             };
         });
     }
+}
+
+fn get_parent_execution_bounds(
+    debugger_state: &DebuggerState,
+    parent_id: &ExecutionId,
+    execution_id: &ExecutionId,
+) -> (Option<u32>, Option<u32>) {
+    let events = debugger_state.events.get(parent_id);
+    let responses = debugger_state.responses.get(parent_id);
+
+    let (Some(events), Some(responses)) = (events, responses) else {
+        return (None, None);
+    };
+
+    let join_next_map = compute_join_next_to_response(events, responses);
+    let mut start = None;
+    let mut end = None;
+
+    for event in events {
+        match &event.event {
+            // Check Start: JoinSetRequest -> ChildExecutionRequest
+            Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+                event:
+                    Some(history_event::Event::JoinSetRequest(history_event::JoinSetRequest {
+                        join_set_request:
+                            Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
+                                history_event::join_set_request::ChildExecutionRequest {
+                                    child_execution_id: Some(cid),
+                                },
+                            )),
+                        ..
+                    })),
+            })) if cid == execution_id => {
+                start = Some(event.version);
+            }
+
+            // Check End: JoinNext -> Response == ChildExecutionFinished
+            Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+                event: Some(history_event::Event::JoinNext(_)),
+            })) => {
+                if let Some(JoinSetResponseEvent {
+                    response:
+                        Some(join_set_response_event::Response::ChildExecutionFinished(
+                            join_set_response_event::ChildExecutionFinished {
+                                child_execution_id: Some(cid),
+                                ..
+                            },
+                        )),
+                    ..
+                }) = join_next_map.get(&event.version)
+                {
+                    if cid == execution_id {
+                        end = Some(event.version);
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    (start, end)
 }
