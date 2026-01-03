@@ -24,6 +24,7 @@ get_litestream_version() {
 rm -f dev-deps.txt
 cargo upgrade --version >> dev-deps.txt
 cargo-expand --version >> dev-deps.txt
+just --version >> dev-deps.txt
 nix develop .#withObelisk --command obelisk --version >> dev-deps.txt
 protoc --version >> dev-deps.txt
 rustc --version >> dev-deps.txt

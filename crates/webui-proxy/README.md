@@ -13,7 +13,7 @@ However, this loads the webui as specified in [webui-version.txt](../../assets/w
 Build
 ```sh
 trunk --log=debug --offline build --config crates/webui/Trunk.toml
-cargo build --package webui-proxy --target=wasm32-wasip2 --profile=release_trunk
+cargo build --package webui-proxy --target=wasm32-wasip2 --release
 ```
 
 Add the `webui-proxy` as a webhook endpoint:
@@ -25,7 +25,7 @@ listening_addr = "127.0.0.1:8082"
 [[webhook_endpoint]]
 name = "webui2"
 http_server = "webui2"
-location.path = "target/wasm32-wasip2/release_trunk/webui_proxy.wasm"
+location.path = "target/wasm32-wasip2/release/webui_proxy.wasm"
 routes = [""]
 env_vars = ["TARGET_URL=http://127.0.0.1:5005"]
 forward_stdout = "stderr"

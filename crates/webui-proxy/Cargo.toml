@@ -9,9 +9,6 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
-[build-dependencies]
-webui-builder.workspace = true
-
 [dependencies]
 wstd.workspace = true
 

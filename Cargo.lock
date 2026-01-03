@@ -3816,18 +3816,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "webui-builder"
-version = "0.28.1"
-dependencies = [
- "cargo_metadata",
- "yewprint-css",
-]
-
-[[package]]
 name = "webui-proxy"
 version = "0.28.1"
 dependencies = [
- "webui-builder",
  "wstd",
 ]
 

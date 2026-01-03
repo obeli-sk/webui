@@ -9,14 +9,11 @@ which trunk # nix develop .#web --command
 
 TAG="$1"
 OUTPUT_FILE="${2:-/dev/stdout}"
-rm -rf crates/webui/dist
 
-# Run trunk in webui-builder
-CARGO_PROFILE_RELEASE_DEBUG=limited RUN_TRUNK=true \
-    cargo build --package webui-proxy --target=wasm32-wasip2 --profile=release_trunk
+just build
 
 if [ "$TAG" != "dry-run" ]; then
-    OUTPUT=$(obelisk client component push "target/wasm32-wasip2/release_trunk/webui_proxy.wasm" \
+    OUTPUT=$(obelisk client component push "target/wasm32-wasip2/release/webui_proxy.wasm" \
         "docker.io/getobelisk/webui:$TAG")
     echo -n $OUTPUT > $OUTPUT_FILE
 fi

@@ -33,6 +33,7 @@
             binaryen # wasm-opt
             cargo-edit
             cargo-expand
+            just
             protobuf
             rustToolchain
             trunk

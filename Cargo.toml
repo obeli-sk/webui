@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "obelisk/crates/val-json",
     "crates/webui",
-    "crates/webui/builder",
     "crates/webui-proxy",
 ]
 
@@ -18,7 +17,6 @@ rust-version = "1.91.0"
 [workspace.dependencies]
 val-json = { package = "obeli-sk-val-json", path = "obelisk/crates/val-json" }
 
-webui-builder = { path = "crates/webui/builder" }
 cargo_metadata = "0.23"
 
 # webui
@@ -117,9 +115,6 @@ opt-level = "s"
 codegen-units = 1
 lto = "fat"
 strip = "debuginfo"
-
-[profile.release_trunk]
-inherits = "release"
 
 [profile.dev]
 debug = "line-tables-only"
