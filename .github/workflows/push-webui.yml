@@ -54,7 +54,7 @@ jobs:
 
       - name: Clone Obelisk repo
         run: |
-          git clone https://${{ secrets.GH_TOKEN_OBELISK_RW }}@github.com/obeli-sk/obelisk.git
+          git clone https://${{ secrets.GH_TOKEN_OBELISK_RW }}@github.com/obeli-sk/obelisk.git obelisk-pr
 
       - name: Push webui
         run: |
@@ -66,7 +66,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-        working-directory: obelisk
+        working-directory: obelisk-pr
 
       - name: Create a PR
         run: |
@@ -87,4 +87,4 @@ jobs:
         env:
           TAG: ${{ github.event.inputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN_PR_RW }}
-        working-directory: obelisk
+        working-directory: obelisk-pr
