@@ -52,13 +52,17 @@ jobs:
         id: branch-name
         run: echo "branch_name=bump-webui-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
 
+
+      - id: obelisk-clone
+        run: echo "obelisk_dir=obelisk-pr" >> $GITHUB_OUTPUT
+
       - name: Clone Obelisk repo
         run: |
-          git clone https://${{ secrets.GH_TOKEN_OBELISK_RW }}@github.com/obeli-sk/obelisk.git obelisk-pr
+          git clone https://${{ secrets.GH_TOKEN_OBELISK_RW }}@github.com/obeli-sk/obelisk.git ${{ steps.obelisk-clone.outputs.obelisk_dir }}
 
       - name: Push webui
         run: |
-          nix develop  .#withObelisk --command ./scripts/push-webui.sh $TAG obelisk/assets/webui-version.txt
+          nix develop  .#withObelisk --command ./scripts/push-webui.sh $TAG ${{ steps.obelisk-clone.outputs.obelisk_dir }}/assets/webui-version.txt
         env:
           TAG: ${{ github.event.inputs.tag }}
 
@@ -66,7 +70,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-        working-directory: obelisk-pr
+        working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
 
       - name: Create a PR
         run: |
@@ -87,4 +91,4 @@ jobs:
         env:
           TAG: ${{ github.event.inputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN_PR_RW }}
-        working-directory: obelisk-pr
+        working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
