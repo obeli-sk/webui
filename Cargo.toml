@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "obelisk/crates/val-json",
     "crates/webui",
     "crates/webui/builder",
     "crates/webui-proxy",
@@ -15,11 +16,10 @@ edition = "2024"
 rust-version = "1.91.0"
 
 [workspace.dependencies]
-val-json = { package = "obeli-sk-val-json", version = "0.28.1" }
+val-json = { package = "obeli-sk-val-json", path = "obelisk/crates/val-json" }
 
 webui-builder = { path = "crates/webui/builder" }
 cargo_metadata = "0.23"
-
 
 # webui
 gloo = "0.11.0"
@@ -74,6 +74,13 @@ tonic = { version = "0.14.2", default-features = false }
 tonic-prost = "0.14.2"
 ulid = { version = "=1.1.4", features = ["serde"] }
 tonic-prost-build = "0.14.2"
+
+# val-json
+itertools = "0.14"
+thiserror = "2.0"
+wasmtime = "40.0.0" # not used
+wast = "243.0.0"
+insta = { version = "1.45.1", features = ["json"] }
 
 [workspace.lints]
 # lower the priority to allow overriding later
