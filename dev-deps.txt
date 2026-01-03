@@ -1,7 +1,7 @@
 cargo-edit-upgrade 0.13.8
 cargo-expand 1.0.118
-just 1.43.1
-obelisk 0.32.1
+just 1.45.0
+obelisk 0.33.0
 libprotoc 32.1
 rustc 1.92.0 (ded5c06cf 2025-12-08)
 wasm-opt version 125
