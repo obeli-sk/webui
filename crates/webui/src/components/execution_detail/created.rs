@@ -10,6 +10,7 @@ use crate::grpc::grpc_client;
 use crate::grpc::grpc_client::ComponentId;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::version::VersionType;
+use crate::util::time::format_date;
 use chrono::{DateTime, Utc};
 use grpc_client::execution_event::Created;
 use serde_json::Value;
@@ -114,7 +115,7 @@ impl ProcessedProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Time,
-                label: html! { {format!("Scheduled at {}", self.scheduled_at)} },
+                label: html! { {format!("Scheduled at {}", format_date(self.scheduled_at))} },
                 has_caret: false,
                 is_selected: self.is_selected,
                 ..Default::default()

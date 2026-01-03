@@ -11,9 +11,11 @@ use crate::grpc::grpc_client::{
     },
     join_set_response_event,
 };
-use crate::util::time::{TimeGranularity, human_formatted_timedelta};
+use crate::util::time::{
+    TimeGranularity, format_date, human_formatted_timedelta, relative_time_maybe,
+};
 use assert_matches::assert_matches;
-use chrono::{DateTime, TimeDelta};
+use chrono::DateTime;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::trace;
@@ -280,18 +282,18 @@ fn render_execution_details(
     events: &[ExecutionEvent],
     join_next_version_to_response: &HashMap<u32, &JoinSetResponseEvent>,
 ) -> Html {
-    let create_event = events
-        .first()
-        .expect("not found")
-        .event
-        .as_ref()
-        .expect("event sent");
+    let create_event = events.first().expect("not found");
+    let execution_created_at = DateTime::from(create_event.created_at.expect("crated_at is sent"));
+    let create_event = create_event.event.as_ref().expect("event sent");
     let create_event = assert_matches!(
         create_event,
         grpc_client::execution_event::Event::Created(created) => created
     );
-    let execution_scheduled_at =
+    let initially_scheduled_at =
         DateTime::from(create_event.scheduled_at.expect("scheduled_at sent"));
+
+    let initial_scheduling_duration =
+        relative_time_maybe(execution_created_at, initially_scheduled_at);
 
     let last_known_version = events.last().map(|e| e.version).unwrap_or(0);
 
@@ -423,9 +425,9 @@ fn render_execution_details(
                 ExecutionLink::Log,
                 false,
             );
-            let created_at = DateTime::from(event.created_at.expect("created_at sent"));
-            let since_scheduled = human_formatted_timedelta(
-                created_at - execution_scheduled_at,
+            let event_created_at = DateTime::from(event.created_at.expect("created_at sent"));
+            let since_initially_scheduled = human_formatted_timedelta(
+                event_created_at - initially_scheduled_at,
                 TimeGranularity::Fine,
             );
 
@@ -593,17 +595,9 @@ fn render_execution_details(
             };
 
             let event_duration = if let Some(next_event) = events.get(usize::try_from(event.version + 1).unwrap()) {
-                let next_created_at = DateTime::from(next_event.created_at.expect("created_at sent"));
-                let duration = next_created_at - created_at;
-                if duration >= TimeDelta::seconds(1) {
-                    Some(human_formatted_timedelta(
-                        duration,
-                        TimeGranularity::Coarse,
-                    ))
-                } else {
-                    None
-                }
+                relative_time_maybe(event_created_at, DateTime::from(next_event.created_at.expect("created_at sent")))
             } else {
+                // Don't display event duration
                 None
             };
 
@@ -620,16 +614,25 @@ fn render_execution_details(
                         <div class="timeline-meta">
                             <div>
                                 if event.version == 0 {
-                                    <span>{created_at.format("%Y-%m-%d %H:%M:%S%.3f").to_string()}</span>
+                                    <span>
+                                        {format_date(event_created_at)}
+                                        if let Some(initial_scheduling_duration) = &initial_scheduling_duration {
+                                            {", scheduled +"}
+                                            {initial_scheduling_duration}
+                                        }
+                                    </span>
                                 } else {
-                                    <span title={format!("Scheduled at: {}", execution_scheduled_at)}>
-                                        {" +"}{since_scheduled}
+                                    <span title={format!("Created at: {}", format_date(event_created_at))}>
+                                        {" +"}{since_initially_scheduled}
+                                        if event.version == 1 {
+                                            {" after initial scheduling"}
+                                        }
                                     </span>
-                                }
-                                if let Some(event_duration) = event_duration {
-                                    <span class="event-duration">
-                                        {", took "}{event_duration}
-                                    </span>
+                                    if let Some(event_duration) = event_duration {
+                                        <span class="event-duration">
+                                            {", took "}{event_duration}
+                                        </span>
+                                    }
                                 }
                             </div>
                             {scroll_button}

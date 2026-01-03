@@ -1,7 +1,20 @@
 use chrono::{DateTime, TimeDelta, Utc};
 
 pub fn relative_time(old: DateTime<Utc>, new: DateTime<Utc>) -> String {
-    human_formatted_timedelta(new.signed_duration_since(old), TimeGranularity::Coarse)
+    let duration = new.signed_duration_since(old);
+    human_formatted_timedelta(duration, TimeGranularity::Coarse)
+}
+
+pub fn relative_time_maybe(old: DateTime<Utc>, new: DateTime<Utc>) -> Option<String> {
+    let duration = new.signed_duration_since(old);
+    if duration >= TimeDelta::seconds(1) {
+        Some(human_formatted_timedelta(
+            new.signed_duration_since(old),
+            TimeGranularity::Coarse,
+        ))
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,4 +64,8 @@ pub fn human_formatted_timedelta(duration: TimeDelta, granularity: TimeGranulari
             }
         }
     }
+}
+
+pub fn format_date(date: DateTime<Utc>) -> String {
+    date.format("%Y-%m-%d %H:%M:%S%.3f").to_string()
 }
