@@ -465,9 +465,9 @@ fn render_execution_details(
 
                 if diff > 1 {
                     let label = if *target_version > event.version {
-                        "Go to response ↓"
+                        "Go to Await ↓"
                     } else {
-                        "Go to request ↑"
+                        "Go to Submit ↑"
                     };
 
                     let target_element_id = format!("event-content-{}", target_version);
