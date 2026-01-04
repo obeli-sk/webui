@@ -31,7 +31,7 @@ pub mod query {
     use super::*;
 
     #[derive(Clone, PartialEq)]
-    pub struct BacktraceVersionsPath(Vec<VersionType>);
+    pub struct BacktraceVersionsPath(pub Vec<VersionType>);
     const BACKTRACE_VERSIONS_SEPARATOR: char = '_';
     impl Display for BacktraceVersionsPath {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

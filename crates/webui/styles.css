@@ -274,7 +274,7 @@ ul li span {
 }
 
 /* action links  */
-.trace-view>a {
+.trace-view .step a {
     display: inline-block;
     padding: 0.4em 0.8em;
     margin-right: 0.75rem;
@@ -288,15 +288,15 @@ ul li span {
     transition: background-color 0.2s ease;
 }
 
-.trace-view>a.bold {
+.trace-view .step a.bold {
     font-weight: bold;
 }
 
-.trace-view>a:hover {
+.trace-view .step a:hover {
     background-color: #6272a4;
 }
 
-.trace-view>span.disabled {
+.trace-view .step span.disabled {
     padding: 0.4em 0.8em;
     margin-right: 0.75rem;
     margin-bottom: 1.5rem;

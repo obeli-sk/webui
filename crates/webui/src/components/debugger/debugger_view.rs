@@ -378,8 +378,11 @@ pub fn debugger_view(
         })
     );
 
+    let mut step_buttons = Vec::new();
+
     // Step Out Calculation
-    let step_out = if let Some(parent_id) = execution_id.parent_id() {
+    step_buttons.push(
+    if let Some(parent_id) = execution_id.parent_id() {
         let (parent_version_created, parent_version_consumed) =
             get_parent_execution_bounds(&debugger_state, &parent_id, execution_id);
 
@@ -425,7 +428,7 @@ pub fn debugger_view(
                 {"Step Out"}
             </span>
         }
-    };
+    });
 
     let backtrace = if let Some(backtrace_response) = backtrace_response {
         let mut htmls = Vec::new();
@@ -444,7 +447,7 @@ pub fn debugger_view(
             .iter()
             .filter_map(|event| event.backtrace_id)
             .collect();
-        htmls.push(if let Some(backtrace_prev) = backtrace_versions
+        step_buttons.push(if let Some(backtrace_prev) = backtrace_versions
             .range(..wasm_backtrace.version_min_including)
             .next_back()
             .copied()
@@ -462,7 +465,7 @@ pub fn debugger_view(
                 </span>
             }
         });
-        htmls.push(if let Some(backtrace_next) = backtrace_versions
+        step_buttons.push(if let Some(backtrace_next) = backtrace_versions
             .range(wasm_backtrace.version_max_excluding..)
             .next()
             .copied()
@@ -489,7 +492,7 @@ pub fn debugger_view(
             } else {
                 wasm_backtrace.version_min_including
             };
-        htmls.push(match events.get(usize::try_from(version_child_request).expect("u32 must be convertible to usize")) {
+        step_buttons.push(match events.get(usize::try_from(version_child_request).expect("u32 must be convertible to usize")) {
                 Some(ExecutionEvent {
                     event:
                         Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
@@ -617,7 +620,9 @@ pub fn debugger_view(
 
         <div class="trace-layout-container">
             <div class="trace-view">
-                {step_out}
+                <div class="step">
+                    {step_buttons}
+                </div>
                 {backtrace}
             </div>
             <div class="trace-detail">
