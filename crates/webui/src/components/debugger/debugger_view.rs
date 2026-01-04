@@ -181,11 +181,19 @@ impl Reducible for SourcesState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BacktraceError {
+    NotFound,
+    Other,
+}
+
 #[derive(Default, PartialEq)]
-struct BacktracesState(HashMap<(ExecutionId, VersionType), Result<GetBacktraceResponse, ()>>);
+struct BacktracesState(
+    HashMap<(ExecutionId, VersionType), Result<GetBacktraceResponse, BacktraceError>>,
+);
 struct BacktracesStateAction {
     key: (ExecutionId, VersionType),
-    value: Result<GetBacktraceResponse, ()>,
+    value: Result<GetBacktraceResponse, BacktraceError>,
     trace_id: Rc<str>,
 }
 impl Reducible for BacktracesState {
@@ -302,7 +310,13 @@ pub fn debugger_view(
                     trace!("[{hook_id}] Got backtrace_response {backtrace_response:?}");
                     let backtrace_response = backtrace_response
                         .map(|resp| resp.into_inner())
-                        .map_err(|_| ());
+                        .map_err(|err| {
+                            if err.code() == tonic::Code::NotFound {
+                                BacktraceError::NotFound
+                            } else {
+                                BacktraceError::Other
+                            }
+                        });
                     if let Ok(backtrace_response) = &backtrace_response {
                         let component_id = backtrace_response
                             .component_id
@@ -678,7 +692,12 @@ pub fn debugger_view(
                         }).collect::<Html>()
                     }
                 }
-                Some(Err(())) => {
+                Some(Err(BacktraceError::NotFound)) => {
+                    html! {
+                        <p>{format!("Backtrace not found")}</p>
+                    }
+                }
+                Some(Err(BacktraceError::Other)) => {
                     html! {
                         <p>{format!("Loading backtrace failed")}</p>
                     }
