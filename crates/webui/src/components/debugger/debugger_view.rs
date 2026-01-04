@@ -255,14 +255,8 @@ pub fn debugger_view(
         let debugger_state = debugger_state.clone();
         move |ancestry| {
             let mut ancestry = ancestry.iter();
-            let execution_id = ancestry
-                .next()
-                .expect("this page's ID is always pushed")
-                .0
-                .clone();
-            debugger_state.dispatch(DebuggerStateAction::AddExecutionId(execution_id));
-            if let Some((parent_id, _)) = ancestry.next() {
-                debugger_state.dispatch(DebuggerStateAction::AddExecutionId(parent_id.clone()));
+            while let Some((id, _path)) = ancestry.next() {
+                debugger_state.dispatch(DebuggerStateAction::AddExecutionId(id.clone()));
             }
         }
     });
