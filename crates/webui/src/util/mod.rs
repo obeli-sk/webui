@@ -1,3 +1,4 @@
+pub mod color;
 pub mod time;
 pub mod wit_highlighter;
 

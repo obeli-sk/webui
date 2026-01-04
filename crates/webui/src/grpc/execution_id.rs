@@ -1,5 +1,5 @@
 use super::grpc_client::{self, ExecutionId};
-use crate::components::execution_header::ExecutionLink;
+use crate::{components::execution_header::ExecutionLink, util::color::generate_color_from_hash};
 use std::{fmt::Display, str::FromStr};
 use yew::{Html, ToHtml, html};
 
@@ -18,6 +18,18 @@ pub trait ExecutionIdExt {
 }
 
 pub const EXECUTION_ID_INFIX: &str = ".";
+
+impl ExecutionId {
+    pub fn color(&self) -> String {
+        use std::hash::Hasher as _;
+        use std::hash::{DefaultHasher, Hash};
+
+        let mut hasher = DefaultHasher::new();
+        self.id.hash(&mut hasher);
+        let hash = hasher.finish();
+        generate_color_from_hash(hash)
+    }
+}
 
 impl ExecutionIdExt for ExecutionId {
     fn as_hierarchy(&self) -> Vec<(String, ExecutionId)> {

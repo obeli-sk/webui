@@ -19,8 +19,6 @@ use chrono::DateTime;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::trace;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
@@ -143,29 +141,6 @@ struct TaskRailMetadata {
     track_index: usize,
     color: String,
     is_completed: bool,
-}
-
-fn color_for_join_set(id: &JoinSetId) -> String {
-    generate_color(&id.to_string())
-}
-
-fn color_for_string(s: &str) -> String {
-    generate_color(s)
-}
-
-fn generate_color(s: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    s.hash(&mut hasher);
-    let hash = hasher.finish();
-
-    // Hue: 0-360
-    let h = hash % 360;
-    // Saturation: 70-100% (Vibrant)
-    let s = 70 + ((hash >> 16) % 31);
-    // Lightness: 65-85% (Readable on dark background)
-    let l = 65 + ((hash >> 32) % 21);
-
-    format!("hsl({}, {}%, {}%)", h, s, l)
 }
 
 #[function_component(ExecutionLogPage)]
@@ -312,19 +287,17 @@ fn render_execution_details(
                     join_set_request: Some(inner_req),
                     ..
                 })) => {
-                    let task_id = match inner_req {
-                        join_set_request::JoinSetRequest::ChildExecutionRequest(req) => req
-                            .child_execution_id
-                            .as_ref()
-                            .expect("id is always sent")
-                            .to_string(),
-                        join_set_request::JoinSetRequest::DelayRequest(req) => req
-                            .delay_id
-                            .as_ref()
-                            .expect("id is always sent")
-                            .to_string(),
+                    let (task_id, color) = match inner_req {
+                        join_set_request::JoinSetRequest::ChildExecutionRequest(req) => {
+                            let exe_id =
+                                req.child_execution_id.as_ref().expect("id is always sent");
+                            (exe_id.to_string(), exe_id.color())
+                        }
+                        join_set_request::JoinSetRequest::DelayRequest(req) => {
+                            let delay_id = req.delay_id.as_ref().expect("id is always sent");
+                            (delay_id.to_string(), delay_id.color())
+                        }
                     };
-                    let color = color_for_string(&task_id);
                     task_rails.insert(
                         task_id,
                         TaskRailMetadata {
@@ -453,7 +426,7 @@ fn render_execution_details(
 
                         if let Some(jid) = maybe_jid {
                             circle_class = "version-circle is-join";
-                            let color = color_for_join_set(jid);
+                            let color = jid.color();
                             circle_color_style = format!("border-color: {0}; color: {0};", color);
                         }
                     }
