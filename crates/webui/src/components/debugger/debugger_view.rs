@@ -20,7 +20,7 @@ use crate::{
 };
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
-use log::{debug, trace};
+use log::{debug, info, trace};
 use std::{collections::BTreeSet, ops::Deref as _, path::PathBuf, rc::Rc};
 use yew::prelude::*;
 use yew_router::prelude::Link;
@@ -76,6 +76,7 @@ impl Reducible for DebuggerState {
                     .execution_ids_to_fetch_state
                     .contains_key(&execution_id)
                 {
+                    info!(" {execution_id} is being requested");
                     let mut this = self.as_ref().clone();
                     this.execution_ids_to_fetch_state.insert(
                         execution_id,
@@ -126,6 +127,7 @@ impl Reducible for DebuggerState {
                     execution_responses.push(response);
                 }
                 let new_fetch_state = if is_finished {
+                    info!("{execution_id} is finished loading events and responses");
                     ExecutionFetchState::Finished
                 } else {
                     ExecutionFetchState::Pending
@@ -141,7 +143,7 @@ impl Reducible for DebuggerState {
 
 #[derive(Debug, Clone, PartialEq)]
 enum SourceCodeState {
-    Added,
+    Requested,
     InFlight,
     Found(Rc<[(Html, usize /* line */)]>), // Array of lines + line numbers
     NotFoundOrErr,
@@ -167,13 +169,44 @@ impl Reducible for SourcesState {
             trace_id,
         }: Self::Action,
     ) -> Rc<Self> {
-        if value == SourceCodeState::Added && self.0.contains_key(&key) {
+        if value == SourceCodeState::Requested && self.0.contains_key(&key) {
+            trace!("[{trace_id}] Skipping {key:?}");
             // Do not readd the same entry.
             return self;
         }
         let mut next_map = self.0.clone();
         let old = next_map.insert(key.clone(), value.clone());
-        debug!("[{trace_id}] Updated {key:?} from {old:?} to {value:?}");
+        debug!("[{trace_id}] Updated from {old:?} to {value:?} key {key:?}");
+        Self(next_map).into()
+    }
+}
+
+#[derive(Default, PartialEq)]
+struct BacktracesState(HashMap<(ExecutionId, VersionType), Result<GetBacktraceResponse, ()>>);
+struct BacktracesStateAction {
+    key: (ExecutionId, VersionType),
+    value: Result<GetBacktraceResponse, ()>,
+    trace_id: Rc<str>,
+}
+impl Reducible for BacktracesState {
+    type Action = BacktracesStateAction;
+
+    fn reduce(
+        self: Rc<Self>,
+        BacktracesStateAction {
+            key,
+            value,
+            trace_id,
+        }: Self::Action,
+    ) -> Rc<Self> {
+        if self.0.contains_key(&key) {
+            trace!("[{trace_id}] Skipping {key:?}");
+            // Do not readd the same entry.
+            return self;
+        }
+        let mut next_map = self.0.clone();
+        let old = next_map.insert(key.clone(), value.clone());
+        debug!("[{trace_id}] Updated from {old:?} to {value:?} key {key:?}");
         Self(next_map).into()
     }
 }
@@ -187,84 +220,119 @@ pub fn debugger_view(
 ) -> Html {
     let debugger_state = use_reducer_eq(DebuggerState::default);
 
-    // Fill the current execution id and its parent
-    use_effect_with(execution_id.clone(), {
+    // 1. Toggle for hiding frame locations
+    let hide_frames = use_state(|| false);
+    let on_toggle_frames = {
+        let hide_frames = hide_frames.clone();
+        Callback::from(move |_| hide_frames.set(!*hide_frames))
+    };
+
+    // 2. Calculate ancestry chain: [(ExecutionId, VersionType)]
+    // Order: Leaf (Current) -> Parent -> Grandparent -> ... -> Root
+    let ancestry = {
+        let mut curr_id = execution_id.clone();
+        let mut curr_ver_path = versions.clone();
+        let mut list = vec![(curr_id.clone(), curr_ver_path.clone())];
+
+        while let (Some(id), Some(ver_path)) = (curr_id.parent_id(), curr_ver_path.step_out()) {
+            list.push((id.clone(), ver_path.clone()));
+            curr_id = id;
+            curr_ver_path = ver_path;
+        }
+        list
+    };
+
+    // 3. Register current execution ID + parent (for two step out buttons) so we fetch their events
+    use_effect_with(ancestry.clone(), {
         let debugger_state = debugger_state.clone();
-        move |execution_id| {
-            debugger_state.dispatch(DebuggerStateAction::AddExecutionId(execution_id.clone()));
-            if let Some(parent_id) = execution_id.parent_id() {
-                debugger_state.dispatch(DebuggerStateAction::AddExecutionId(parent_id));
+        move |ancestry| {
+            let mut ancestry = ancestry.iter();
+            let execution_id = ancestry
+                .next()
+                .expect("this page's ID is always pushed")
+                .0
+                .clone();
+            debugger_state.dispatch(DebuggerStateAction::AddExecutionId(execution_id));
+            if let Some((parent_id, _)) = ancestry.next() {
+                debugger_state.dispatch(DebuggerStateAction::AddExecutionId(parent_id.clone()));
             }
         }
     });
 
     use_effect_with(debugger_state.clone(), on_state_change);
 
-    let backtraces_state: UseStateHandle<
-        HashMap<(ExecutionId, VersionType), GetBacktraceResponse>,
-    > = use_state(Default::default);
+    let backtraces_state = use_reducer_eq(BacktracesState::default);
     let sources_state = use_reducer_eq(SourcesState::default);
-    let version = versions.last();
-    use_effect_with((execution_id.clone(), version), {
-        let hook_id = trace_id();
+
+    // 4. Fetch backtraces for ALL items in the ancestry chain
+    use_effect_with(ancestry.clone(), {
         let backtraces_state = backtraces_state.clone();
-        let sources_state = sources_state.clone(); // Write a request to obtain the sources.
-        move |(execution_id, version)| {
-            let execution_id = execution_id.clone();
-            let version = *version;
-            if backtraces_state.contains_key(&(execution_id.clone(), version)) {
-                trace!("[{hook_id}] Prevented GetBacktrace fetch");
-                return;
-            }
-            wasm_bindgen_futures::spawn_local(async move {
-                trace!("[{hook_id}] GetBacktraceRequest {execution_id} {version:?}");
-                let mut execution_client =
-                    grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
-                    );
-                let backtrace_response = execution_client
-                    .get_backtrace(tonic::Request::new(grpc_client::GetBacktraceRequest {
-                        execution_id: Some(execution_id.clone()),
-                        filter: Some(if version > 0 {
-                            get_backtrace_request::Filter::Specific(
-                                get_backtrace_request::Specific { version },
-                            )
-                        } else {
-                            get_backtrace_request::Filter::First(get_backtrace_request::First {})
-                        }),
-                    }))
-                    .await;
-                let backtrace_response = match backtrace_response {
-                    Err(status) if status.code() == tonic::Code::NotFound => return,
-                    Ok(ok) => ok.into_inner(),
-                    err @ Err(_) => panic!("{err:?}"),
-                };
-                trace!("[{hook_id}] Got backtrace_response {backtrace_response:?}");
-                let component_id = backtrace_response
-                    .component_id
-                    .clone()
-                    .expect("GetBacktraceResponse.component_id is sent");
-                for file in backtrace_response
-                    .wasm_backtrace
-                    .as_ref()
-                    .expect("GetBacktraceResponse.wasm_backtrace is sent")
-                    .frames
-                    .iter()
-                    .flat_map(|frame| frame.symbols.iter())
-                    .filter_map(|frame_symbol| frame_symbol.file.as_ref())
-                {
-                    let key = (component_id.clone(), file.clone());
-                    sources_state.dispatch(SourcesStateAction {
-                        key,
-                        value: SourceCodeState::Added,
+        let sources_state = sources_state.clone();
+        let hook_id = trace_id();
+        move |ancestry| {
+            for (execution_id, versions) in ancestry.iter() {
+                let execution_id = execution_id.clone();
+                let version = versions.last();
+
+                let backtraces_state = backtraces_state.clone();
+                let sources_state = sources_state.clone();
+                let hook_id = hook_id.clone();
+
+                wasm_bindgen_futures::spawn_local(async move {
+                    let hook_id: Rc<str> = Rc::from(format!("{hook_id} {}", trace_id()));
+                    info!("[{hook_id}] GetBacktraceRequest {execution_id} {version:?}");
+                    let mut execution_client =
+                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
+                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                        );
+                    let backtrace_response = execution_client
+                        .get_backtrace(tonic::Request::new(grpc_client::GetBacktraceRequest {
+                            execution_id: Some(execution_id.clone()),
+                            filter: Some(if version > 0 {
+                                get_backtrace_request::Filter::Specific(
+                                    get_backtrace_request::Specific { version },
+                                )
+                            } else {
+                                get_backtrace_request::Filter::First(
+                                    get_backtrace_request::First {},
+                                )
+                            }),
+                        }))
+                        .await;
+                    trace!("[{hook_id}] Got backtrace_response {backtrace_response:?}");
+                    let backtrace_response = backtrace_response
+                        .map(|resp| resp.into_inner())
+                        .map_err(|_| ());
+                    if let Ok(backtrace_response) = &backtrace_response {
+                        let component_id = backtrace_response
+                            .component_id
+                            .clone()
+                            .expect("GetBacktraceResponse.component_id is sent");
+                        for file in backtrace_response
+                            .wasm_backtrace
+                            .as_ref()
+                            .expect("GetBacktraceResponse.wasm_backtrace is sent")
+                            .frames
+                            .iter()
+                            .flat_map(|frame| frame.symbols.iter())
+                            .filter_map(|frame_symbol| frame_symbol.file.as_ref())
+                        {
+                            trace!("[{hook_id}] Requesting file {file}");
+                            let key = (component_id.clone(), file.clone());
+                            sources_state.dispatch(SourcesStateAction {
+                                key,
+                                value: SourceCodeState::Requested,
+                                trace_id: hook_id.clone(),
+                            });
+                        }
+                    }
+                    backtraces_state.dispatch(BacktracesStateAction {
+                        key: (execution_id, version),
+                        value: backtrace_response,
                         trace_id: hook_id.clone(),
                     });
-                }
-
-                let mut backtraces: HashMap<_, _> = backtraces_state.deref().clone();
-                backtraces.insert((execution_id, version), backtrace_response);
-                backtraces_state.set(backtraces);
-            });
+                });
+            }
         }
     });
 
@@ -277,7 +345,7 @@ pub fn debugger_view(
                 .deref()
                 .0
                 .iter()
-                .filter(|(_key, state)| **state == SourceCodeState::Added)
+                .filter(|(_key, state)| **state == SourceCodeState::Requested)
             {
                 sources_state.dispatch(SourcesStateAction {
                     key: key.clone(),
@@ -302,7 +370,7 @@ pub fn debugger_view(
                         .await;
                     let source_code_state = match backtrace_src_response {
                         Err(err) => {
-                            log::warn!("[{trace_id}] Cannot obtain source `{file}` - {err:?}");
+                            log::info!("[{trace_id}] Cannot obtain source `{file}` - {err:?}");
                             SourceCodeState::NotFoundOrErr
                         }
                         Ok(ok) => {
@@ -315,9 +383,6 @@ pub fn debugger_view(
                             )))
                         }
                     };
-                    debug!(
-                        "[{trace_id}] GetBacktraceSourceRequest inserting {component_id}  {file} = {source_code_state:?}",
-                    );
                     sources_state.dispatch(SourcesStateAction {
                         key: (component_id, file),
                         value: source_code_state,
@@ -328,22 +393,27 @@ pub fn debugger_view(
         }
     });
 
+    // Data for the detailed log (Leaf execution only)
     let dummy_events = Vec::new();
-    let events = debugger_state
+    let leaf_events = debugger_state
         .events
         .get(execution_id)
         .unwrap_or(&dummy_events);
     let dummy_response_map = HashMap::new();
-    let responses = debugger_state
+    let leaf_responses = debugger_state
         .responses
         .get(execution_id)
         .unwrap_or(&dummy_response_map);
+    let join_next_version_to_response = compute_join_next_to_response(leaf_events, leaf_responses);
 
-    let join_next_version_to_response = compute_join_next_to_response(events, responses);
-    let backtrace_response = backtraces_state
+    // Determine highlighting logic for log based on Leaf backtrace
+    let leaf_version = versions.last();
+    let leaf_backtrace_response = backtraces_state
         .deref()
-        .get(&(execution_id.clone(), version));
-    let execution_log = events
+        .0
+        .get(&(execution_id.clone(), leaf_version));
+
+    let execution_log = leaf_events
         .iter()
         .filter(|event| {
             let event_inner = event.event.as_ref().expect("event is sent by the server");
@@ -359,8 +429,9 @@ pub fn debugger_view(
                 &join_next_version_to_response,
                 ExecutionLink::Debug,
                 // is_selected
-                backtrace_response
-                    .and_then(|br| br.wasm_backtrace.as_ref())
+                leaf_backtrace_response
+                    .and_then(|result| result.as_ref().map(|ok| ok.wasm_backtrace.as_ref()).ok())
+                    .flatten()
                     .map(|b| {
                         b.version_min_including <= event.version
                             && b.version_max_excluding > event.version
@@ -370,248 +441,270 @@ pub fn debugger_view(
         })
         .collect::<Vec<_>>();
 
-    let is_finished = matches!(
-        events.last(),
-        Some(ExecutionEvent {
-            event: Some(execution_event::Event::Finished(_)),
-            ..
-        })
-    );
-
-    let mut step_buttons = Vec::new();
-
-    // Step Out Calculation
-    step_buttons.push(
-    if let Some(parent_id) = execution_id.parent_id() {
-        let (parent_version_created, parent_version_consumed) =
-            get_parent_execution_bounds(&debugger_state, &parent_id, execution_id);
-
-        let parent_versions_path = versions.step_out().unwrap_or_default();
-        let requested_parent_version = parent_versions_path.last();
-        match (parent_version_created, parent_version_consumed) {
-            (Some(start), Some(end)) if start + 1 == end => {
-                // Merge into one button
-                html! {
-                    <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(start) }}>
-                        {"Step Out"}
-                    </Link<Route>>
-                }
-            }
-            (Some(start), maybe_end) => {
-                html! {<>
-                    <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(start) }}
-                            classes={if start == requested_parent_version { "bold" } else { "" }}
-                    >
-                        {"Step Out (Start)"}
-                    </Link<Route>>
-                    if let Some(end) = maybe_end {
-                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(end) }}
-                                classes={if end == requested_parent_version { "bold" } else { "" }}
-                        >
-                            {"Step Out (End)"}
-                        </Link<Route>>
-                    }
-                </>}
-            }
-            _ => {
-                // Use the backtrace path
-                html! {
-                    <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path }}>
-                        {"Step Out"}
-                    </Link<Route>>
-                }
-            }
-        }
-    } else {
-        html! {
-            <span class="disabled">
-                {"Step Out"}
-            </span>
-        }
-    });
-
-    let backtrace = if let Some(backtrace_response) = backtrace_response {
+    // 5. Render Backtrace Stack (Iterate ancestry from Specific -> Parent -> Grandparent)
+    let backtrace_view = {
         let mut htmls = Vec::new();
         let mut seen_positions = hashbrown::HashSet::new();
-        let wasm_backtrace = backtrace_response
-            .wasm_backtrace
-            .as_ref()
-            .expect("`wasm_backtrace` is sent");
-        let component_id = backtrace_response
-            .component_id
-            .as_ref()
-            .expect("`GetBacktraceResponse.component_id` is sent");
 
-        // Add Step Prev, Next, Into
-        let backtrace_versions: BTreeSet<VersionType> = events
-            .iter()
-            .filter_map(|event| event.backtrace_id)
-            .collect();
-        step_buttons.push(if let Some(backtrace_prev) = backtrace_versions
-            .range(..wasm_backtrace.version_min_including)
-            .next_back()
-            .copied()
-        {
-            let versions = versions.change(backtrace_prev);
-            html! {
-                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: execution_id.clone(), versions } }>
-                    {"Step Prev"}
-                </Link<Route>>
-            }
-        } else {
-            html! {
-                <span class="disabled">
-                 {"Step Prev"}
-                </span>
-            }
-        });
-        step_buttons.push(if let Some(backtrace_next) = backtrace_versions
-            .range(wasm_backtrace.version_max_excluding..)
-            .next()
-            .copied()
-        {
-            let versions = versions.change(backtrace_next);
-            html! {
-                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: execution_id.clone(), versions } }>
-                    {"Step Next"}
-                </Link<Route>>
-            }
-        } else {
-            html! {
-                <span class="disabled">
-                    {"Step Next"}
-                </span>
-            }
-        });
+        for (index, (curr_exec_id, curr_path)) in ancestry.iter().enumerate() {
+            let is_leaf = index == 0;
+            let curr_version = curr_path.last();
+            let events = debugger_state
+                .events
+                .get(curr_exec_id)
+                .unwrap_or(&dummy_events);
 
-        // Step Into
-        let version_child_request =
-            if wasm_backtrace.version_max_excluding - wasm_backtrace.version_min_including == 3 {
-                // only happens on one-off join sets where 3 events share the same backtrace.
-                wasm_backtrace.version_min_including + 1
-            } else {
-                wasm_backtrace.version_min_including
-            };
-        step_buttons.push(match events.get(usize::try_from(version_child_request).expect("u32 must be convertible to usize")) {
-                Some(ExecutionEvent {
-                    event:
-                        Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
-                            event: Some(
-                                history_event::Event::JoinSetRequest(history_event::JoinSetRequest{join_set_request: Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
-                                    history_event::join_set_request::ChildExecutionRequest{child_execution_id: Some(child_execution_id)}
-                                )
-                            ), ..
-                            })),
-                        })),
-                    ..
-                }) => {
-                    let versions = versions.step_into();
-                    html!{
-                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: child_execution_id.clone(), versions } }>
-                            {"Step Into"}
-                        </Link<Route>>
-                    }
-                },
+            // Generate Buttons for this specific level
+            let mut step_buttons = Vec::new();
 
-                Some(event@ExecutionEvent {
-                    event:
-                        Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
-                            event: Some(
-                                history_event::Event::JoinNext(..)),
-                        })),
-                    ..
-                }) => {
-                    if let Some(JoinSetResponseEvent { response: Some(join_set_response_event::Response::ChildExecutionFinished(join_set_response_event::ChildExecutionFinished{
-                        child_execution_id: Some(child_execution_id), ..
-                    })), .. }) = join_next_version_to_response.get(&event.version) {
-                        let versions = versions.step_into();
-                        html!{
-                            <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: child_execution_id.clone(), versions } }>
-                               {"Step Into"}
-                            </Link<Route>>
+            // -- Step Out --
+            if let Some(parent_id) = curr_exec_id.parent_id() {
+                // If it's the Leaf, use the complex logic
+                if is_leaf {
+                    let (parent_version_created, parent_version_consumed) =
+                        get_parent_execution_bounds(&debugger_state, &parent_id, curr_exec_id);
+
+                    let parent_versions_path = curr_path.step_out().unwrap_or_default();
+                    let requested_parent_version = parent_versions_path.last();
+
+                    match (parent_version_created, parent_version_consumed) {
+                        (Some(start), Some(end)) if start + 1 == end => {
+                            step_buttons.push(html! {
+                                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(start) }}>
+                                    {"Step Out"}
+                                </Link<Route>>
+                            });
                         }
-                    } else {
-                        Html::default()
-                    }
-                }
-
-                _ => Html::default()
-            }
-        );
-
-        htmls.push(html!{
-            <p>
-                {"Backtrace version: "}
-                if wasm_backtrace.version_min_including == wasm_backtrace.version_max_excluding - 1 {
-                    {wasm_backtrace.version_min_including}
-                } else {
-                    {wasm_backtrace.version_min_including}{"-"}{wasm_backtrace.version_max_excluding - 1}
-                }
-            </p>
-        });
-
-        for (i, frame) in wasm_backtrace.frames.iter().enumerate() {
-            let mut frame_html = Vec::new();
-            frame_html.push(html! {
-                {format!("{i}: {}, function: {}", frame.module, frame.func_name)}
-            });
-
-            for symbol in &frame.symbols {
-                // Print location.
-                let location = match (&symbol.file, symbol.line, symbol.col) {
-                    (Some(file), Some(line), Some(col)) => format!("{file}:{line}:{col}"),
-                    (Some(file), Some(line), None) => format!("{file}:{line}"),
-                    (Some(file), None, None) => file.clone(),
-                    _ => "unknown location".to_string(),
-                };
-                let mut line = format!("at {location}");
-
-                // Print function name if it's different from frameinfo
-                match &symbol.func_name {
-                    Some(func_name) if *func_name != frame.func_name => {
-                        line.push_str(&format!(" - {func_name}"));
-                    }
-                    _ => {}
-                }
-                frame_html.push(html! {<>
-                    <br/>
-                    {line}
-                </>});
-
-                // Print source file.
-                if let (Some(file), Some(line)) = (&symbol.file, symbol.line) {
-                    let new_position = seen_positions.insert((file.clone(), line));
-                    if new_position
-                        && let Some(SourceCodeState::Found(source)) = sources_state
-                            .deref()
-                            .0
-                            .get(&(component_id.clone(), file.clone()))
-                    {
-                        frame_html.push(html! {<>
-                                <br/>
-                                <SyntectCodeBlock source={source.clone()} focus_line={Some(line as usize)}/>
+                        (Some(start), maybe_end) => {
+                            step_buttons.push(html! {<>
+                                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(start) }}
+                                        classes={if start == requested_parent_version { "bold" } else { "" }}
+                                >
+                                    {"Step Out (Start)"}
+                                </Link<Route>>
+                                if let Some(end) = maybe_end {
+                                    <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path.change(end) }}
+                                            classes={if end == requested_parent_version { "bold" } else { "" }}
+                                    >
+                                        {"Step Out (End)"}
+                                    </Link<Route>>
+                                }
                             </>});
+                        }
+                        _ => {
+                            step_buttons.push(html! {
+                                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_versions_path }}>
+                                    {"Step Out"}
+                                </Link<Route>>
+                            });
+                        }
+                    }
+                } else {
+                    // Parent / Grandparent: Simple Step Out (just pop the path)
+                    if let Some(parent_path) = curr_path.step_out() {
+                        step_buttons.push(html! {
+                            <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: parent_id.clone(), versions: parent_path }}>
+                                {"Step Out"}
+                            </Link<Route>>
+                        });
+                    } else {
+                        step_buttons.push(html! { <span class="disabled">{"Step Out"}</span> });
                     }
                 }
+            } else {
+                step_buttons.push(html! { <span class="disabled">{"Step Out"}</span> });
             }
+
+            // -- Step Prev/Next/Into --
+            if let Some(Ok(backtrace_response)) = backtraces_state
+                .deref()
+                .0
+                .get(&(curr_exec_id.clone(), curr_version))
+            {
+                let wasm_backtrace = backtrace_response
+                    .wasm_backtrace
+                    .as_ref()
+                    .expect("`wasm_backtrace` is sent");
+
+                let backtrace_versions: BTreeSet<VersionType> = events
+                    .iter()
+                    .filter_map(|event| event.backtrace_id)
+                    .collect();
+
+                // Prev
+                if let Some(backtrace_prev) = backtrace_versions
+                    .range(..wasm_backtrace.version_min_including)
+                    .next_back()
+                    .copied()
+                {
+                    let versions = curr_path.change(backtrace_prev);
+                    step_buttons.push(html! {
+                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: curr_exec_id.clone(), versions } }>
+                            {"Step Prev"}
+                        </Link<Route>>
+                    });
+                } else {
+                    step_buttons.push(html! { <span class="disabled">{"Step Prev"}</span> });
+                }
+
+                // Next
+                if let Some(backtrace_next) = backtrace_versions
+                    .range(wasm_backtrace.version_max_excluding..)
+                    .next()
+                    .copied()
+                {
+                    let versions = curr_path.change(backtrace_next);
+                    step_buttons.push(html! {
+                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: curr_exec_id.clone(), versions } }>
+                            {"Step Next"}
+                        </Link<Route>>
+                    });
+                } else {
+                    step_buttons.push(html! { <span class="disabled">{"Step Next"}</span> });
+                }
+
+                // Into (Only valid for Leaf)
+                if is_leaf {
+                    let version_child_request = if wasm_backtrace.version_max_excluding
+                        - wasm_backtrace.version_min_including
+                        == 3
+                    {
+                        wasm_backtrace.version_min_including + 1
+                    } else {
+                        wasm_backtrace.version_min_including
+                    };
+
+                    match events.get(usize::try_from(version_child_request).unwrap_or(0)) {
+                        Some(ExecutionEvent {
+                            event: Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+                                event: Some(history_event::Event::JoinSetRequest(history_event::JoinSetRequest{
+                                    join_set_request: Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
+                                        history_event::join_set_request::ChildExecutionRequest{child_execution_id: Some(child_execution_id)}
+                                    ))
+                                , ..})),
+                            })),
+                            ..
+                        }) => {
+                             let versions = curr_path.step_into();
+                             step_buttons.push(html!{
+                                <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: child_execution_id.clone(), versions } }>
+                                    {"Step Into"}
+                                </Link<Route>>
+                            });
+                        },
+                        Some(event@ExecutionEvent {
+                            event: Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+                                    event: Some(history_event::Event::JoinNext(..)),
+                            })),
+                            ..
+                        }) => {
+                             if let Some(JoinSetResponseEvent { response: Some(join_set_response_event::Response::ChildExecutionFinished(join_set_response_event::ChildExecutionFinished{
+                                child_execution_id: Some(child_execution_id), ..
+                            })), .. }) = join_next_version_to_response.get(&event.version) {
+                                let versions = curr_path.step_into();
+                                step_buttons.push(html!{
+                                    <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: child_execution_id.clone(), versions } }>
+                                       {"Step Into"}
+                                    </Link<Route>>
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            } else {
+                // If backtrace not loaded yet, placeholder buttons
+                step_buttons.push(html! { <span class="disabled">{"Step Prev"}</span> });
+                step_buttons.push(html! { <span class="disabled">{"Step Next"}</span> });
+            }
+
+            let step_buttons_content = match backtraces_state
+                .deref()
+                .0
+                .get(&(curr_exec_id.clone(), curr_version))
+            {
+                Some(Ok(backtrace_response)) => {
+                    let wasm_backtrace = backtrace_response.wasm_backtrace.as_ref().unwrap();
+                    let component_id = backtrace_response.component_id.as_ref().unwrap();
+
+                    html! {
+                        wasm_backtrace.frames.iter().enumerate().map(|(i, frame)| {
+                            let mut frame_html = Vec::new();
+                            if !*hide_frames {
+                                    frame_html.push(html! {
+                                    <div class="frame-info">
+                                        {format!("{i}: {}, function: {}", frame.module, frame.func_name)}
+                                    </div>
+                                });
+                            }
+
+                            for symbol in &frame.symbols {
+                                if !*hide_frames {
+                                        let location = match (&symbol.file, symbol.line, symbol.col) {
+                                        (Some(file), Some(line), Some(col)) => format!("{file}:{line}:{col}"),
+                                        (Some(file), Some(line), None) => format!("{file}:{line}"),
+                                        (Some(file), None, None) => file.clone(),
+                                        _ => "unknown location".to_string(),
+                                    };
+                                    let mut line = format!("at {location}");
+                                    match &symbol.func_name {
+                                        Some(func_name) if *func_name != frame.func_name => {
+                                            line.push_str(&format!(" - {func_name}"));
+                                        }
+                                        _ => {}
+                                    }
+                                    frame_html.push(html! {<div class="symbol-info">{line}</div>});
+                                }
+
+                                if let (Some(file), Some(line)) = (&symbol.file, symbol.line) {
+                                    let new_position = seen_positions.insert((file.clone(), line));
+                                    if new_position
+                                        && let Some(SourceCodeState::Found(source)) = sources_state
+                                            .deref()
+                                            .0
+                                            .get(&(component_id.clone(), file.clone()))
+                                    {
+                                        frame_html.push(html! {
+                                            <SyntectCodeBlock source={source.clone()} focus_line={Some(line as usize)}/>
+                                        });
+                                    }
+                                }
+                            }
+                            html! { <div class="frame-container">{frame_html}</div> }
+                        }).collect::<Html>()
+                    }
+                }
+                Some(Err(())) => {
+                    html! {
+                        <p>{format!("Loading backtrace failed")}</p>
+                    }
+                }
+                None => {
+                    html! {
+                        <p>{format!("Loading backtrace...", )}</p>
+                    }
+                }
+            };
             htmls.push(html! {
-                <p>
-                    {frame_html}
-                </p>
+                    <div class="execution-block" style="border: 1px solid #ccc; margin-bottom: 20px; padding: 10px; border-radius: 5px;">
+                        <div class="execution-header" style="padding: 5px; margin-bottom: 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                {curr_exec_id}
+                                {" | "}<strong>{"Version: "}</strong>{curr_version}
+                            </div>
+                            <div class="step">
+                                {step_buttons}
+                            </div>
+                        </div>
+                        {step_buttons_content}
+                    </div>
             });
         }
-        htmls.to_html()
-    } else if is_finished {
-        html! {
-            <p>
-                {"No backtrace found for this execution"}
-            </p>
-        }
-    } else {
-        html! {
-            <p>
-                {"Loading..."}
-            </p>
+
+        if htmls.is_empty() {
+            html! { <p>{"Loading trace..."}</p> }
+        } else {
+            htmls.to_html()
         }
     };
 
@@ -620,16 +713,22 @@ pub fn debugger_view(
 
         <div class="trace-layout-container">
             <div class="trace-view">
-                <div class="step">
-                    {step_buttons}
+                <div class="trace-controls" style="margin-bottom: 10px; text-align: right;">
+                    <input
+                        type="checkbox"
+                        id="hide-frames"
+                        checked={*hide_frames}
+                        onclick={on_toggle_frames}
+                        style="margin-right: 5px;"
+                    />
+                    <label for="hide-frames">{"Hide locations (source only)"}</label>
                 </div>
-                {backtrace}
+                {backtrace_view}
             </div>
             <div class="trace-detail">
                 {execution_log}
             </div>
         </div>
-
     </>}
 }
 
