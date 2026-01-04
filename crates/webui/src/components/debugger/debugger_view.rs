@@ -254,8 +254,7 @@ pub fn debugger_view(
     use_effect_with(ancestry.clone(), {
         let debugger_state = debugger_state.clone();
         move |ancestry| {
-            let mut ancestry = ancestry.iter();
-            while let Some((id, _path)) = ancestry.next() {
+            for (id, _path) in ancestry {
                 debugger_state.dispatch(DebuggerStateAction::AddExecutionId(id.clone()));
             }
         }
