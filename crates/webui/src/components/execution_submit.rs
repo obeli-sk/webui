@@ -2,7 +2,6 @@ use crate::{
     BASE_URL,
     app::Route,
     grpc::{
-        execution_id::ExecutionIdExt,
         ffqn::FunctionFqn,
         grpc_client::{self, ExecutionId},
     },

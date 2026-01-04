@@ -1,7 +1,6 @@
 use crate::app::Route;
 use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::ExecutionStatus;
-use crate::grpc::execution_id::ExecutionIdExt;
 use crate::grpc::grpc_client::ExecutionId;
 use yew::prelude::*;
 use yew_router::prelude::Link;

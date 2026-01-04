@@ -11,7 +11,7 @@ use crate::{
         },
     },
     grpc::{
-        execution_id::{EXECUTION_ID_INFIX, ExecutionIdExt as _},
+        execution_id::EXECUTION_ID_INFIX,
         ffqn::FunctionFqn,
         grpc_client::{
             self, ComponentType, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent,

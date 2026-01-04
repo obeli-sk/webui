@@ -8,7 +8,6 @@ use crate::{
         trace::trace_view::{PAGE, SLEEP_MILLIS},
     },
     grpc::{
-        execution_id::ExecutionIdExt as _,
         grpc_client::{
             self, ComponentId, ExecutionEvent, ExecutionId, GetBacktraceResponse,
             GetBacktraceSourceRequest, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
