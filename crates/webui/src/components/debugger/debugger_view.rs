@@ -448,7 +448,7 @@ pub fn debugger_view(
 
         for (index, (curr_exec_id, curr_path)) in ancestry.iter().enumerate() {
             let is_leaf = index == 0;
-            let curr_version = curr_path.last();
+            let mut curr_version = curr_path.last();
             let events = debugger_state
                 .events
                 .get(curr_exec_id)
@@ -626,6 +626,10 @@ pub fn debugger_view(
                 Some(Ok(backtrace_response)) => {
                     let wasm_backtrace = backtrace_response.wasm_backtrace.as_ref().unwrap();
                     let component_id = backtrace_response.component_id.as_ref().unwrap();
+                    if curr_version < wasm_backtrace.version_min_including {
+                        // Correct for 0, added by Step Into from parent.
+                        curr_version = wasm_backtrace.version_min_including;
+                    }
 
                     html! {
                         wasm_backtrace.frames.iter().enumerate().map(|(i, frame)| {
