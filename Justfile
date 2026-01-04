@@ -6,7 +6,7 @@ clean:
 
 serve:
     cargo build --package webui --target=wasm32-unknown-unknown # Trunk fails to run this before needing CSS files
-    trunk --log=debug serve --config crates/webui/Trunk-dev.toml
+    trunk --log=info serve --config crates/webui/Trunk-dev.toml
 
 build:
     rm -rf crates/webui/dist

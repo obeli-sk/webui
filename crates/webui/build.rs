@@ -4,10 +4,10 @@ use syntect::{highlighting::ThemeSet, html::ClassStyle};
 
 fn main() {
     let workspace_dir = get_workspace_dir();
-    let proto_path = workspace_dir.join("proto");
-
-    let obelisk_proto = workspace_dir.join("proto/obelisk.proto");
-    println!("cargo:rerun-if-changed={obelisk_proto:?}");
+    let proto_path = workspace_dir.join("obelisk/proto");
+    let obelisk_proto = proto_path.join("obelisk.proto");
+    assert!(obelisk_proto.exists());
+    println!("cargo:rerun-if-changed={}", obelisk_proto.display());
 
     tonic_prost_build::configure()
         .protoc_arg("--experimental_allow_proto3_optional") // not needed anymore with protoc  25.3
