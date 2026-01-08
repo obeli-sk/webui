@@ -13,6 +13,7 @@ impl ExecutionId {
         }
     }
 
+    // Return (part, execution_id) chain from topmost parent to `self`.
     // For the top-level ExecutionId return [(execution_id.to_string(), execution_id)].
     // For a derived ExecutionId, return [(grandparent_id.to_string(), grandparent_id), (parent_index, parent_id), .. (child_index, child_id)].
     pub fn as_hierarchy(&self) -> Vec<(String, ExecutionId)> {
