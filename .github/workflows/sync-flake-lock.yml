@@ -29,6 +29,10 @@ jobs:
           curl https://raw.githubusercontent.com/obeli-sk/obelisk/refs/heads/latest/flake.lock -o flake.lock
           curl https://raw.githubusercontent.com/obeli-sk/obelisk/refs/heads/latest/rust-toolchain.toml -o rust-toolchain.toml
 
+      - name: Update submodules
+        run: |
+          git submodule update --remote --recursive
+
       - uses: nixbuild/nix-quick-install-action@v34
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
