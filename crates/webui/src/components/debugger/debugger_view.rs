@@ -702,11 +702,16 @@ pub fn debugger_view(
                     }
                 }
             };
+            let last_id_segment = curr_exec_id
+                .as_hierarchy()
+                .pop()
+                .map(|(segment, _id)| segment)
+                .unwrap();
             htmls.push(html! {
                     <div class="execution-block" style="border: 1px solid #ccc; margin-bottom: 20px; padding: 10px; border-radius: 5px;">
                         <div class="execution-header" style="padding: 5px; margin-bottom: 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
                             <div>
-                                {curr_exec_id}
+                                {last_id_segment}
                                 {" | "}<strong>{"Version: "}</strong>{curr_version}
                             </div>
                             <div class="step">
