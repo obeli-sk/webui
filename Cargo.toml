@@ -115,6 +115,3 @@ opt-level = "s"
 codegen-units = 1
 lto = "fat"
 strip = "debuginfo"
-
-[profile.dev]
-debug = "line-tables-only"
