@@ -2,7 +2,7 @@ use crate::{
     components::ffqn_with_links::FfqnWithLinks,
     grpc::{ffqn::FunctionFqn, ifc_fqn::IfcFqn, pkg_fqn::PkgFqn},
 };
-use anyhow::Context;
+use anyhow::{Context, bail};
 use hashbrown::HashSet;
 use std::path::PathBuf;
 use wit_component::{Output, TypeKind, WitPrinter};
@@ -65,9 +65,9 @@ fn print_interface_with_imported_types(
             printer.output.newline();
         }
 
-        printer
-            .print_package_outer(package)
-            .with_context(|| format!("error in `print_package_line` when printing {ifc_fqn}"))?;
+        printer.print_package_outer(package).with_context(|| {
+            format!("error in `print_interface_with_imported_types` when printing {ifc_fqn}")
+        })?;
         if is_root_package {
             printer.output.semicolon();
             printer.output.newline();
@@ -118,9 +118,7 @@ fn print_interface_with_imported_types(
                 if requested_pkg_owner != other.owner {
                     let ifc_id = match other.owner {
                         TypeOwner::Interface(id) => id,
-                        // it's only possible to import types from interfaces at
-                        // this time.
-                        _ => unreachable!(),
+                        other => bail!("unsupported type import from {other:?}"),
                     };
                     let iface = &resolve.interfaces[ifc_id];
                     if let Some(imported_pkg_id) = iface.package {
