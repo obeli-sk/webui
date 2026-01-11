@@ -1,12 +1,12 @@
 cargo-edit-upgrade 0.13.8
-cargo-expand 1.0.118
+cargo-expand 1.0.119
 just 1.45.0
-obelisk 0.33.1
+obelisk 0.34.0
 libprotoc 32.1
 rustc 1.92.0 (ded5c06cf 2025-12-08)
 wasm-opt version 125
 trunk wasm_opt = "version_125"
 trunk 0.21.14
-wasm-bindgen 0.2.105
+wasm-bindgen 0.2.106
 trunk wasm_bindgen = "0.2.105"
 cargo wasm-bindgen = "=0.2.105" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
