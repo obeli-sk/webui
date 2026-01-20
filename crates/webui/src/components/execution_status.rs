@@ -298,6 +298,9 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
                             grpc_client::ExecutionFailureKind::Uncategorized => {
                                 html! { "Execution failure" }
                             }
+                            grpc_client::ExecutionFailureKind::Unspecified => {
+                                html! { "Unspecified"}
+                            }
                         },
                         Err(_) => {
                             html! { format!("Execution failure: Unknown variant ({})", kind_i32) }

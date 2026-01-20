@@ -93,6 +93,7 @@ pub fn attach_result_detail(
                 .unwrap();
 
             let (failure_kind, icon) = match failure.kind() {
+                grpc_client::ExecutionFailureKind::Unspecified => ("Unspecified", Icon::Error),
                 grpc_client::ExecutionFailureKind::TimedOut => ("Timed out", Icon::Error),
                 grpc_client::ExecutionFailureKind::NondeterminismDetected => {
                     ("Nondeterminism detected", Icon::Error)

@@ -28,6 +28,7 @@ impl grpc_client::Component {
 impl yew::ToHtml for ComponentType {
     fn to_html(&self) -> yew::Html {
         match self {
+            ComponentType::Unspecified => "Unspecified",
             ComponentType::Workflow => "Workflow",
             ComponentType::ActivityWasm => "Activity",
             ComponentType::ActivityStub => "Activity Stub",
@@ -41,6 +42,7 @@ impl yew::ToHtml for ComponentType {
 impl ComponentType {
     pub fn as_icon(&self) -> yewprint::Icon {
         match self {
+            ComponentType::Unspecified => yewprint::Icon::Cog,
             ComponentType::Workflow => yewprint::Icon::GanttChart,
             ComponentType::ActivityWasm => yewprint::Icon::CodeBlock,
             ComponentType::ActivityStub | ComponentType::ActivityExternal => yewprint::Icon::Import,
@@ -50,6 +52,7 @@ impl ComponentType {
 
     pub fn as_root_label(&self) -> Html {
         match self {
+            ComponentType::Unspecified => "Unspecified",
             ComponentType::Workflow => "Workflows",
             ComponentType::ActivityWasm => "WASM Activities",
             ComponentType::WebhookEndpoint => "Webhooks",
