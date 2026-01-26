@@ -109,21 +109,11 @@ pub enum Route {
     },
     #[at("/execution/list")]
     ExecutionList,
-    // #[at("/execution/list/older/:cursor")]
-    // ExecutionListOlder { cursor: ExecutionsCursor },
-    // #[at("/execution/list/older_inc/:cursor")]
-    // ExecutionListOlderIncluding { cursor: ExecutionsCursor },
-    // #[at("/execution/list/newer/:cursor")]
-    // ExecutionListNewer { cursor: ExecutionsCursor },
-    // #[at("/execution/list/newer_inc/:cursor")]
-    // ExecutionListNewerIncluding { cursor: ExecutionsCursor },
-    // #[at("/execution/list/ffqn/:ffqn")]
-    // ExecutionListByFfqn { ffqn: FunctionFqn },
-    #[at("/execution/:execution_id/log")]
+    #[at("/execution/:execution_id")]
     ExecutionLog {
         execution_id: grpc_client::ExecutionId,
     },
-    #[at("/execution/:execution_id")]
+    #[at("/execution/:execution_id/trace")]
     ExecutionTrace {
         execution_id: grpc_client::ExecutionId,
     },
@@ -156,21 +146,6 @@ impl Route {
             Route::ExecutionLog { execution_id } => {
                 html! { <ExecutionLogPage {execution_id} /> }
             }
-            // Route::ExecutionListOlder { cursor } => {
-            //     html! { <ExecutionListPage filter={ExecutionFilter::Older { cursor, including_cursor: false }} /> }
-            // }
-            // Route::ExecutionListOlderIncluding { cursor } => {
-            //     html! { <ExecutionListPage filter={ExecutionFilter::Older { cursor, including_cursor: true }} /> }
-            // }
-            // Route::ExecutionListNewer { cursor } => {
-            //     html! { <ExecutionListPage filter={ExecutionFilter::Newer { cursor, including_cursor: false }} /> }
-            // }
-            // Route::ExecutionListNewerIncluding { cursor } => {
-            //     html! { <ExecutionListPage filter={ExecutionFilter::Newer { cursor, including_cursor: true }} /> }
-            // }
-            // Route::ExecutionListByFfqn { ffqn } => {
-            //     html! { <ExecutionListPage filter={ExecutionFilter::Ffqn { ffqn } } /> }
-            // }
             Route::ExecutionTrace { execution_id } => {
                 html! { <TraceView {execution_id} /> }
             }
