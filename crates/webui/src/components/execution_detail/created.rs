@@ -102,10 +102,8 @@ impl ProcessedProps {
             .insert(
                 Node::new(NodeData {
                     icon: Icon::NewObject,
-                    label: format!("{}. Created `{}`", self.version, self.ffqn.function_name)
-                        .to_html(),
+                    label: format!("{}. Submitted `{}`", self.version, self.ffqn.short()).to_html(),
                     has_caret: true,
-
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&root_id),

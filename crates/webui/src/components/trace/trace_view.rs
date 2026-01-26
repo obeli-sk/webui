@@ -767,8 +767,7 @@ fn compute_root_trace(
     let name = html! {
         <>
             {execution_id.render_execution_parts(true, ExecutionLink::Trace)}
-            {" .../"}{&ffqn.ifc_fqn.ifc_name}{"."}{&ffqn.function_name}
-            {" "}
+            {format!(" {} ", ffqn.short())}
             {maybe_stub_link}
         </>
     };

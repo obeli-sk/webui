@@ -25,6 +25,10 @@ impl FunctionFqn {
             function_name: function.function_name.clone(),
         })
     }
+
+    pub fn short(&self) -> String {
+        format!(".../{}.{}", self.ifc_fqn.ifc_name, self.function_name)
+    }
 }
 
 impl FromStr for FunctionFqn {
