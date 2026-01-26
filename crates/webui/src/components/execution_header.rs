@@ -28,7 +28,7 @@ pub fn execution_header(
                     </Link<Route, ExecutionQuery>>
 
                     { ExecutionLink::Trace.link(execution_id.clone(), "Trace") }
-                    { ExecutionLink::Log.link(execution_id.clone(), "Log") }
+                    { ExecutionLink::Log.link(execution_id.clone(), "Execution Log") }
                     { ExecutionLink::Debug.link(execution_id.clone(), "Debug") }
                 </div>
             </div>

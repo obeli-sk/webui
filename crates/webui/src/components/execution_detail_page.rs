@@ -135,10 +135,10 @@ impl Reducible for ExecutionLogState {
     }
 }
 
-struct TaskRailMetadata {
+// Execution ID or Delay ID metadata
+struct IdMetadata {
     start_version: u32,
     end_version: u32,
-    track_index: usize,
     color: String,
     is_completed: bool,
 }
@@ -250,8 +250,6 @@ fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
     }
 }
 
-const MAX_EVENTS_FOR_RAILS: usize = (PAGE - 1) as usize;
-
 fn render_execution_details(
     current_execution_id: &ExecutionId,
     events: &[ExecutionEvent],
@@ -272,12 +270,8 @@ fn render_execution_details(
 
     let last_known_version = events.last().map(|e| e.version).unwrap_or(0);
 
-    let should_render_rails = events.len() <= MAX_EVENTS_FOR_RAILS;
-
-    // --- Pass 1: Identify Tasks ---
-    let mut task_rails: HashMap<String, TaskRailMetadata> = HashMap::new();
-
-    // Always run identifying logic to support "Go to" buttons
+    // Support for "Go to" buttons
+    let mut ids: HashMap<String /* execution or delay id */, IdMetadata> = HashMap::new();
     for event in events {
         let event_inner = event.event.as_ref().unwrap();
 
@@ -298,12 +292,11 @@ fn render_execution_details(
                             (delay_id.to_string(), delay_id.color())
                         }
                     };
-                    task_rails.insert(
+                    ids.insert(
                         task_id,
-                        TaskRailMetadata {
+                        IdMetadata {
                             start_version: event.version,
                             end_version: last_known_version,
-                            track_index: 0,
                             color,
                             is_completed: false,
                         },
@@ -323,7 +316,7 @@ fn render_execution_details(
                                 d.delay_id.as_ref().expect("id is always sent").to_string()
                             }
                         };
-                        if let Some(meta) = task_rails.get_mut(&completed_task_id) {
+                        if let Some(meta) = ids.get_mut(&completed_task_id) {
                             meta.end_version = event.version;
                             meta.is_completed = true;
                         }
@@ -334,60 +327,18 @@ fn render_execution_details(
         }
     }
 
-    // --- Pass 1.5: Build Links Map for Navigation ---
-    // Always run this
-    let mut event_links: HashMap<u32, (u32, String)> = HashMap::new();
-    for meta in task_rails.values() {
+    // Build Links Map for Navigation ---
+    let mut event_links: HashMap<
+        u32, /* start or end version */
+        (u32 /* oposite version */, String /* color */),
+    > = HashMap::new();
+    for meta in ids.values() {
         if meta.is_completed {
             event_links.insert(meta.start_version, (meta.end_version, meta.color.clone()));
             event_links.insert(meta.end_version, (meta.start_version, meta.color.clone()));
         }
     }
 
-    // --- Pass 2: Assign Tracks ---
-    // Only run if we are actually rendering rails
-    let mut active_tracks: Vec<u32> = Vec::new();
-    if should_render_rails {
-        let mut sorted_rails: Vec<&mut TaskRailMetadata> = task_rails.values_mut().collect();
-        sorted_rails.sort_by_key(|meta| meta.start_version);
-
-        for meta in sorted_rails {
-            let mut assigned = false;
-            for (i, free_at) in active_tracks.iter_mut().enumerate() {
-                if *free_at < meta.start_version {
-                    *free_at = meta.end_version;
-                    meta.track_index = i;
-                    assigned = true;
-                    break;
-                }
-            }
-            if !assigned {
-                active_tracks.push(meta.end_version);
-                meta.track_index = active_tracks.len() - 1;
-            }
-        }
-    }
-
-    let total_active_tracks = active_tracks.len();
-
-    const MAX_VISUAL_TRACKS: usize = 10;
-    const TRACK_WIDTH: usize = 12;
-
-    let max_visual_cols = if total_active_tracks > 0 {
-        std::cmp::min(total_active_tracks, MAX_VISUAL_TRACKS)
-    } else {
-        0
-    };
-
-    let max_shift = if total_active_tracks > 0 {
-        ((total_active_tracks - 1) / MAX_VISUAL_TRACKS) * 2
-    } else {
-        0
-    };
-
-    let container_width = max_visual_cols * TRACK_WIDTH + max_shift + 10;
-
-    // --- Pass 3: Render ---
     let rows: Vec<_> = events
         .iter()
         .map(|event| {
@@ -407,6 +358,7 @@ fn render_execution_details(
             let event_inner = event.event.as_ref().unwrap();
             let mut circle_class = "version-circle";
             let mut circle_color_style = "".to_string();
+            let mut join_set_id = None;
 
             match event_inner {
                 execution_event::Event::Created(_) => circle_class = "version-circle is-created",
@@ -416,7 +368,7 @@ fn render_execution_details(
                 },
                 execution_event::Event::HistoryVariant(h) => {
                     if let Some(history_event) = &h.event {
-                        let maybe_jid = match history_event {
+                        join_set_id = match history_event {
                             HistoryEventEnum::JoinSetRequest(JoinSetRequest { join_set_id: Some(jid), .. }) => Some(jid),
                             HistoryEventEnum::JoinNext(JoinNext { join_set_id: Some(jid), .. }) => Some(jid),
                             HistoryEventEnum::JoinSetCreated(JoinSetCreated { join_set_id: Some(jid), .. }) => Some(jid),
@@ -424,9 +376,9 @@ fn render_execution_details(
                             _ => None
                         };
 
-                        if let Some(jid) = maybe_jid {
+                        if let Some(join_set_id) = join_set_id {
                             circle_class = "version-circle is-join";
-                            let color = jid.color();
+                            let color = join_set_id.color();
                             circle_color_style = format!("border-color: {0}; color: {0};", color);
                         }
                     }
@@ -477,84 +429,8 @@ fn render_execution_details(
                 None
             };
 
-            // Rails - Condition check added for rendering
-            let rails = if should_render_rails && total_active_tracks > 0 {
-                let rail_elements: Vec<_> = task_rails.values().filter_map(|meta| {
-                    let is_active = event.version >= meta.start_version && event.version <= meta.end_version;
-                    if !is_active { return None; }
 
-                    let visual_track = meta.track_index % MAX_VISUAL_TRACKS;
-                    let overlap_offset = (meta.track_index / MAX_VISUAL_TRACKS) * 2;
-
-                    let left_pos = visual_track * TRACK_WIDTH + (TRACK_WIDTH / 2) + overlap_offset;
-                    let color = &meta.color;
-
-                    let mut elements = Vec::new();
-
-                    let top = if event.version == meta.start_version { "25px" } else { "0" };
-                    let height = if event.version == meta.end_version { "25px" } else { "100%" };
-
-                    elements.push(html! {
-                         <div class="rail-segment"
-                              style={format!("left: {}px; background: {}; top: {}; height: {};", left_pos, color, top, height)}>
-                         </div>
-                    });
-
-                    let is_submission = if event.version == meta.start_version {
-                         if let execution_event::Event::HistoryVariant(h) = event_inner {
-                            matches!(h.event, Some(HistoryEventEnum::JoinSetRequest(_)))
-                         } else { false }
-                    } else { false };
-
-                    if is_submission {
-                        let conn_width = container_width.saturating_sub(left_pos);
-                        elements.push(html! {
-                            <>
-                                <div class="rail-connector"
-                                     style={format!("left: {}px; width: {}px; background: {};",
-                                     left_pos,
-                                     conn_width,
-                                     color)}>
-                                </div>
-                                <div class="rail-dot-start" style={format!("left: {}px; background: {};", left_pos - 3, color)}></div>
-                            </>
-                        });
-                    }
-
-                    let is_completion = if event.version == meta.end_version {
-                         if let execution_event::Event::HistoryVariant(h) = event_inner {
-                            matches!(h.event, Some(HistoryEventEnum::JoinNext(_)))
-                         } else { false }
-                    } else { false };
-
-                    if is_completion {
-                         let conn_width = container_width.saturating_sub(left_pos);
-                         elements.push(html! {
-                            <>
-                                <div class="rail-connector"
-                                     style={format!("left: {}px; width: {}px; background: {};",
-                                     left_pos,
-                                     conn_width,
-                                     color)}>
-                                </div>
-                                <div class="rail-dot-end" style={format!("left: {}px; background: {};", left_pos - 3, color)}></div>
-                            </>
-                        });
-                    }
-
-                    Some(html! { <>{elements}</> })
-                }).collect();
-
-                html! {
-                    <div class="rails-container" style={format!("width: {}px;", container_width)}>
-                        {rail_elements}
-                    </div>
-                }
-            } else {
-                html! {}
-            };
-
-            let class = format!("{} {}", circle_class, if circle_color_style.is_empty() { ""}else { "is-join" });
+            let class = format!("{} {}", circle_class, if circle_color_style.is_empty() { ""} else { "is-join" });
             let content_id = format!("event-content-{}", event.version);
 
             // Timeline Line Logic
@@ -573,16 +449,15 @@ fn render_execution_details(
                 // Don't display event duration
                 None
             };
-
+            let title = join_set_id.map(|id| id.to_string());
             html! {
                 <div class="timeline-row">
                     <div class="timeline-left">
-                        <div class={class} style={circle_color_style}>
+                        <div class={class} style={circle_color_style} title={title}>
                             {event.version}
                         </div>
                         {timeline_line}
                     </div>
-                    {rails}
                     <div class="timeline-content" id={content_id}>
                         <div class="timeline-meta">
                             <div>

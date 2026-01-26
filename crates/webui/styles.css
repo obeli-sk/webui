@@ -611,47 +611,6 @@ ul li span {
     flex-grow: 1;
 }
 
-.rails-container {
-    display: flex;
-    flex-direction: row;
-    position: relative;
-    flex-shrink: 0;
-    margin-right: 10px;
-    width: 150px;
-}
-
-.rail-segment {
-    position: absolute;
-    width: 2px;
-    height: 100%;
-    background-color: #6272a4;
-    opacity: 0.5;
-}
-
-.rail-connector {
-    position: absolute;
-    height: 2px;
-    top: 25px;
-    background-color: #6272a4;
-    opacity: 0.5;
-}
-
-.rail-dot-start {
-    position: absolute;
-    top: 21px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-}
-
-.rail-dot-end {
-    position: absolute;
-    top: 21px;
-    width: 8px;
-    height: 8px;
-    transform: rotate(45deg);
-}
-
 .timeline-content {
     background-color: #21222c;
     border: 1px solid #44475a;
