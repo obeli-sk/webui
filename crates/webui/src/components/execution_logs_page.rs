@@ -7,6 +7,7 @@ use crate::{
 use chrono::DateTime;
 use log::{debug, trace};
 use std::rc::Rc;
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
@@ -75,6 +76,8 @@ impl Reducible for LogsState {
 pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Html {
     let logs_state = use_reducer_eq(LogsState::default);
 
+    let show_run_id = use_state(|| false);
+
     use_effect_with(
         (execution_id.clone(), logs_state.clone()),
         |(execution_id, logs_state)| on_state_change(execution_id, logs_state),
@@ -87,6 +90,14 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
         })
     };
 
+    let on_toggle_run_id = {
+        let show_run_id = show_run_id.clone();
+        Callback::from(move |e: Event| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            show_run_id.set(input.checked());
+        })
+    };
+
     let has_more_pages = !logs_state.all_responses.next_page_token.is_empty();
     let is_loading = matches!(logs_state.fetch_state, LogsFetchState::Pending);
 
@@ -94,10 +105,21 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
          <>
             <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Logs} />
 
+            <div class="logs-options">
+                <label class="run-id">
+                    <input
+                        type="checkbox"
+                        checked={*show_run_id}
+                        onchange={on_toggle_run_id}
+                    />
+                    { "Show Run ID" }
+                </label>
+            </div>
+
             <div class="logs-list">
                 {
                     for logs_state.all_responses.logs.iter().map(|entry| {
-                        render_log_entry(entry)
+                        render_log_entry(entry, *show_run_id)
                     })
                 }
 
@@ -124,14 +146,24 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
     }
 }
 
-/// Helper to render individual log entries based on the oneof field
-fn render_log_entry(entry: &grpc_client::list_logs_response::LogEntry) -> Html {
+/// Helper to render individual log entries
+fn render_log_entry(entry: &grpc_client::list_logs_response::LogEntry, show_run_id: bool) -> Html {
     // Format Timestamp
     let time_str = if let Some(ts) = &entry.created_at {
         let date_time = DateTime::from(*ts);
         format_date(date_time)
     } else {
         "Unknown Time".to_string()
+    };
+
+    let run_id_html = if show_run_id {
+        if let Some(run_id) = &entry.run_id {
+            html! { <span class="run-id">{ format!("[{}]", run_id.id) }</span> }
+        } else {
+            html! {}
+        }
+    } else {
+        html! {}
     };
 
     // Access the 'oneof' entry
@@ -158,9 +190,10 @@ fn render_log_entry(entry: &grpc_client::list_logs_response::LogEntry) -> Html {
 
             html! {
                 <div class="log-row">
-                    <span class="log-row-time">{ format!("[{}]", time_str) }</span>
-                    <span class={classes!("log-row-kind", log_row_class)}>{ format!("[{}]", level_str) }</span>
-                    <span class="log-row-payload">{ &log_variant.message }</span>
+                    <span class="time">{ format!("[{}]", time_str) }</span>
+                    { run_id_html }
+                    <span class={classes!("kind", log_row_class)}>{ format!("[{}]", level_str) }</span>
+                    <span class="payload">{ &log_variant.message }</span>
                 </div>
             }
         }
@@ -177,8 +210,9 @@ fn render_log_entry(entry: &grpc_client::list_logs_response::LogEntry) -> Html {
             html! {
                 <div class="log-row">
                      <span class="log-row-time">{ format!("[{}]", time_str) }</span>
-                     <span class={classes!("log-row-kind", log_row_class)}>{ format!("[{}]", stream_prefix) }</span>
-                     <span class="log-row-payload">{ payload_str }</span>
+                     { run_id_html }
+                     <span class={classes!("kind", log_row_class)}>{ format!("[{}]", stream_prefix) }</span>
+                     <span class="payload">{ payload_str }</span>
                 </div>
             }
         }
