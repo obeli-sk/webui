@@ -175,7 +175,7 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
 
     html! {
         <>
-            <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Log} />
+            <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::ExecutionLog} />
             <div class="timeline-container">
                 {details_html}
             </div>
@@ -184,7 +184,7 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
 }
 
 fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
-    trace!("Triggered use_effects");
+    trace!("Triggered on_state_change");
     for (execution_id, cursors) in
         log_state
             .execution_ids_to_fetch_state
@@ -346,7 +346,7 @@ fn render_execution_details(
                 current_execution_id,
                 event,
                 join_next_version_to_response,
-                ExecutionLink::Log,
+                ExecutionLink::ExecutionLog,
                 false,
             );
             let event_created_at = DateTime::from(event.created_at.expect("created_at sent"));

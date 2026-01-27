@@ -678,3 +678,50 @@ ul li span {
 }
 
 /* Execution log detail end */
+
+
+/* Logs */
+
+.logs-list {
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.logs-controls {
+    margin-top: 10px;
+}
+
+.logs-controls button {
+    padding: 8px 16px;
+    cursor: pointer;
+}
+
+.log-row-time {
+    color: gray;
+    margin-right: 10px;
+}
+
+.log-row-kind {
+    margin-right: 10px;
+}
+
+.log-row-payload {
+    white-space: pre-wrap;
+}
+
+.log-row-kind.kind-trace,
+.log-row-kind.kind-debug,
+.log-row-kind.kind-info,
+.log-row-kind.kind-stdout {
+    color: rgb(66, 66, 172);
+}
+
+.log-row-kind.kind-warn {
+    color: orange;
+}
+
+.log-row-kind.kind-error,
+.log-row-kind.kind-stdout {
+    color: red;
+}

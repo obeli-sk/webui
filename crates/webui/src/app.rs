@@ -3,7 +3,7 @@ use crate::{
     components::{
         component_list_page::ComponentListPage, debugger::debugger_view::DebuggerView,
         execution_detail_page::ExecutionLogPage, execution_list_page::ExecutionListPage,
-        execution_stub_submit_page::ExecutionStubResultPage,
+        execution_logs_page::LogsPage, execution_stub_submit_page::ExecutionStubResultPage,
         execution_submit_page::ExecutionSubmitPage, not_found::NotFound,
         trace::trace_view::TraceView,
     },
@@ -126,6 +126,10 @@ pub enum Route {
         execution_id: grpc_client::ExecutionId,
         versions: BacktraceVersionsPath,
     },
+    #[at("/execution/:execution_id/logs")]
+    Logs {
+        execution_id: grpc_client::ExecutionId,
+    },
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -157,6 +161,9 @@ impl Route {
                 versions,
             } => {
                 html! { <DebuggerView {execution_id} versions={versions} /> }
+            }
+            Route::Logs { execution_id } => {
+                html! { <LogsPage {execution_id} />}
             }
             Route::NotFound => html! { <NotFound /> },
         }

@@ -6,6 +6,7 @@ pub mod execution_detail;
 pub mod execution_detail_page;
 pub mod execution_header;
 pub mod execution_list_page;
+pub mod execution_logs_page;
 pub mod execution_status;
 pub mod execution_stub_submit_page;
 pub mod execution_submit;

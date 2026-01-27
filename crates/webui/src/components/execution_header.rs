@@ -20,16 +20,17 @@ pub fn execution_header(
                 <h3>{ execution_id.render_execution_parts(false, *link) }</h3>
 
                 <div class="execution-links">
+
+                    { ExecutionLink::Trace.link(execution_id.clone(), "Trace") }
+                    { ExecutionLink::ExecutionLog.link(execution_id.clone(), "Execution Log") }
+                    { ExecutionLink::Debug.link(execution_id.clone(), "Debugger") }
+                    { ExecutionLink::Logs.link(execution_id.clone(), "Logs") }
                     <Link<Route, ExecutionQuery>
                         to={Route::ExecutionList}
                         query={ExecutionQuery { execution_id_prefix: Some(execution_id.to_string()), show_derived: true, ..Default::default() }}
-                    >
+                        >
                         {"Child executions"}
                     </Link<Route, ExecutionQuery>>
-
-                    { ExecutionLink::Trace.link(execution_id.clone(), "Trace") }
-                    { ExecutionLink::Log.link(execution_id.clone(), "Execution Log") }
-                    { ExecutionLink::Debug.link(execution_id.clone(), "Debug") }
                 </div>
             </div>
 
@@ -42,8 +43,9 @@ pub fn execution_header(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ExecutionLink {
     Trace,
-    Log,
+    ExecutionLog,
     Debug,
+    Logs,
 }
 
 impl ExecutionLink {
@@ -54,13 +56,18 @@ impl ExecutionLink {
                     {title}
                 </Link<Route>>
             },
-            ExecutionLink::Log => html! {
+            ExecutionLink::ExecutionLog => html! {
                 <Link<Route> to={Route::ExecutionLog { execution_id }}>
                     {title}
                 </Link<Route>>
             },
             ExecutionLink::Debug => html! {
                 <Link<Route> to={Route::ExecutionDebugger { execution_id }}>
+                    {title}
+                </Link<Route>>
+            },
+            ExecutionLink::Logs => html! {
+                <Link<Route> to={Route::Logs { execution_id }}>
                     {title}
                 </Link<Route>>
             },
