@@ -46,11 +46,15 @@
           withObeliskShell = pkgs.mkShell {
             nativeBuildInputs = withObelisk;
           };
+          noObeliskWildShell = pkgs.mkShell {
+            nativeBuildInputs = commonDeps ++ (with pkgs; [ clang wild ]);
+          };
         in
         {
           devShells.noObelisk = noObeliskShell;
           devShells.withObelisk = withObeliskShell;
-          devShells.default = noObeliskShell;
+          devShells.wild = noObeliskWildShell;
+          devShells.default = noObeliskWildShell;
         }
       );
 }
