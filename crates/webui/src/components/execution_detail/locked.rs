@@ -65,6 +65,64 @@ impl LockedEventProps {
         )
         .unwrap();
 
+        // component id
+        {
+            let component_id = locked
+                .component_id
+                .as_ref()
+                .expect("Locked.component_id is sent");
+            let component_id_node = tree
+                .insert(
+                    Node::new(NodeData {
+                        icon: component_id.component_type().as_icon(),
+                        label: html! {
+                            { format!("Component: {}",  component_id.name) }
+                        },
+                        has_caret: true,
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&event_type),
+                )
+                .unwrap();
+            tree.insert(
+                Node::new(NodeData {
+                    icon: component_id.component_type().as_icon(),
+                    label: html! {
+                        { format!("Component ID: {}",  component_id.digest.as_ref().expect("component_id.digest is sent").digest) }
+                    },
+                    has_caret: false,
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&component_id_node),
+            )
+            .unwrap();
+            tree.insert(
+                Node::new(NodeData {
+                    icon: component_id.component_type().as_icon(),
+                    label: html! {
+                        { format!("Component Type: {}",  component_id.component_type()) }
+                    },
+                    has_caret: false,
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&component_id_node),
+            )
+            .unwrap();
+        }
+
+        // deployment id
+        tree.insert(
+            Node::new(NodeData {
+                icon: Icon::Antenna,
+                label: html! {
+                    { format!("Deployment ID: {}", locked.deployment_id.as_ref().expect("Locked.deployment_id is sent").id) }
+                },
+                has_caret: false,
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&event_type),
+        )
+        .unwrap();
         TreeData::from(tree)
     }
 }

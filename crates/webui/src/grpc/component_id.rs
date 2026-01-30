@@ -1,6 +1,5 @@
-use crate::grpc::grpc_client::{ComponentType, ContentDigest};
-
 use super::grpc_client::ComponentId;
+use crate::grpc::grpc_client::{ComponentType, ContentDigest};
 use std::{fmt::Display, str::FromStr};
 
 impl Display for ComponentId {
@@ -8,7 +7,7 @@ impl Display for ComponentId {
         write!(
             f,
             "{}:{}:{}",
-            self.component_type().as_str_name(),
+            self.component_type(),
             self.name,
             self.digest.as_ref().expect("`digest` is sent").digest
         )

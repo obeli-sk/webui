@@ -2,6 +2,7 @@ use grpc_client::ComponentType;
 use yew::{Html, ToHtml as _};
 
 mod component_id;
+pub mod component_type;
 pub mod delay_id;
 pub mod execution_id;
 pub mod ffqn;
