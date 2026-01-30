@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 use crate::grpc::grpc_client::ComponentType;
 
@@ -13,5 +13,21 @@ impl Display for ComponentType {
             ComponentType::ActivityExternal => "activity_external",
         };
         f.write_str(str)
+    }
+}
+
+impl FromStr for ComponentType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "unspecified" => Ok(ComponentType::Unspecified),
+            "workflow" => Ok(ComponentType::Workflow),
+            "activity_wasm" => Ok(ComponentType::ActivityWasm),
+            "webhook_endpoint" => Ok(ComponentType::WebhookEndpoint),
+            "activity_stub" => Ok(ComponentType::ActivityStub),
+            "activity_external" => Ok(ComponentType::ActivityExternal),
+            _ => Err(format!("invalid ComponentType: {}", s)),
+        }
     }
 }

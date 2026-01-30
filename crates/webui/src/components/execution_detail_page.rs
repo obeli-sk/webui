@@ -136,6 +136,7 @@ impl Reducible for ExecutionLogState {
 }
 
 // Execution ID or Delay ID metadata
+#[derive(Debug)]
 struct IdMetadata {
     start_version: u32,
     end_version: u32,

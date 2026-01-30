@@ -36,6 +36,8 @@ pub struct ExecutionQuery {
     pub show_details: bool,
     pub execution_id_prefix: Option<String>,
     pub ffqn_prefix: Option<String>,
+    pub component_digest: Option<String>,
+    pub deployment_id: Option<String>,
     pub cursor: Option<ExecutionsCursor>,
     pub direction: Option<Direction>,
     #[serde(default)]
@@ -163,6 +165,8 @@ pub fn execution_list_page() -> Html {
 
     let prefix_ref = use_node_ref();
     let ffqn_ref = use_node_ref();
+    let deployment_id_ref = use_node_ref();
+    let component_digest_ref = use_node_ref();
 
     // Effect: Fetch data when the URL query changes
     {
@@ -170,12 +174,15 @@ pub fn execution_list_page() -> Html {
         let response_state = response_state.clone();
         let prefix_ref = prefix_ref.clone();
         let ffqn_ref = ffqn_ref.clone();
+        let deployment_id_ref = deployment_id_ref.clone();
+        let component_digest_ref = component_digest_ref.clone();
         let refresh_counter_state = refresh_counter_state.clone();
+
         use_effect_with((query, *refresh_counter_state), move |(query_params, _)| {
             let query_params = query_params.clone();
 
             spawn_local(async move {
-                // Attempt to sync text values from the actual filter.
+                // Attempt to sync text values from the actual filter into text boxes.
                 if let Some(input) = ffqn_ref.cast::<HtmlInputElement>() {
                     input.set_value(query_params.ffqn_prefix.as_deref().unwrap_or_default())
                 }
@@ -186,6 +193,12 @@ pub fn execution_list_page() -> Html {
                             .as_deref()
                             .unwrap_or_default(),
                     )
+                }
+                if let Some(input) = deployment_id_ref.cast::<HtmlInputElement>() {
+                    input.set_value(query_params.deployment_id.as_deref().unwrap_or_default())
+                }
+                if let Some(input) = component_digest_ref.cast::<HtmlInputElement>() {
+                    input.set_value(query_params.component_digest.as_deref().unwrap_or_default())
                 }
 
                 let mut execution_client =
@@ -211,12 +224,22 @@ pub fn execution_list_page() -> Html {
                         including_cursor: query_params.include_cursor,
                     })),
                 };
+
+                // Send request
                 let req = grpc_client::ListExecutionsRequest {
                     function_name_prefix: query_params.ffqn_prefix,
                     top_level_only: !query_params.show_derived,
                     pagination,
                     hide_finished: query_params.hide_finished,
                     execution_id_prefix: query_params.execution_id_prefix.filter(|s| !s.is_empty()),
+                    component_digest: query_params
+                        .component_digest
+                        .filter(|s| !s.is_empty())
+                        .map(grpc_client::ContentDigest::from),
+                    deployment_id: query_params
+                        .deployment_id
+                        .filter(|s| !s.is_empty())
+                        .map(grpc_client::DeploymentId::from),
                 };
                 debug!("Fetching executions with query: {req:?}");
                 let response = execution_client.list_executions(req).await;
@@ -229,12 +252,14 @@ pub fn execution_list_page() -> Html {
         });
     }
 
-    // Callbacks for filter updates
+    // Clicked on "Filter / Refresh"
     let on_apply_filters = {
         let navigator = navigator.clone();
         let query = query.clone();
         let prefix_ref = prefix_ref.clone();
         let ffqn_ref = ffqn_ref.clone();
+        let deployment_id_ref = deployment_id_ref.clone();
+        let component_digest_ref = component_digest_ref.clone();
         let refresh_counter_state = refresh_counter_state.clone();
         Callback::from(move |_| {
             let mut new_query = query.clone();
@@ -242,10 +267,25 @@ pub fn execution_list_page() -> Html {
             new_query.cursor = None;
             new_query.direction = None;
             new_query.include_cursor = false;
+
             let ffqn = ffqn_ref.cast::<HtmlInputElement>().unwrap().value();
             new_query.ffqn_prefix = (!ffqn.is_empty()).then_some(ffqn);
+
             let prefix = prefix_ref.cast::<HtmlInputElement>().unwrap().value();
             new_query.execution_id_prefix = (!prefix.is_empty()).then_some(prefix);
+
+            let deployment_id = deployment_id_ref
+                .cast::<HtmlInputElement>()
+                .unwrap()
+                .value();
+            new_query.deployment_id = (!deployment_id.is_empty()).then_some(deployment_id);
+
+            let component_digest = component_digest_ref
+                .cast::<HtmlInputElement>()
+                .unwrap()
+                .value();
+            new_query.component_digest = (!component_digest.is_empty()).then_some(component_digest);
+
             refresh_counter_state.set(*refresh_counter_state + 1);
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
@@ -325,10 +365,12 @@ pub fn execution_list_page() -> Html {
                             {&execution_id}
                         </Link<Route>>
                         if query.show_details {
-                            <br/>
-                            { deployment_id }
-                            <br/>
-                            { component_digest }
+                            <div title="Deployment ID">
+                                { deployment_id }
+                            </div>
+                            <div title="Component Digest">
+                                { component_digest }
+                            </div>
                         }
                     </td>
                     <td>
@@ -466,6 +508,19 @@ pub fn execution_list_page() -> Html {
                             placeholder="Function Name Prefix..."
                             value={query.ffqn_prefix.as_ref().map(|ffqn| ffqn.to_string())}
                         />
+                        <input
+                            type="text"
+                            ref={deployment_id_ref.clone()}
+                            placeholder="Deployment ID..."
+                            value={(query.deployment_id).clone()}
+                        />
+                        <input
+                            type="text"
+                            ref={component_digest_ref.clone()}
+                            placeholder="Component Digest..."
+                            value={(query.component_digest).clone()}
+                        />
+
                         <button onclick={&on_apply_filters}>{"Filter / Refresh"}</button>
 
                         if query != ExecutionQuery::default() {

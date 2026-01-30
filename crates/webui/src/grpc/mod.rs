@@ -3,7 +3,9 @@ use yew::{Html, ToHtml as _};
 
 mod component_id;
 pub mod component_type;
+pub mod content_digest;
 pub mod delay_id;
+pub mod deployment_id;
 pub mod execution_id;
 pub mod ffqn;
 pub mod function_detail;

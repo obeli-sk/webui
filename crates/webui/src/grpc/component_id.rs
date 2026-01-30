@@ -1,5 +1,5 @@
 use super::grpc_client::ComponentId;
-use crate::grpc::grpc_client::{ComponentType, ContentDigest};
+use crate::grpc::grpc_client::{self, ContentDigest};
 use std::{fmt::Display, str::FromStr};
 
 impl Display for ComponentId {
@@ -15,18 +15,25 @@ impl Display for ComponentId {
 }
 
 impl FromStr for ComponentId {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.splitn(3, ':');
 
-        let component_type = parts
-            .next()
-            .and_then(ComponentType::from_str_name)
-            .ok_or(())?;
+        let component_type = grpc_client::ComponentType::from_str(
+            parts
+                .next()
+                .ok_or_else(|| format!("delimiter not found in `{s}`"))?,
+        )?;
 
-        let name = parts.next().ok_or(())?.to_string();
-        let digest = parts.next().ok_or(())?.to_string();
+        let name = parts
+            .next()
+            .ok_or_else(|| format!("delimiter not found in `{s}`"))?
+            .to_string();
+        let digest = parts
+            .next()
+            .ok_or_else(|| format!("delimiter not found in `{s}`"))?
+            .to_string();
 
         Ok(Self {
             component_type: component_type.into(),
