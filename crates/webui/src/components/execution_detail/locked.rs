@@ -87,9 +87,10 @@ impl LockedEventProps {
             tree.insert(
                 Node::new(NodeData {
                     icon: component_id.component_type().as_icon(),
-                    label: html! {
-                        { format!("Component ID: {}",  component_id.digest.as_ref().expect("component_id.digest is sent").digest) }
-                    },
+                    label: html! {<>
+                        {"Component Digest: "}
+                        <input type="text" value={ component_id.digest.as_ref().expect("component_id.digest is sent").digest.clone() } />
+                    </>},
                     has_caret: false,
                     ..Default::default()
                 }),

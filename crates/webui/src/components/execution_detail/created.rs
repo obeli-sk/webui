@@ -178,9 +178,10 @@ impl ProcessedProps {
             tree.insert(
                 Node::new(NodeData {
                     icon: self.component_id.component_type().as_icon(),
-                    label: html! {
-                        { format!("Component ID: {}",  self.component_id.digest.as_ref().expect("component_id.digest is sent").digest) }
-                    },
+                    label: html! {<>
+                        {"Component Digest: "}
+                        <input type="text" value={ self.component_id.digest.as_ref().expect("component_id.digest is sent").digest.clone() } />
+                    </>},
                     has_caret: false,
                     ..Default::default()
                 }),
