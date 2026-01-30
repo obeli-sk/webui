@@ -140,6 +140,25 @@ table.execution_list th {
     background-color: #44475a;
 }
 
+.executions-filter {
+    margin-bottom: 1em;
+    padding: 1em;
+    border: 1px solid #ccc;
+}
+
+.executions-filter .checkboxes {
+    margin-bottom: 0.5em;
+}
+
+.executions-filter .checkboxes>* {
+    margin-right: 1em;
+}
+
+
+.executions-filter .inputs>* {
+    margin-right: 1em;
+}
+
 .container>.pagination {
     margin-top: 20px;
 }

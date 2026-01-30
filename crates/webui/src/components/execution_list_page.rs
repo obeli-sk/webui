@@ -33,6 +33,7 @@ pub struct ExecutionQuery {
     pub show_derived: bool,
     #[serde(default)]
     pub hide_finished: bool,
+    pub show_details: bool,
     pub execution_id_prefix: Option<String>,
     pub ffqn_prefix: Option<String>,
     pub cursor: Option<ExecutionsCursor>,
@@ -271,6 +272,16 @@ pub fn execution_list_page() -> Html {
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
+    let on_toggle_show_details = {
+        let navigator = navigator.clone();
+        let query = query.clone();
+        Callback::from(move |e: Event| {
+            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+            let mut new_query = query.clone();
+            new_query.show_details = input.checked();
+            let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
+        })
+    };
 
     // Render logic
     if let Some(response) = response_state.deref() {
@@ -283,6 +294,8 @@ pub fn execution_list_page() -> Html {
                     .status.expect("status detail missing")
             );
             let execution_id = execution.execution_id.clone().expect("execution_id missing");
+            let deployment_id = execution.deployment_id.clone().expect("deployment_id missing").id;
+            let component_digest = execution.component_digest.as_ref().expect("component_digest missing").digest.as_str();
 
             let play = if app_state.ffqns_to_details.contains_key(&ffqn) {
                 html!{
@@ -311,6 +324,12 @@ pub fn execution_list_page() -> Html {
                         <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
                             {&execution_id}
                         </Link<Route>>
+                        if query.show_details {
+                            <br/>
+                            { deployment_id }
+                            <br/>
+                            { component_digest }
+                        }
                     </td>
                     <td>
                         // FFQN column
@@ -342,7 +361,11 @@ pub fn execution_list_page() -> Html {
                         // Created At column
                         <div title={created_at.to_string()}>
                             {"Created "}
-                            {relative_time(created_at, now)}{" ago"}
+                            if query.show_details {
+                                { created_at }
+                            } else {
+                                {relative_time(created_at, now)}{" ago"}
+                            }
                         </div>
                         // Duration
                         if let Some(durated) = durated {
@@ -403,9 +426,9 @@ pub fn execution_list_page() -> Html {
             <ContextProvider<StatusCacheContext> context={status_cache}>
                 <h3>{"Executions"}</h3>
 
-                <div class="filters" style="margin-bottom: 1em; padding: 1em; border: 1px solid #ccc;">
-                    <div style="margin-bottom: 0.5em;">
-                        <label style="margin-right: 1em;">
+                <div class="executions-filter">
+                    <div class="checkboxes">
+                        <label>
                             <input
                                 type="checkbox"
                                 checked={query.show_derived}
@@ -421,26 +444,31 @@ pub fn execution_list_page() -> Html {
                             />
                             {" Hide Finished"}
                         </label>
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={query.show_details}
+                                onchange={on_toggle_show_details}
+                            />
+                            {" Show Details"}
+                        </label>
                     </div>
-                    <div>
+                    <div class="inputs">
                         <input
                             type="text"
                             ref={prefix_ref.clone()}
                             placeholder="Execution ID Prefix..."
                             value={(query.execution_id_prefix).clone()}
                         />
-                        {" "}
                         <input
                             type="text"
                             ref={ffqn_ref.clone()}
                             placeholder="Function Name Prefix..."
                             value={query.ffqn_prefix.as_ref().map(|ffqn| ffqn.to_string())}
                         />
-                        {" "}
                         <button onclick={&on_apply_filters}>{"Filter / Refresh"}</button>
 
                         if query != ExecutionQuery::default() {
-                            {" "}
                             <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={Some(ExecutionQuery::default())}>
                                 {"Clear Filters"}
                             </Link<Route, ExecutionQuery>>
