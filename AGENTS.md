@@ -79,13 +79,21 @@ webui/
 # Enter nix shell
 nix develop
 
-# Build and serve with hot reload
-cd crates/webui
-trunk serve
-
-# Or build for production
-trunk build --release
+# Start development server on port 8081
+just serve
 ```
+
+The WebUI will be available at http://localhost:8081
+
+### Building for Release
+
+```bash
+just build
+```
+
+This creates:
+- Release WASM files in `crates/webui/dist/`
+- The `webui-proxy` component (see [webui-proxy README](crates/webui-proxy/README.md))
 
 ## Adding a New Page
 
