@@ -2,8 +2,9 @@ use crate::{
     app::query::BacktraceVersionsPath,
     components::{
         component_list_page::ComponentListPage, debugger::debugger_view::DebuggerView,
-        execution_detail_page::ExecutionLogPage, execution_list_page::ExecutionListPage,
-        execution_logs_page::LogsPage, execution_stub_submit_page::ExecutionStubResultPage,
+        deployment_list_page::DeploymentListPage, execution_detail_page::ExecutionLogPage,
+        execution_list_page::ExecutionListPage, execution_logs_page::LogsPage,
+        execution_stub_submit_page::ExecutionStubResultPage,
         execution_submit_page::ExecutionSubmitPage, not_found::NotFound,
         trace::trace_view::TraceView,
     },
@@ -100,6 +101,8 @@ pub enum Route {
     Component {
         component_id: grpc_client::ComponentId,
     },
+    #[at("/deployments")]
+    DeploymentList,
     #[at("/execution/submit/:ffqn")]
     ExecutionSubmit { ffqn: FunctionFqn },
     #[at("/execution/stub/:ffqn/:execution_id")]
@@ -143,6 +146,7 @@ impl Route {
             Route::Component { component_id } => {
                 html! { <ComponentListPage maybe_component_id={Some(component_id)}/> }
             }
+            Route::DeploymentList => html! { <DeploymentListPage /> },
             Route::ExecutionSubmit { ffqn } => html! { <ExecutionSubmitPage {ffqn} /> },
             Route::ExecutionStubResult { ffqn, execution_id } => {
                 html! { <ExecutionStubResultPage {ffqn}  {execution_id} /> }
@@ -202,11 +206,15 @@ pub fn app(
                 <BrowserRouter>
                     <nav>
                         <Link<Route> to={Route::ExecutionList }>
-                            {"Execution List"}
+                            {"Executions"}
+                        </Link<Route>>
+                        {" "}
+                        <Link<Route> to={Route::DeploymentList }>
+                            {"Deployments"}
                         </Link<Route>>
                         {" "}
                         <Link<Route> to={Route::ComponentList }>
-                            {"Component list"}
+                            {"Components"}
                         </Link<Route>>
 
                     </nav>
