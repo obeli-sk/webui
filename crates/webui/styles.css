@@ -124,23 +124,47 @@ h3 .highlight {
     color: #8be9fd;
 }
 
-table.execution_list {
+table.execution_list,
+table.deployment_list {
     width: 100%;
     border-collapse: collapse;
 }
 
 table.execution_list th,
-table.execution_list td {
+table.execution_list td,
+table.deployment_list th,
+table.deployment_list td {
     border: 1px solid #44475a;
     padding: 8px;
     text-align: left;
 }
 
-table.execution_list th {
+table.execution_list th,
+table.deployment_list th {
     background-color: #44475a;
 }
 
-.executions-filter {
+table.deployment_list th.number,
+table.deployment_list td.number {
+    text-align: right;
+    width: 100px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+
+.badge.current {
+    background-color: #50fa7b;
+    color: #1e1e2e;
+}
+
+.executions-filter,
+.deployments-filter {
     margin-bottom: 1em;
     padding: 1em;
     border: 1px solid #ccc;
@@ -155,7 +179,8 @@ table.execution_list th {
 }
 
 
-.executions-filter .inputs>* {
+.executions-filter .inputs>*,
+.deployments-filter>* {
     margin-right: 1em;
 }
 
