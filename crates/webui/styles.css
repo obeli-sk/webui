@@ -785,3 +785,142 @@ ul li span {
 .log-row .kind.kind-stdout {
     color: red;
 }
+
+/* --- Execution Actions (Replay & Upgrade) --- */
+.execution-actions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #44475a;
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.action-container {
+    display: inline-block;
+}
+
+.action-button {
+    padding: 8px 16px;
+    background-color: #44475a;
+    color: #f8f8f2;
+    border: 1px solid #6272a4;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s ease;
+}
+
+.action-button:hover:not(:disabled) {
+    background-color: #6272a4;
+}
+
+.action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.action-result {
+    margin-top: 0.5rem;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.action-result.success {
+    background-color: rgba(80, 250, 123, 0.2);
+    color: #50fa7b;
+    border: 1px solid #50fa7b;
+}
+
+.action-result.error {
+    background-color: rgba(255, 85, 85, 0.2);
+    color: #ff5555;
+    border: 1px solid #ff5555;
+}
+
+/* Upgrade Form */
+.upgrade-form {
+    margin-top: 0.75rem;
+    padding: 1rem;
+    background-color: #21222c;
+    border: 1px solid #44475a;
+    border-radius: 4px;
+    max-width: 600px;
+}
+
+.upgrade-form .form-row {
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.upgrade-form .form-row:last-child {
+    margin-bottom: 0;
+}
+
+.upgrade-form label {
+    min-width: 120px;
+    color: #8be9fd;
+    font-size: 0.9em;
+}
+
+.upgrade-form input[type="text"] {
+    flex: 1;
+    padding: 6px 10px;
+    background-color: #1e1e2e;
+    border: 1px solid #44475a;
+    border-radius: 4px;
+    color: #f8f8f2;
+    font-family: monospace;
+    font-size: 0.85em;
+}
+
+.upgrade-form input[type="text"]:focus {
+    outline: none;
+    border-color: #8be9fd;
+}
+
+.upgrade-form select {
+    flex: 1;
+    padding: 6px 10px;
+    background-color: #1e1e2e;
+    border: 1px solid #44475a;
+    border-radius: 4px;
+    color: #f8f8f2;
+    font-size: 0.9em;
+}
+
+.upgrade-form select:focus {
+    outline: none;
+    border-color: #8be9fd;
+}
+
+.upgrade-form .current-digest {
+    font-family: monospace;
+    font-size: 0.8em;
+    color: #6272a4;
+    word-break: break-all;
+}
+
+.upgrade-form .checkbox-row label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: auto;
+    cursor: pointer;
+}
+
+.upgrade-form .checkbox-row input[type="checkbox"] {
+    width: auto;
+}
+
+.validation-error {
+    color: #ff5555;
+    font-size: 0.85em;
+    padding: 4px 8px;
+    background-color: rgba(255, 85, 85, 0.1);
+    border-radius: 4px;
+}

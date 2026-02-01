@@ -9,6 +9,7 @@ A [Yew](https://yew.rs)-based web interface for [Obelisk](https://obeli.sk/), a 
 - **Component List** - Explore registered components and their interfaces
 - **Execution Detail** - Inspect execution events, traces, and logs
 - **Debugger** - Step through execution history with source mapping
+- **Workflow Actions** - Replay executions and upgrade to new component versions
 
 ## Development
 
