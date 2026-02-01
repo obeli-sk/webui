@@ -122,7 +122,11 @@ This creates:
 
 The proto definitions are in `obelisk/proto/obelisk.proto`. Available services:
 
-- `ExecutionRepository` - Execution management (list, submit, status, events, cancel, stub)
+- `ExecutionRepository` - Execution management:
+  - `ListExecutions`, `ListExecutionEvents`, `GetStatus` - Query executions
+  - `Submit`, `Stub`, `Cancel` - Control executions
+  - `ReplayExecution` - Replay a workflow execution
+  - `UpgradeExecutionComponent` - Upgrade workflow to new component version
 - `FunctionRepository` - Component and function listing, WIT retrieval
 - `DeploymentRepository` - Deployment state listing
 
@@ -133,16 +137,25 @@ The proto is compiled in `build.rs` and available via `crate::grpc::grpc_client`
 ```rust
 use crate::grpc::grpc_client::{
     self,
-    service_repository_client::ServiceRepositoryClient,
+    execution_repository_client::ExecutionRepositoryClient,
 };
 use tonic_web_wasm_client::Client;
 use crate::BASE_URL;
 
-let mut client = ServiceRepositoryClient::new(Client::new(BASE_URL.to_string()));
-let response = client.method(grpc_client::RequestType { ... }).await;
+let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+let response = client.replay_execution(grpc_client::ReplayExecutionRequest {
+    execution_id: Some(execution_id),
+}).await;
 ```
 
 All gRPC calls are made via `tonic-web-wasm-client` which works in the browser WASM environment.
+
+### Key Types
+
+- `ExecutionId` - Unique identifier for executions (format: `E_<ulid>`)
+- `ContentDigest` - Component hash (format: `sha256:<64 hex chars>`)
+- `ComponentId` - Contains `component_type`, `name`, and `digest`
+- `ComponentType` - Enum: `Workflow`, `ActivityWasm`, `WebhookEndpoint`, etc.
 
 ## Pagination Pattern
 

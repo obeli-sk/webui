@@ -3,6 +3,7 @@ pub mod component_list_page;
 pub mod component_tree;
 pub mod debugger;
 pub mod deployment_list_page;
+pub mod execution_actions;
 pub mod execution_detail;
 pub mod execution_detail_page;
 pub mod execution_header;
