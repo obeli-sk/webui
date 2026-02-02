@@ -230,3 +230,53 @@ git submodule update --remote obelisk
 nix develop -c cargo clippy
 nix develop -c cargo fmt
 ```
+
+## Tree Component
+
+The tree component (`crates/webui/src/tree/`) is a custom implementation replacing the archived yewprint library.
+
+### Architecture
+
+- `icon.rs` - Icon enum using Unicode characters for cross-platform support
+- `tree_data.rs` - `TreeData<T>` wrapper around `id_tree::Tree` with `RefCell` for interior mutability
+- `tree_view.rs` - `Tree` function component that renders the tree
+
+### Key Design Decisions
+
+1. **`TreeData::PartialEq` always returns false**: This is intentional. Since `TreeData` uses interior mutability (`RefCell`), Yew's prop comparison can't detect changes. By returning `false`, we force the `Tree` component to re-render when its parent re-renders.
+
+2. **Single callback for expand/collapse**: Use only the `onclick` callback, not `on_expand`/`on_collapse` together with `onclick`. The tree_view component calls `onclick` first, then calls the appropriate expand/collapse callback based on state. Using the same handler for all three would cause double-toggle.
+
+### Usage Example
+
+```rust
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, Tree, TreeBuilder, TreeData};
+
+// Build the tree
+let mut tree = TreeBuilder::new().build();
+let root_id = tree.insert(Node::new(NodeData::default()), InsertBehavior::AsRoot).unwrap();
+let node_id = tree.insert(
+    Node::new(NodeData {
+        icon: Icon::FolderClose,
+        label: html! { "My Node" },
+        has_caret: true,
+        ..Default::default()
+    }),
+    InsertBehavior::UnderNode(&root_id),
+).unwrap();
+
+let tree_data: TreeData<()> = tree.into();
+
+// Handle clicks (toggle expansion)
+let on_click = Callback::from(move |(node_id, _): (NodeId, MouseEvent)| {
+    let mut tree = tree_data.borrow_mut();
+    if let Ok(node) = tree.get_mut(&node_id) {
+        node.data_mut().is_expanded ^= true;
+    }
+});
+
+// Render
+html! {
+    <Tree<()> tree={tree_data} onclick={Some(on_click)} />
+}
+```
