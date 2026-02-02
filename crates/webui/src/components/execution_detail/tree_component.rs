@@ -53,8 +53,6 @@ impl Component for TreeComponent {
         html! {
             <Tree<u32>
                 tree={self.tree.clone()}
-                on_collapse={Some(self.on_expand_node.clone())}
-                on_expand={Some(self.on_expand_node.clone())}
                 onclick={Some(self.on_expand_node.clone())}
             />
         }
