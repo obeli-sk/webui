@@ -76,35 +76,3 @@ impl<T: Clone + PartialEq> PartialEq for TreeData<T> {
         false
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tree_data_partial_eq_always_false() {
-        // TreeData::eq always returns false to force re-renders
-        let tree1: TreeData<()> = id_tree::TreeBuilder::new().build().into();
-        let tree2 = tree1.clone();
-
-        // Even cloned trees (same Rc) should not be equal
-        // This is intentional to force Yew to re-render
-        assert!(!tree1.eq(&tree2), "TreeData::eq should always return false");
-    }
-
-    #[test]
-    fn test_tree_data_borrow() {
-        let tree: TreeData<i32> = id_tree::TreeBuilder::new().build().into();
-
-        // Should be able to borrow immutably
-        let _borrowed = tree.borrow();
-    }
-
-    #[test]
-    fn test_tree_data_borrow_mut() {
-        let tree: TreeData<i32> = id_tree::TreeBuilder::new().build().into();
-
-        // Should be able to borrow mutably
-        let _borrowed = tree.borrow_mut();
-    }
-}

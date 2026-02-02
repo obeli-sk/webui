@@ -2,7 +2,7 @@ clean:
     cargo clean
     rm -rf crates/webui/dist
     rm -rf crates/webui/dist-dev
-    rm -f crates/webui/blueprint.css crates/webui/syntect.css
+    rm -f crates/webui/syntect.css
 
 serve:
     cargo build --package webui --target=wasm32-unknown-unknown # Trunk fails to run this before needing CSS files

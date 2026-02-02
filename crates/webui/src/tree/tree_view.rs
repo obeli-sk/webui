@@ -10,6 +10,7 @@ pub struct TreeProps<T: Clone + PartialEq + 'static> {
     /// The tree data to render.
     pub tree: TreeData<T>,
     /// Callback when a node is clicked.
+    /// If using `onclick` callback, do not use `on_expand`/`on_collapse`.
     #[prop_or_default]
     pub onclick: Option<Callback<(NodeId, MouseEvent)>>,
     /// Callback when a node is expanded.
