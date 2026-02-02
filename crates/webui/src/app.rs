@@ -205,11 +205,18 @@ impl Route {
 #[derive(PartialEq, Properties)]
 pub struct AppProps {
     pub initial_components: LoadedComponents,
+    pub initial_deployment_id: Option<grpc_client::DeploymentId>,
 }
 
 #[function_component(App)]
-pub fn app(AppProps { initial_components }: &AppProps) -> Html {
-    let app_state = use_state(|| AppState::from_loaded(initial_components, None));
+pub fn app(
+    AppProps {
+        initial_components,
+        initial_deployment_id,
+    }: &AppProps,
+) -> Html {
+    let app_state =
+        use_state(|| AppState::from_loaded(initial_components, initial_deployment_id.clone()));
 
     // Poll for deployment changes
     {

@@ -1,15 +1,17 @@
 use webui::{
     app::{App, AppProps},
-    loader::load_components,
+    loader::{get_current_deployment_id, load_components},
 };
 
 fn main() {
     init_logging();
     wasm_bindgen_futures::spawn_local(async move {
         let loaded = load_components().await.unwrap();
+        let deployment_id = get_current_deployment_id().await.ok();
 
         yew::Renderer::<App>::with_props(AppProps {
             initial_components: loaded,
+            initial_deployment_id: deployment_id,
         })
         .render();
     });
