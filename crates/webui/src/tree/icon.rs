@@ -70,7 +70,7 @@ impl Icon {
             Icon::List => "☰",
             Icon::Lock => "🔒",
             Icon::NewObject => "✚",
-            Icon::Numerical => "123",
+            Icon::Numerical => "🔢",
             Icon::Play => "▶",
             Icon::Search => "🔍",
             Icon::Tag => "🏷",
