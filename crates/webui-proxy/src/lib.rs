@@ -13,11 +13,6 @@ async fn main(server_req: Request<Body>) -> Result<Response<Body>, Error> {
             let content_type = "text/javascript";
             write_static_response(content, content_type)
         }
-        "/blueprint.css" => {
-            let content = get_blueprint_css();
-            let content_type = "text/css";
-            write_static_response(content, content_type)
-        }
         "/styles.css" => {
             let content = get_styles_css();
             let content_type = "text/css";
@@ -100,11 +95,6 @@ fn get_webui_js() -> &'static [u8] {
 }
 
 #[cfg(not(debug_assertions))]
-fn get_blueprint_css() -> &'static [u8] {
-    include_bytes!("../../webui/dist/blueprint.css")
-}
-
-#[cfg(not(debug_assertions))]
 fn get_styles_css() -> &'static [u8] {
     include_bytes!("../../webui/dist/styles.css")
 }
@@ -127,11 +117,6 @@ fn get_webui_bg_wasm() -> &'static [u8] {
 
 #[cfg(debug_assertions)]
 fn get_webui_js() -> &'static [u8] {
-    unreachable!("embedding is skipped in debug mode")
-}
-
-#[cfg(debug_assertions)]
-fn get_blueprint_css() -> &'static [u8] {
     unreachable!("embedding is skipped in debug mode")
 }
 
