@@ -205,12 +205,12 @@ pub fn app(
             <div class="container">
                 <BrowserRouter>
                     <nav>
-                        <Link<Route> to={Route::ExecutionList }>
-                            {"Executions"}
-                        </Link<Route>>
-                        {" "}
                         <Link<Route> to={Route::DeploymentList }>
                             {"Deployments"}
+                        </Link<Route>>
+                        {" "}
+                        <Link<Route> to={Route::ExecutionList }>
+                            {"Executions"}
                         </Link<Route>>
                         {" "}
                         <Link<Route> to={Route::ComponentList }>
