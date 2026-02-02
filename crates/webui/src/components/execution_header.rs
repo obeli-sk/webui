@@ -1,16 +1,8 @@
-use crate::BASE_URL;
 use crate::app::Route;
 use crate::components::execution_actions::{ReplayButton, UpgradeForm};
 use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::ExecutionStatus;
-use crate::grpc::grpc_client::get_status_response;
-use crate::grpc::grpc_client::{
-    self, ComponentType, ContentDigest, ExecutionId,
-    execution_repository_client::ExecutionRepositoryClient,
-};
-use log::error;
-use tonic_web_wasm_client::Client;
-use wasm_bindgen_futures::spawn_local;
+use crate::grpc::grpc_client::{ComponentType, ContentDigest, ExecutionId, ExecutionSummary};
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
@@ -30,45 +22,18 @@ pub struct ExecutionHeaderProps {
 pub fn execution_header(
     ExecutionHeaderProps { execution_id, link }: &ExecutionHeaderProps,
 ) -> Html {
-    let exec_info = use_state(|| None);
+    let exec_info = use_state(|| None::<ExecutionInfo>);
 
-    // Fetch the Created event to get component type and digest
-    {
-        let execution_id = execution_id.clone();
+    // Callback to receive the summary from ExecutionStatus
+    let on_summary = {
         let exec_info = exec_info.clone();
-
-        use_effect_with(execution_id.clone(), move |execution_id| {
-            let execution_id = execution_id.clone();
-            spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
-
-                let result = client
-                    .get_status(grpc_client::GetStatusRequest {
-                        execution_id: Some(execution_id.clone()),
-                        follow: false,
-                        send_finished_status: false,
-                    })
-                    .await;
-
-                match result {
-                    Ok(response) => {
-                        let response = response.into_inner().message().await.unwrap().unwrap();
-                        if let get_status_response::Message::Summary(summary) =
-                            response.message.unwrap()
-                        {
-                            exec_info.set(Some(ExecutionInfo {
-                                component_type: summary.component_type(),
-                                component_digest: summary.component_digest.unwrap(),
-                            }));
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to fetch execution events: {:?}", e);
-                    }
-                }
-            });
-        });
-    }
+        Callback::from(move |summary: ExecutionSummary| {
+            exec_info.set(Some(ExecutionInfo {
+                component_type: summary.component_type(),
+                component_digest: summary.component_digest.unwrap(),
+            }));
+        })
+    };
 
     let workflow_digest = exec_info.as_ref().and_then(|exec_info| {
         if exec_info.component_type == ComponentType::Workflow {
@@ -97,7 +62,7 @@ pub fn execution_header(
                 </div>
             </div>
 
-            <ExecutionStatus execution_id={execution_id.clone()} status={None} print_finished_status={true} />
+            <ExecutionStatus execution_id={execution_id.clone()} status={None} print_finished_status={true} on_summary={on_summary} />
 
             if let Some(workflow_digest) = workflow_digest {
                 <div class="execution-actions">

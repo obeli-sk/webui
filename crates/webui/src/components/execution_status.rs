@@ -20,6 +20,9 @@ pub struct ExecutionStatusProps {
     pub status: Option<grpc_client::execution_status::Status>,
     pub execution_id: grpc_client::ExecutionId,
     pub print_finished_status: bool,
+    /// Called when the summary is received from the status stream
+    #[prop_or_default]
+    pub on_summary: Option<Callback<ExecutionSummary>>,
 }
 
 fn status_as_message(
@@ -92,6 +95,7 @@ async fn run_status_subscription(
     execution_id: grpc_client::ExecutionId,
     print_finished_status: bool,
     cancel_rx: futures::channel::oneshot::Receiver<()>,
+    on_summary: Option<Callback<ExecutionSummary>>,
 ) {
     let mut execution_client =
         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
@@ -118,6 +122,12 @@ async fn run_status_subscription(
                     .message
                     .expect("GetStatusResponse.message is sent by the server");
                 trace!("[{connection_id}] <ExecutionStatus /> Got {status:?}");
+                // Call on_summary callback if this is a Summary message
+                if let get_status_response::Message::Summary(ref summary) = status
+                    && let Some(ref callback) = on_summary
+                {
+                    callback.emit(summary.clone());
+                }
                 status_state.dispatch(StatusStateAction::Update {
                     execution_id: execution_id.clone(),
                     message: status,
@@ -139,9 +149,11 @@ pub fn execution_status(
         status,
         execution_id,
         print_finished_status,
+        on_summary,
     }: &ExecutionStatusProps,
 ) -> Html {
     let print_finished_status = *print_finished_status;
+    let on_summary = on_summary.clone();
 
     // Both hooks must be called unconditionally
     let context_state = use_context::<StatusCacheContext>();
@@ -181,6 +193,7 @@ pub fn execution_status(
         let status_state = status_state.clone();
         let execution_id = execution_id.clone();
         let connection_id = trace_id();
+        let on_summary = on_summary.clone();
 
         use_effect_with(
             (execution_id.clone(), is_done),
@@ -203,6 +216,7 @@ pub fn execution_status(
                         execution_id.clone(),
                         print_finished_status,
                         cancel_rx,
+                        on_summary.clone(),
                     ));
                     Some(cancel_tx)
                 };
