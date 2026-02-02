@@ -237,8 +237,6 @@ impl Component for ComponentTree {
         html! {
             <Tree<NodeDataType>
                 tree={self.tree.clone()}
-                on_collapse={ Some(self.callback_expand_node.clone()) }
-                on_expand={ Some(self.callback_expand_node.clone()) }
                 onclick={ Some(self.callback_expand_node.clone()) }
             />
         }

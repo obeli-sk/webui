@@ -2,7 +2,6 @@
 
 use super::Icon;
 use std::cell::RefCell;
-use std::ops::Deref;
 use std::rc::Rc;
 use yew::Html;
 
@@ -69,17 +68,43 @@ impl<T: Clone> From<id_tree::Tree<NodeData<T>>> for TreeData<T> {
     }
 }
 
-impl<T: Clone> Deref for TreeData<T> {
-    type Target = Rc<RefCell<id_tree::Tree<NodeData<T>>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl<T: Clone + PartialEq> PartialEq for TreeData<T> {
+    fn eq(&self, _other: &Self) -> bool {
+        // Always return false to force re-render when parent re-renders.
+        // This is necessary because TreeData uses interior mutability (RefCell),
+        // which Yew's PartialEq-based change detection cannot track.
+        false
     }
 }
 
-impl<T: Clone + PartialEq> PartialEq for TreeData<T> {
-    fn eq(&self, other: &Self) -> bool {
-        // Compare by Rc pointer - if they point to the same data, they're equal
-        Rc::ptr_eq(&self.0, &other.0)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tree_data_partial_eq_always_false() {
+        // TreeData::eq always returns false to force re-renders
+        let tree1: TreeData<()> = id_tree::TreeBuilder::new().build().into();
+        let tree2 = tree1.clone();
+
+        // Even cloned trees (same Rc) should not be equal
+        // This is intentional to force Yew to re-render
+        assert!(!tree1.eq(&tree2), "TreeData::eq should always return false");
+    }
+
+    #[test]
+    fn test_tree_data_borrow() {
+        let tree: TreeData<i32> = id_tree::TreeBuilder::new().build().into();
+
+        // Should be able to borrow immutably
+        let _borrowed = tree.borrow();
+    }
+
+    #[test]
+    fn test_tree_data_borrow_mut() {
+        let tree: TreeData<i32> = id_tree::TreeBuilder::new().build().into();
+
+        // Should be able to borrow mutably
+        let _borrowed = tree.borrow_mut();
     }
 }
