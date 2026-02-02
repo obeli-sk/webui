@@ -49,8 +49,6 @@ pub enum ActionResult {
 #[derive(Properties, PartialEq)]
 pub struct ReplayButtonProps {
     pub execution_id: ExecutionId,
-    /// Only workflows can be replayed
-    pub is_workflow: bool,
 }
 
 #[function_component(ReplayButton)]
@@ -98,10 +96,6 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
         })
     };
 
-    if !props.is_workflow {
-        return html! {};
-    }
-
     let is_loading = *loading_state;
 
     html! {
@@ -129,9 +123,7 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct UpgradeFormProps {
     pub execution_id: ExecutionId,
-    pub current_digest: Option<ContentDigest>,
-    /// Only workflows can be upgraded
-    pub is_workflow: bool,
+    pub current_digest: ContentDigest,
 }
 
 #[function_component(UpgradeForm)]
@@ -230,60 +222,55 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                 return;
             }
 
-            let Some(expected_digest) = current_digest.clone() else {
-                result_state.set(ActionResult::Error(
-                    "Current component digest not available".to_string(),
-                ));
-                return;
-            };
-
-            let execution_id = execution_id.clone();
-            let skip_determinism = *skip_determinism_state;
-            let result_state = result_state.clone();
-            let loading_state = loading_state.clone();
-
             loading_state.set(true);
             result_state.set(ActionResult::None);
 
-            spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+            spawn_local({
+                let execution_id = execution_id.clone();
+                let skip_determinism = *skip_determinism_state;
+                let result_state = result_state.clone();
+                let loading_state = loading_state.clone();
+                let current_digest = current_digest.clone();
 
-                let result = client
-                    .upgrade_execution_component(grpc_client::UpgradeExecutionComponentRequest {
-                        execution_id: Some(execution_id.clone()),
-                        expected_component_digest: Some(expected_digest),
-                        new_component_digest: Some(ContentDigest {
-                            digest: new_digest.clone(),
-                        }),
-                        skip_determinism_check: skip_determinism,
-                    })
-                    .await;
+                async move {
+                    let mut client =
+                        ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
 
-                loading_state.set(false);
+                    let result = client
+                        .upgrade_execution_component(
+                            grpc_client::UpgradeExecutionComponentRequest {
+                                execution_id: Some(execution_id.clone()),
+                                expected_component_digest: Some(current_digest.clone()),
+                                new_component_digest: Some(ContentDigest {
+                                    digest: new_digest.clone(),
+                                }),
+                                skip_determinism_check: skip_determinism,
+                            },
+                        )
+                        .await;
 
-                match result {
-                    Ok(_) => {
-                        debug!(
-                            "Upgrade requested for execution {} to {}",
-                            execution_id, new_digest
-                        );
-                        result_state.set(ActionResult::Success(format!(
-                            "Upgraded to {}",
-                            &new_digest[..20.min(new_digest.len())]
-                        )));
-                    }
-                    Err(e) => {
-                        error!("Failed to upgrade execution {}: {:?}", execution_id, e);
-                        result_state.set(ActionResult::Error(e.message().to_string()));
+                    loading_state.set(false);
+
+                    match result {
+                        Ok(_) => {
+                            debug!(
+                                "Upgrade requested for execution {} to {}",
+                                execution_id, new_digest
+                            );
+                            result_state.set(ActionResult::Success(format!(
+                                "Upgraded to {}",
+                                &new_digest[..20.min(new_digest.len())]
+                            )));
+                        }
+                        Err(e) => {
+                            error!("Failed to upgrade execution {}: {:?}", execution_id, e);
+                            result_state.set(ActionResult::Error(e.message().to_string()));
+                        }
                     }
                 }
             });
         })
     };
-
-    if !props.is_workflow {
-        return html! {};
-    }
 
     let is_loading = *loading_state;
     let show_form = *show_form_state;
@@ -307,11 +294,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                     <div class="form-row">
                         <label>{"Current digest:"}</label>
                         <span class="current-digest">
-                            if let Some(digest) = &props.current_digest {
-                                { &digest.digest }
-                            } else {
-                                {"Loading..."}
-                            }
+                            { &props.current_digest.digest }
                         </span>
                     </div>
 
@@ -338,8 +321,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                                             .map(|d| d.digest.clone())
                                             .unwrap_or_default();
                                         let name = &comp_id.name;
-                                        let is_current = props.current_digest.as_ref()
-                                            .is_some_and(|d| d.digest == digest);
+                                        let is_current = props.current_digest.digest == digest;
                                         html! {
                                             <option
                                                 value={digest.clone()}

@@ -3,6 +3,7 @@ use crate::app::Route;
 use crate::components::execution_actions::{ReplayButton, UpgradeForm};
 use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::ExecutionStatus;
+use crate::grpc::grpc_client::get_status_response;
 use crate::grpc::grpc_client::{
     self, ComponentType, ContentDigest, ExecutionId,
     execution_repository_client::ExecutionRepositoryClient,
@@ -15,8 +16,8 @@ use yew_router::prelude::Link;
 
 #[derive(Clone, PartialEq, Default)]
 struct ExecutionInfo {
-    component_type: Option<ComponentType>,
-    component_digest: Option<ContentDigest>,
+    component_type: ComponentType,
+    component_digest: ContentDigest,
 }
 
 #[derive(Properties, PartialEq)]
@@ -29,7 +30,7 @@ pub struct ExecutionHeaderProps {
 pub fn execution_header(
     ExecutionHeaderProps { execution_id, link }: &ExecutionHeaderProps,
 ) -> Html {
-    let exec_info = use_state(ExecutionInfo::default);
+    let exec_info = use_state(|| None);
 
     // Fetch the Created event to get component type and digest
     {
@@ -42,26 +43,23 @@ pub fn execution_header(
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
 
                 let result = client
-                    .list_execution_events(grpc_client::ListExecutionEventsRequest {
+                    .get_status(grpc_client::GetStatusRequest {
                         execution_id: Some(execution_id.clone()),
-                        version_from: 0,
-                        length: 1,
-                        include_backtrace_id: false,
+                        follow: false,
+                        send_finished_status: false,
                     })
                     .await;
 
                 match result {
                     Ok(response) => {
-                        let events = response.into_inner().events;
-                        if let Some(event) = events.first()
-                            && let Some(grpc_client::execution_event::Event::Created(created)) =
-                                &event.event
-                            && let Some(component_id) = &created.component_id
+                        let response = response.into_inner().message().await.unwrap().unwrap();
+                        if let get_status_response::Message::Summary(summary) =
+                            response.message.unwrap()
                         {
-                            exec_info.set(ExecutionInfo {
-                                component_type: Some(component_id.component_type()),
-                                component_digest: component_id.digest.clone(),
-                            });
+                            exec_info.set(Some(ExecutionInfo {
+                                component_type: summary.component_type(),
+                                component_digest: summary.component_digest.unwrap(),
+                            }));
                         }
                     }
                     Err(e) => {
@@ -72,9 +70,13 @@ pub fn execution_header(
         });
     }
 
-    let is_workflow = exec_info
-        .component_type
-        .is_some_and(|t| t == ComponentType::Workflow);
+    let workflow_digest = exec_info.as_ref().and_then(|exec_info| {
+        if exec_info.component_type == ComponentType::Workflow {
+            Some(exec_info.component_digest.clone())
+        } else {
+            None
+        }
+    });
 
     html! {
         <div class="execution-header">
@@ -97,17 +99,17 @@ pub fn execution_header(
 
             <ExecutionStatus execution_id={execution_id.clone()} status={None} print_finished_status={true} />
 
-            <div class="execution-actions">
-                <ReplayButton
-                    execution_id={execution_id.clone()}
-                    is_workflow={is_workflow}
-                />
-                <UpgradeForm
-                    execution_id={execution_id.clone()}
-                    current_digest={exec_info.component_digest.clone()}
-                    is_workflow={is_workflow}
-                />
-            </div>
+            if let Some(workflow_digest) = workflow_digest {
+                <div class="execution-actions">
+                    <ReplayButton
+                        execution_id={execution_id.clone()}
+                    />
+                    <UpgradeForm
+                        execution_id={execution_id.clone()}
+                        current_digest={workflow_digest}
+                    />
+                </div>
+            }
         </div>
     }
 }
