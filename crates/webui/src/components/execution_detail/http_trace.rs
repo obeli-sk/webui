@@ -1,10 +1,8 @@
 use crate::grpc::grpc_client;
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, NodeId};
 use chrono::DateTime;
+use id_tree::Tree;
 use yew::prelude::*;
-use yewprint::{
-    Icon, NodeData,
-    id_tree::{InsertBehavior, Node, NodeId, Tree},
-};
 
 pub fn attach_http_traces(
     tree: &mut Tree<NodeData<u32>>,

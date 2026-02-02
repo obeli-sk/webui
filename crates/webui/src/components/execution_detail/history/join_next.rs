@@ -3,6 +3,7 @@ use crate::components::execution_header::ExecutionLink;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::grpc_client::join_set_response_event::{ChildExecutionFinished, DelayFinished};
 use crate::grpc::version::VersionType;
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
     app::Route,
     components::execution_detail::{finished::attach_result_detail, tree_component::TreeComponent},
@@ -14,10 +15,6 @@ use chrono::DateTime;
 use log::error;
 use yew::prelude::*;
 use yew_router::prelude::Link;
-use yewprint::{
-    Icon, NodeData, TreeData,
-    id_tree::{InsertBehavior, Node, TreeBuilder},
-};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinNextEventProps {
@@ -156,7 +153,7 @@ impl HistoryJoinNextEventProps {
                 let delay_node = tree
                     .insert(
                         Node::new(NodeData {
-                            icon: icon.clone(),
+                            icon,
                             label: html! {
                                 <>
                                     {"Matched Delay "}

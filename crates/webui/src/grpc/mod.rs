@@ -1,3 +1,4 @@
+use crate::tree::Icon;
 use grpc_client::ComponentType;
 use yew::{Html, ToHtml as _};
 
@@ -43,13 +44,13 @@ impl yew::ToHtml for ComponentType {
 }
 
 impl ComponentType {
-    pub fn as_icon(&self) -> yewprint::Icon {
+    pub fn as_icon(&self) -> Icon {
         match self {
-            ComponentType::Unspecified => yewprint::Icon::Cog,
-            ComponentType::Workflow => yewprint::Icon::GanttChart,
-            ComponentType::ActivityWasm => yewprint::Icon::CodeBlock,
-            ComponentType::ActivityStub | ComponentType::ActivityExternal => yewprint::Icon::Import,
-            ComponentType::WebhookEndpoint => yewprint::Icon::GlobeNetwork,
+            ComponentType::Unspecified => Icon::Cog,
+            ComponentType::Workflow => Icon::GanttChart,
+            ComponentType::ActivityWasm => Icon::CodeBlock,
+            ComponentType::ActivityStub | ComponentType::ActivityExternal => Icon::Import,
+            ComponentType::WebhookEndpoint => Icon::GlobeNetwork,
         }
     }
 

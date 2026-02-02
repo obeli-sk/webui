@@ -21,7 +21,6 @@ fn main() {
         .compile_protos(&[obelisk_proto], &[proto_path])
         .unwrap();
     let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
-    generate_blueprint_css(&pkg_name);
     generate_syntect_css(&pkg_name);
 }
 
@@ -33,17 +32,6 @@ fn get_css_path(filename: &str, webui_package_name: &str) -> Utf8PathBuf {
         .find(|p| p.name.as_str() == webui_package_name)
         .unwrap_or_else(|| panic!("package `{webui_package_name}` must exist"));
     package.manifest_path.parent().unwrap().join(filename)
-}
-
-fn generate_blueprint_css(webui_package_name: &str) {
-    let css_path = get_css_path("blueprint.css", webui_package_name);
-    if !css_path.exists() {
-        let mut css_file = File::create(css_path).unwrap();
-        css_file
-            .write_all(yewprint_css::BLUEPRINT_CSS.as_bytes())
-            .unwrap();
-        css_file.flush().unwrap();
-    }
 }
 
 fn generate_syntect_css(webui_package_name: &str) {

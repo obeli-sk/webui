@@ -14,7 +14,6 @@ use val_json::wast_val::WastValWithType;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use yew_router::{hooks::use_navigator, prelude::Link};
-use yewprint::Icon;
 
 #[derive(Properties, PartialEq)]
 pub struct ExecutionStubResultPageProps {
@@ -184,7 +183,7 @@ pub fn execution_stub_result_page(
             <h3>
                 {"Provided by "}
                 <Link<Route> to={Route::Component { component_id: component_id.clone() } }>
-                    <Icon icon = { component.as_type().as_icon() }/>
+                    { component.as_type().as_icon().to_html() }
                     {" "}
                     {&component.component_id.as_ref().expect("`component_id` is sent").name}
                 </Link<Route>>

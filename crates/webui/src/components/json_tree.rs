@@ -1,10 +1,7 @@
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, NodeId};
 use serde_json::Value;
 use std::{borrow::Cow, collections::BTreeMap, ops::Deref};
 use yew::prelude::*;
-use yewprint::{
-    Icon, NodeData,
-    id_tree::{self, InsertBehavior, Node, NodeId},
-};
 
 fn render_json_value(
     tree: &mut id_tree::Tree<NodeData<u32>>,
@@ -19,7 +16,7 @@ fn render_json_value(
         Value::Number(n) => n.to_string(),
         Value::String(s) => format!("\"{s}\""),
         Value::Array(arr) => format!("[{} items]", arr.len()),
-        Value::Object(obj) => format!("{{{}}} items", obj.len()),
+        Value::Object(obj) => format!("{{{} items}}", obj.len()),
     };
 
     // Determine icon and whether node has children

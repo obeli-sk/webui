@@ -1,7 +1,7 @@
+use crate::tree::Icon;
 use crate::{app::Route, components::execution_list_page::ExecutionQuery, grpc::ffqn::FunctionFqn};
 use yew::prelude::*;
 use yew_router::prelude::Link;
-use yewprint::Icon;
 
 #[derive(Properties, PartialEq)]
 pub struct FfqnWithLinksProps {
@@ -38,7 +38,7 @@ pub fn ffqn_with_links(
             }
             if !hide_submit {
                 <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
-                    <Icon icon = { Icon::Play }/>
+                    { Icon::Play.to_html() }
                 </Link<Route>>
             } else if *fully_qualified {
                 {"."}

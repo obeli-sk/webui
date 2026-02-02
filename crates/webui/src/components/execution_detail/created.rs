@@ -10,14 +10,13 @@ use crate::grpc::grpc_client::ComponentId;
 use crate::grpc::grpc_client::DeploymentId;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::version::VersionType;
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::util::time::format_date;
 use chrono::{DateTime, Utc};
 use grpc_client::execution_event::Created;
 use serde_json::Value;
 use yew::Html;
 use yew::prelude::*;
-use yewprint::id_tree::{InsertBehavior, Node, TreeBuilder};
-use yewprint::{Icon, NodeData, TreeData};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct CreatedEventProps {

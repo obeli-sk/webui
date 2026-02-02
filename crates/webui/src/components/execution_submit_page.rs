@@ -11,7 +11,6 @@ use crate::{
 use std::ops::Deref;
 use yew::prelude::*;
 use yew_router::prelude::Link;
-use yewprint::Icon;
 
 #[derive(Properties, PartialEq)]
 pub struct ExecutionSubmitPageProps {
@@ -74,7 +73,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                 <h3>
                     {"Provided by "}
                     <Link<Route> to={Route::Component { component_id: found.component_id.clone().expect("`component_id` is sent") } }>
-                        <Icon icon = { found.as_type().as_icon() }/>
+                        { found.as_type().as_icon().to_html() }
                         {" "}
                         {&found.component_id.as_ref().expect("`component_id` is sent").name}
                     </Link<Route>>
