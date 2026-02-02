@@ -166,9 +166,67 @@ For paginated lists, follow the pattern in `execution_list_page.rs`:
 3. Use `use_effect_with` to fetch data when query changes
 4. Provide "Newer" / "Older" navigation buttons
 
+## Yew Patterns and Gotchas
+
+### State in Async/Interval Callbacks
+
+When using `use_state` with interval callbacks or async closures, the captured state handle reads from the state **at closure creation time**, not the current value. This is a common pitfall.
+
+**Problem:**
+```rust
+let counter = use_state(|| 0);
+use_effect_with((), move |()| {
+    let counter = counter.clone();
+    Interval::new(1000, move || {
+        // BUG: *counter always returns the initial value (0)
+        log::info!("Counter: {}", *counter);
+    });
+});
+```
+
+**Solution:** Use `use_mut_ref` for values that need to be read/updated across async boundaries:
+```rust
+let counter = use_state(|| 0);
+let counter_ref = use_mut_ref(|| 0);
+
+use_effect_with((), move |()| {
+    Interval::new(1000, move || {
+        // Correct: reads current value
+        let current = *counter_ref.borrow();
+        log::info!("Counter: {}", current);
+    });
+});
+```
+
+### Timers
+
+Use `gloo::timers::callback::Interval` (not `gloo_timers`):
+```rust
+use gloo::timers::callback::Interval;
+
+let interval = Interval::new(5000, || {
+    // Called every 5 seconds
+});
+// Drop the interval to cancel it
+```
+
+## Submodule Management
+
+The `obelisk/` directory is a git submodule containing proto definitions. If you need newer proto definitions:
+
+```bash
+git submodule update --remote obelisk
+```
+
 ## Code Style
 
 - Run `cargo fmt` before committing
 - Run `cargo clippy` and fix all warnings
 - Follow existing patterns in the codebase
 - Use workspace dependencies from root `Cargo.toml`
+
+**Note:** Use `nix develop -c` prefix for cargo commands to ensure correct toolchain:
+```bash
+nix develop -c cargo clippy
+nix develop -c cargo fmt
+```
