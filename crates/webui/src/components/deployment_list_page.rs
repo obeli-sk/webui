@@ -1,6 +1,6 @@
 use crate::{
     BASE_URL,
-    app::Route,
+    app::{AppState, Route},
     grpc::grpc_client::{
         self, DeploymentId, DeploymentState,
         deployment_repository_client::DeploymentRepositoryClient,
@@ -88,21 +88,22 @@ pub fn deployment_list_page() -> Html {
     let location = use_location().expect("should be called inside a router");
     let navigator = use_navigator().expect("should be called inside a router");
 
+    // Get current deployment ID from AppState to trigger refresh on change
+    let app_state = use_context::<AppState>().expect("AppState context must be provided");
+    let current_deployment_id = app_state.current_deployment_id.clone();
+
     // Deserialize query from URL or use default
     let query = location.query::<DeploymentQuery>().unwrap_or_default();
 
     // State to hold the API response
     let response_state = use_state(|| None);
 
-    let refresh_counter_state = use_state(|| 0); // Force calling use_effect
-
-    // Effect: Fetch data when the URL query changes
+    // Effect: Fetch data when the URL query changes or deployment changes
     {
         let query = query.clone();
         let response_state = response_state.clone();
-        let refresh_counter_state = refresh_counter_state.clone();
 
-        use_effect_with((query, *refresh_counter_state), move |(query_params, _)| {
+        use_effect_with((query, current_deployment_id), move |(query_params, _)| {
             let query_params = query_params.clone();
 
             spawn_local(async move {
@@ -143,13 +144,11 @@ pub fn deployment_list_page() -> Html {
         });
     }
 
-    // Clicked on "Refresh"
-    let on_refresh = {
+    // Clicked on "Latest" - reset to default query
+    let on_latest = {
         let navigator = navigator.clone();
-        let refresh_counter_state = refresh_counter_state.clone();
         Callback::from(move |_| {
             let new_query = DeploymentQuery::default();
-            refresh_counter_state.set(*refresh_counter_state + 1);
             let _ = navigator.push_with_query(&Route::DeploymentList, &new_query);
         })
     };
@@ -244,10 +243,6 @@ pub fn deployment_list_page() -> Html {
             <>
                 <h3>{"Deployments"}</h3>
 
-                <div class="deployments-filter">
-                    <button onclick={&on_refresh}>{"Refresh"}</button>
-                </div>
-
                 <table class="deployment_list">
                     <thead>
                         <tr>
@@ -265,7 +260,7 @@ pub fn deployment_list_page() -> Html {
                 </table>
 
                 <div class="pagination">
-                    <button onclick={&on_refresh}>
+                    <button onclick={&on_latest}>
                         {"<< Latest"}
                     </button>
 
