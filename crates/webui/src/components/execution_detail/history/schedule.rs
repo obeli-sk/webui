@@ -1,3 +1,4 @@
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
     components::{
         execution_detail::tree_component::TreeComponent, execution_header::ExecutionLink,
@@ -5,10 +6,6 @@ use crate::{
     grpc::{grpc_client, version::VersionType},
 };
 use yew::prelude::*;
-use yewprint::{
-    Icon, NodeData, TreeData,
-    id_tree::{InsertBehavior, Node, TreeBuilder},
-};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryScheduleEventProps {

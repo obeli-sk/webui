@@ -1,3 +1,4 @@
+use crate::tree::Icon;
 use crate::{
     BASE_URL,
     app::{AppState, Route},
@@ -24,7 +25,6 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use yew_router::prelude::*;
-use yewprint::Icon;
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct ExecutionQuery {
@@ -340,7 +340,7 @@ pub fn execution_list_page() -> Html {
             let play = if app_state.ffqns_to_details.contains_key(&ffqn) {
                 html!{
                     <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
-                        <Icon icon = { Icon::Play }/>
+                        { Icon::Play.to_html() }
                     </Link<Route>>
                 }
             } else {

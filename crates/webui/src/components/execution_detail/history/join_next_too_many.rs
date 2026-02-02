@@ -1,15 +1,12 @@
 use crate::app::query::BacktraceVersionsPath;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::version::VersionType;
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
     app::Route, components::execution_detail::tree_component::TreeComponent, grpc::grpc_client,
 };
 use yew::prelude::*;
 use yew_router::prelude::Link;
-use yewprint::{
-    Icon, NodeData, TreeData,
-    id_tree::{InsertBehavior, Node, TreeBuilder},
-};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinNextTooManyEventProps {

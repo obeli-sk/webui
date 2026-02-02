@@ -1,5 +1,5 @@
+use crate::tree::{NodeId, Tree, TreeData};
 use yew::prelude::*;
-use yewprint::{TreeData, id_tree::NodeId};
 
 #[derive(Debug)]
 pub enum TreeComponentAction {
@@ -51,8 +51,8 @@ impl Component for TreeComponent {
 
     fn view(&self, _ctx: &Context<Self>) -> Html {
         html! {
-            <yewprint::Tree<u32>
-                tree={&self.tree}
+            <Tree<u32>
+                tree={self.tree.clone()}
                 on_collapse={Some(self.on_expand_node.clone())}
                 on_expand={Some(self.on_expand_node.clone())}
                 onclick={Some(self.on_expand_node.clone())}

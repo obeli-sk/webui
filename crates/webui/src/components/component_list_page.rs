@@ -20,7 +20,6 @@ use log::warn;
 use std::ops::Deref;
 use yew::prelude::*;
 use yew_router::{hooks::use_navigator, prelude::Link};
-use yewprint::Icon;
 
 #[derive(Properties, PartialEq)]
 pub struct ComponentListPageProps {
@@ -153,7 +152,7 @@ pub fn component_list_page(
                 if let Some(found) = components_by_exported_ifc.get(ifc) {
                     {" "}
                     <Link<Route> to={Route::Component { component_id: found.component_id.clone().expect("`component_id` is sent") } }>
-                        <Icon icon = { found.as_type().as_icon() }/>
+                        { found.as_type().as_icon().to_html() }
                         {" "}
                         {&found.component_id.as_ref().expect("`component_id` is sent").name}
                     </Link<Route>>
@@ -165,7 +164,7 @@ pub fn component_list_page(
                 <h2>
                     {&component.component_id.as_ref().expect("`component_id` is sent").name}
                     <span class="label">
-                        <Icon icon = { component.as_type().as_icon() }/>
+                        { component.as_type().as_icon().to_html() }
                         {component.as_type().to_html()}
                     </span>
                 </h2>

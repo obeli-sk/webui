@@ -9,7 +9,7 @@ This document provides guidelines for AI agents working on this repository.
 This is the Web UI for Obelisk, built with:
 - **Yew** - Rust framework for building web applications compiled to WebAssembly
 - **gRPC-Web** - Communication with the Obelisk server via `tonic-web-wasm-client`
-- **yewprint** - Blueprint.js components for Yew
+- **Custom tree component** - Custom tree/icon components (in `crates/webui/src/tree/`)
 - **Trunk** - WASM web application bundler
 
 ## Development Environment

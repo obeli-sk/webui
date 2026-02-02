@@ -22,20 +22,23 @@ cargo_metadata = "0.23"
 # webui
 gloo = "0.11.0"
 id-arena = "2.2.1"
+id_tree = "1.8.0"
 log = "0.4.29"
 semver = "1.0.27"
 tonic-web-wasm-client = "0.8.0"
 wasm-bindgen = "=0.2.106" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
 wasm-bindgen-futures = "=0.4.56" # Must match https://github.com/rustwasm/wasm-bindgen/blob/0.2.106/crates/futures/Cargo.toml
 web-sys = { version = "=0.3.83", features = [
+    "CssStyleDeclaration",
+    "HtmlElement",
     "HtmlInputElement",
+    "HtmlSelectElement",
     "Performance",
     "Window",
 ] } # Must match https://github.com/rustwasm/wasm-bindgen/blob/0.2.106/crates/web-sys/Cargo.toml
 yew = { version = "0.21.0", features = ["csr"] }
 yew-router = "0.18.0"
-yewprint = "0.5.0"
-yewprint-css = "0.4.0"
+
 wstd = "0.6.3"
 wit-component = "0.243.0"
 wit-parser = "0.243.0"

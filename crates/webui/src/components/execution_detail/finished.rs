@@ -1,3 +1,4 @@
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, NodeId, TreeBuilder, TreeData};
 use crate::{
     components::{
         execution_detail::{http_trace::attach_http_traces, tree_component::TreeComponent},
@@ -5,11 +6,8 @@ use crate::{
     },
     grpc::{grpc_client, version::VersionType},
 };
+use id_tree::Tree;
 use yew::prelude::*;
-use yewprint::{
-    Icon, NodeData, TreeData,
-    id_tree::{InsertBehavior, Node, NodeId, Tree, TreeBuilder},
-};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct FinishedEventProps {

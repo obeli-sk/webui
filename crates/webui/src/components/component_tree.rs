@@ -4,13 +4,12 @@ use crate::grpc::ffqn::FunctionFqn;
 use crate::grpc::function_detail::{InterfaceFilter, map_interfaces_to_fn_details};
 use crate::grpc::grpc_client::{self, ComponentId, ComponentType};
 use crate::grpc::ifc_fqn::IfcFqn;
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, NodeId, Tree, TreeBuilder, TreeData};
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 use std::fmt::Debug;
 use std::rc::Rc;
 use yew::prelude::*;
-use yewprint::id_tree::{InsertBehavior, Node, NodeId, TreeBuilder};
-use yewprint::{Icon, NodeData, TreeData};
 
 #[derive(Properties, PartialEq)]
 pub struct ComponentTreeProps {
@@ -57,7 +56,7 @@ type NodeDataType = Option<grpc_client::ComponentId>;
 
 impl ComponentTree {
     fn fill_interfaces_and_fns(
-        tree: &mut yewprint::id_tree::Tree<NodeData<NodeDataType>>,
+        tree: &mut id_tree::Tree<NodeData<NodeDataType>>,
         exports_or_imports: IndexMap<IfcFqn, Vec<grpc_client::FunctionDetail>>,
         parent_node_id: &NodeId,
     ) {
@@ -90,7 +89,7 @@ impl ComponentTree {
     }
 
     fn attach_components_to_tree<'a>(
-        tree: &mut yewprint::id_tree::Tree<NodeData<NodeDataType>>,
+        tree: &mut id_tree::Tree<NodeData<NodeDataType>>,
         root_id: &NodeId,
         config: &ComponentTreeConfig,
         label: Html,
@@ -100,7 +99,7 @@ impl ComponentTree {
         let group_dir_node_id = tree
             .insert(
                 Node::new(NodeData {
-                    icon: icon.clone(),
+                    icon,
                     label,
                     has_caret: true,
                     ..Default::default()
@@ -114,7 +113,7 @@ impl ComponentTree {
             let component_node_id = tree
                 .insert(
                     Node::new(NodeData {
-                        icon: icon.clone(),
+                        icon,
                         label: component
                             .component_id
                             .as_ref()
@@ -236,8 +235,8 @@ impl Component for ComponentTree {
     fn view(&self, _ctx: &Context<Self>) -> Html {
         log::debug!("<ComponentTree /> view");
         html! {
-            <yewprint::Tree<NodeDataType>
-                tree={&self.tree}
+            <Tree<NodeDataType>
+                tree={self.tree.clone()}
                 on_collapse={ Some(self.callback_expand_node.clone()) }
                 on_expand={ Some(self.callback_expand_node.clone()) }
                 onclick={ Some(self.callback_expand_node.clone()) }

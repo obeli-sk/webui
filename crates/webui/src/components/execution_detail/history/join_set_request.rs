@@ -1,3 +1,4 @@
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
     app::{Route, query::BacktraceVersionsPath},
     components::{
@@ -11,10 +12,6 @@ use crate::{
 use chrono::DateTime;
 use yew::prelude::*;
 use yew_router::prelude::Link;
-use yewprint::{
-    Icon, NodeData, TreeData,
-    id_tree::{InsertBehavior, Node, TreeBuilder},
-};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinSetRequestEventProps {
