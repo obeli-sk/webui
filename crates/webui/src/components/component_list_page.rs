@@ -37,7 +37,7 @@ pub fn component_list_page(
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
     let components_by_id = app_state.components_by_id;
-    let components_by_exported_ifc = app_state.comopnents_by_exported_ifc;
+    let components_by_exported_ifc = app_state.components_by_exported_ifc;
 
     let wit_state = use_state(|| None);
     // Fetch GetWit

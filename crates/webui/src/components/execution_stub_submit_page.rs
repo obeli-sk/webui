@@ -30,7 +30,7 @@ pub fn execution_stub_result_page(
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
 
-    let Some(component) = app_state.comopnents_by_exported_ifc.get(&ffqn.ifc_fqn) else {
+    let Some(component) = app_state.components_by_exported_ifc.get(&ffqn.ifc_fqn) else {
         return html! {
             <p>{"function not found"}</p>
         };
@@ -38,7 +38,7 @@ pub fn execution_stub_result_page(
     let return_type = app_state
         .ffqns_to_details
         .get(ffqn)
-        .expect("`ffqns_to_details` and `comopnents_by_exported_ifc` must be consistent, based from `ListComponentsResponse`").0
+        .expect("`ffqns_to_details` and `components_by_exported_ifc` must be consistent, based from `ListComponentsResponse`").0
         .return_type
         .as_ref()
         .expect("return type must exist");
