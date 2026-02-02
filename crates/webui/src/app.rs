@@ -218,23 +218,36 @@ pub fn app(
     let app_state =
         use_state(|| AppState::from_loaded(initial_components, initial_deployment_id.clone()));
 
+    // Track deployment ID separately using a ref so the interval can read current value
+    let deployment_id_ref = use_mut_ref(|| initial_deployment_id.clone());
+
     // Poll for deployment changes
     {
         let app_state = app_state.clone();
+        let deployment_id_ref = deployment_id_ref.clone();
         use_effect_with((), move |()| {
             let interval = Interval::new(DEPLOYMENT_POLL_INTERVAL_MS, move || {
                 let app_state = app_state.clone();
+                let deployment_id_ref = deployment_id_ref.clone();
                 spawn_local(async move {
                     match get_current_deployment_id().await {
                         Ok(new_deployment_id) => {
-                            let current_id = app_state.current_deployment_id.as_ref();
-                            if current_id != Some(&new_deployment_id) {
-                                debug!(
-                                    "Deployment changed from {:?} to {:?}, reloading components",
-                                    current_id, new_deployment_id
-                                );
+                            let should_reload = {
+                                let current_id = deployment_id_ref.borrow();
+                                let changed = current_id.as_ref() != Some(&new_deployment_id);
+                                if changed {
+                                    debug!(
+                                        "Deployment changed from {:?} to {:?}, reloading components",
+                                        *current_id, new_deployment_id
+                                    );
+                                }
+                                changed
+                            };
+                            if should_reload {
                                 match load_components().await {
                                     Ok(loaded) => {
+                                        *deployment_id_ref.borrow_mut() =
+                                            Some(new_deployment_id.clone());
                                         app_state.set(AppState::from_loaded(
                                             &loaded,
                                             Some(new_deployment_id),
