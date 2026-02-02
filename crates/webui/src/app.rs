@@ -10,22 +10,50 @@ use crate::{
     },
     grpc::{
         ffqn::FunctionFqn,
-        grpc_client::{self, ComponentId, ExecutionId},
+        grpc_client::{self, ComponentId, DeploymentId, ExecutionId},
         ifc_fqn::IfcFqn,
         version::VersionType,
     },
+    loader::{LoadedComponents, get_current_deployment_id, load_components},
 };
+use gloo::timers::callback::Interval;
 use hashbrown::HashMap;
+use log::{debug, error};
 use std::{fmt::Display, ops::Deref, rc::Rc, str::FromStr};
+use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
+
+/// Interval in milliseconds between deployment ID checks.
+const DEPLOYMENT_POLL_INTERVAL_MS: u32 = 5000;
 
 #[derive(Clone, PartialEq)]
 pub struct AppState {
     pub components_by_id: HashMap<ComponentId, Rc<grpc_client::Component>>,
-    pub comopnents_by_exported_ifc: HashMap<IfcFqn, Rc<grpc_client::Component>>,
+    pub components_by_exported_ifc: HashMap<IfcFqn, Rc<grpc_client::Component>>,
     pub ffqns_to_details:
         hashbrown::HashMap<FunctionFqn, (grpc_client::FunctionDetail, grpc_client::ComponentId)>,
+    pub current_deployment_id: Option<DeploymentId>,
+}
+
+impl AppState {
+    /// Creates a new AppState from loaded components.
+    pub fn from_loaded(loaded: &LoadedComponents, deployment_id: Option<DeploymentId>) -> Self {
+        let mut ffqns_to_details = hashbrown::HashMap::new();
+        for (component_id, component) in &loaded.components_by_id {
+            for exported_fn_detail in component.exports.iter() {
+                let ffqn = FunctionFqn::from_fn_detail(exported_fn_detail)
+                    .expect("ffqn should be parseable");
+                ffqns_to_details.insert(ffqn, (exported_fn_detail.clone(), component_id.clone()));
+            }
+        }
+        Self {
+            components_by_id: loaded.components_by_id.clone(),
+            components_by_exported_ifc: loaded.components_by_exported_ifc.clone(),
+            ffqns_to_details,
+            current_deployment_id: deployment_id,
+        }
+    }
 }
 
 pub mod query {
@@ -176,30 +204,52 @@ impl Route {
 
 #[derive(PartialEq, Properties)]
 pub struct AppProps {
-    pub components_by_id: HashMap<ComponentId, Rc<grpc_client::Component>>,
-    pub comopnents_by_exported_ifc: HashMap<IfcFqn, Rc<grpc_client::Component>>,
+    pub initial_components: LoadedComponents,
 }
 
 #[function_component(App)]
-pub fn app(
-    AppProps {
-        components_by_id,
-        comopnents_by_exported_ifc,
-    }: &AppProps,
-) -> Html {
-    let mut ffqns_to_details = hashbrown::HashMap::new();
-    for (component_id, component) in components_by_id {
-        for exported_fn_detail in component.exports.iter() {
-            let ffqn =
-                FunctionFqn::from_fn_detail(exported_fn_detail).expect("ffqn should be parseable");
-            ffqns_to_details.insert(ffqn, (exported_fn_detail.clone(), component_id.clone()));
-        }
+pub fn app(AppProps { initial_components }: &AppProps) -> Html {
+    let app_state = use_state(|| AppState::from_loaded(initial_components, None));
+
+    // Poll for deployment changes
+    {
+        let app_state = app_state.clone();
+        use_effect_with((), move |()| {
+            let interval = Interval::new(DEPLOYMENT_POLL_INTERVAL_MS, move || {
+                let app_state = app_state.clone();
+                spawn_local(async move {
+                    match get_current_deployment_id().await {
+                        Ok(new_deployment_id) => {
+                            let current_id = app_state.current_deployment_id.as_ref();
+                            if current_id != Some(&new_deployment_id) {
+                                debug!(
+                                    "Deployment changed from {:?} to {:?}, reloading components",
+                                    current_id, new_deployment_id
+                                );
+                                match load_components().await {
+                                    Ok(loaded) => {
+                                        app_state.set(AppState::from_loaded(
+                                            &loaded,
+                                            Some(new_deployment_id),
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to reload components: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to get current deployment ID: {:?}", e);
+                        }
+                    }
+                });
+            });
+            // Return cleanup closure that drops the interval
+            move || drop(interval)
+        });
     }
-    let app_state = use_state(|| AppState {
-        components_by_id: components_by_id.clone(),
-        ffqns_to_details,
-        comopnents_by_exported_ifc: comopnents_by_exported_ifc.clone(),
-    });
+
     html! {
         <ContextProvider<AppState> context={app_state.deref().clone()}>
             <div class="container">

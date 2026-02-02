@@ -22,7 +22,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
 
-    let provided_by = app_state.comopnents_by_exported_ifc.get(&ffqn.ifc_fqn);
+    let provided_by = app_state.components_by_exported_ifc.get(&ffqn.ifc_fqn);
 
     let (function_detail, component_id) = match app_state.ffqns_to_details.get(ffqn) {
         Some((detail, id)) => (detail, id.clone()),
