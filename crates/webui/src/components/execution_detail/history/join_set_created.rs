@@ -54,7 +54,6 @@ impl HistoryJoinSetCreatedEventProps {
                 InsertBehavior::UnderNode(&root_id),
             )
             .unwrap();
-        // TODO: Add closing strategy when cancellation is supported.
 
         if let Some(backtrace_id) = self.backtrace_id {
             tree.insert(
