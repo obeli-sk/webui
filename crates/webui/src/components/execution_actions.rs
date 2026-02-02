@@ -91,7 +91,7 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
                     }
                     Err(e) => {
                         error!("Failed to replay execution {}: {:?}", execution_id, e);
-                        result_state.set(ActionResult::Error(format!("Failed: {}", e.message())));
+                        result_state.set(ActionResult::Error(e.message().to_string()));
                     }
                 }
             });
@@ -185,17 +185,14 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
     let on_select_component = {
         let new_digest_state = new_digest_state.clone();
         let validation_error_state = validation_error_state.clone();
-        let new_digest_ref = new_digest_ref.clone();
         Callback::from(move |e: Event| {
             let select: web_sys::HtmlSelectElement = e.target_unchecked_into();
             let value = select.value();
             if !value.is_empty() {
                 new_digest_state.set(value.clone());
                 validation_error_state.set(None);
-                // Update the text input
-                if let Some(input) = new_digest_ref.cast::<HtmlInputElement>() {
-                    input.set_value(&value);
-                }
+            } else {
+                new_digest_state.set(String::new());
             }
         })
     };
@@ -277,7 +274,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                     }
                     Err(e) => {
                         error!("Failed to upgrade execution {}: {:?}", execution_id, e);
-                        result_state.set(ActionResult::Error(format!("Failed: {}", e.message())));
+                        result_state.set(ActionResult::Error(e.message().to_string()));
                     }
                 }
             });
@@ -334,7 +331,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                         <div class="form-row">
                             <label for="select-component">{"Or select:"}</label>
                             <select id="select-component" onchange={on_select_component}>
-                                <option value="">{"-- Select a workflow component --"}</option>
+                                <option value="" selected=true>{"-- Select a workflow component --"}</option>
                                 {
                                     workflow_components.iter().map(|comp_id| {
                                         let digest = comp_id.digest.as_ref()
