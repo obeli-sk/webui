@@ -113,7 +113,7 @@ This creates:
    use crate::grpc::grpc_client::{self, service_client::ServiceClient};
    use tonic_web_wasm_client::Client;
    use crate::BASE_URL;
-   
+
    let mut client = ServiceClient::new(Client::new(BASE_URL.to_string()));
    let response = client.method(Request { ... }).await;
    ```
@@ -172,19 +172,3 @@ For paginated lists, follow the pattern in `execution_list_page.rs`:
 - Run `cargo clippy` and fix all warnings
 - Follow existing patterns in the codebase
 - Use workspace dependencies from root `Cargo.toml`
-
-## Git Submodule
-
-The `obelisk/` directory is a git submodule pointing to the main obelisk repository.
-To update:
-
-```bash
-# Using HTTPS (recommended for CI/read-only)
-git clone https://github.com/obeli-sk/obelisk.git obelisk --branch latest
-
-# Or update existing submodule
-cd obelisk && git pull origin main
-```
-
-Note: The `.gitmodules` uses SSH URL which requires GitHub SSH access.
-For read-only access, clone via HTTPS as shown above.
