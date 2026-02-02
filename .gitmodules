@@ -1,4 +1,4 @@
 [submodule "obelisk"]
 	path = obelisk
-	url = git@github.com:obeli-sk/obelisk.git
-    branch = latest
+	url = https://github.com/obeli-sk/obelisk.git
+    branch = main

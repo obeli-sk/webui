@@ -13,6 +13,12 @@ A [Yew](https://yew.rs)-based web interface for [Obelisk](https://obeli.sk/), a 
 
 ## Development
 
+Make sure to fetch the submodule:
+```sh
+git submodule init
+git submodule update
+```
+
 ### Prerequisites
 
 This project uses [Nix flakes](https://nixos.wiki/wiki/Flakes) for dependency management.
