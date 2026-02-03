@@ -4,7 +4,9 @@ use crate::components::execution_actions::{
 };
 use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::{ExecutionStatus, FinishedStatusMode};
-use crate::grpc::grpc_client::{ComponentType, ContentDigest, ExecutionId, ExecutionSummary};
+use crate::grpc::grpc_client::{
+    ComponentType, ContentDigest, ExecutionId, ExecutionSummary, execution_status,
+};
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
@@ -26,14 +28,17 @@ pub fn execution_header(
 ) -> Html {
     let exec_info = use_state(|| None::<ExecutionInfo>);
     let is_finished = use_state(|| false);
+    let is_paused = use_state(|| false);
 
     // Reset state when execution_id changes to prevent stale buttons
     {
         let exec_info = exec_info.clone();
         let is_finished = is_finished.clone();
+        let is_paused = is_paused.clone();
         use_effect_with(execution_id.clone(), move |_| {
             exec_info.set(None);
             is_finished.set(false);
+            is_paused.set(false);
         });
     }
 
@@ -54,6 +59,14 @@ pub fn execution_header(
         FinishedStatusMode::RequestAndNotify(Callback::from(move |()| {
             is_finished.set(true);
         }))
+    };
+
+    // Callback when status changes - updates is_paused state
+    let on_status_change = {
+        let is_paused = is_paused.clone();
+        Callback::from(move |status: execution_status::Status| {
+            is_paused.set(matches!(status, execution_status::Status::Paused(_)));
+        })
     };
 
     let workflow_digest = exec_info.as_ref().and_then(|exec_info| {
@@ -92,16 +105,18 @@ pub fn execution_header(
                 </div>
             </div>
 
-            <ExecutionStatus execution_id={execution_id.clone()} status={None} {finished_status} on_summary={on_summary} />
+            <ExecutionStatus execution_id={execution_id.clone()} status={None} {finished_status} on_summary={on_summary} on_status_change={on_status_change} />
 
             if let Some(workflow_digest) = workflow_digest {
                 <div class="execution-actions">
                     if !*is_finished {
                         <PauseButton
                             execution_id={execution_id.clone()}
+                            is_paused={*is_paused}
                         />
                         <UnpauseButton
                             execution_id={execution_id.clone()}
+                            is_paused={*is_paused}
                         />
                         <UpgradeForm
                             execution_id={execution_id.clone()}

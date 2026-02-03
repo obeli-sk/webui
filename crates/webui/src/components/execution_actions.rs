@@ -485,6 +485,8 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct PauseButtonProps {
     pub execution_id: ExecutionId,
+    /// Whether the execution is currently paused
+    pub is_paused: bool,
 }
 
 #[function_component(PauseButton)]
@@ -533,13 +535,14 @@ pub fn pause_button(props: &PauseButtonProps) -> Html {
     };
 
     let is_loading = *loading_state;
+    let is_disabled = is_loading || props.is_paused;
 
     html! {
         <div class="action-container pause-action">
             <button
                 class="action-button pause-button"
                 onclick={onclick}
-                disabled={is_loading}
+                disabled={is_disabled}
             >
                 if is_loading {
                     {"Pausing..."}
@@ -559,6 +562,8 @@ pub fn pause_button(props: &PauseButtonProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct UnpauseButtonProps {
     pub execution_id: ExecutionId,
+    /// Whether the execution is currently paused
+    pub is_paused: bool,
 }
 
 #[function_component(UnpauseButton)]
@@ -607,13 +612,14 @@ pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
     };
 
     let is_loading = *loading_state;
+    let is_disabled = is_loading || !props.is_paused;
 
     html! {
         <div class="action-container unpause-action">
             <button
                 class="action-button unpause-button"
                 onclick={onclick}
-                disabled={is_loading}
+                disabled={is_disabled}
             >
                 if is_loading {
                     {"Unpausing..."}
