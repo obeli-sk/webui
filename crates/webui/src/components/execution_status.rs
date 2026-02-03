@@ -37,6 +37,9 @@ pub struct ExecutionStatusProps {
     /// Called when the summary is received from the status stream
     #[prop_or_default]
     pub on_summary: Option<Callback<ExecutionSummary>>,
+    /// Called when the pending state changes (provides the current status)
+    #[prop_or_default]
+    pub on_status_change: Option<Callback<grpc_client::execution_status::Status>>,
 }
 
 fn status_as_message(
@@ -103,6 +106,27 @@ fn is_finished_any(msg: &get_status_response::Message) -> bool {
     )
 }
 
+/// Extracts the execution status from a GetStatusResponse message
+fn extract_status(
+    msg: &get_status_response::Message,
+) -> Option<grpc_client::execution_status::Status> {
+    match msg {
+        get_status_response::Message::CurrentStatus(GExecutionStatus {
+            status: Some(status),
+            ..
+        }) => Some(status.clone()),
+        get_status_response::Message::Summary(ExecutionSummary {
+            current_status:
+                Some(GExecutionStatus {
+                    status: Some(status),
+                    ..
+                }),
+            ..
+        }) => Some(status.clone()),
+        _ => None,
+    }
+}
+
 async fn run_status_subscription(
     status_state: UseReducerHandle<StatusState>,
     connection_id: Rc<str>,
@@ -110,6 +134,7 @@ async fn run_status_subscription(
     finished_status: FinishedStatusMode,
     cancel_rx: futures::channel::oneshot::Receiver<()>,
     on_summary: Option<Callback<ExecutionSummary>>,
+    on_status_change: Option<Callback<grpc_client::execution_status::Status>>,
 ) {
     let send_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
     let mut execution_client =
@@ -143,6 +168,12 @@ async fn run_status_subscription(
                 {
                     callback.emit(summary.clone());
                 }
+                // Call on_status_change callback with the current status
+                if let Some(ref callback) = on_status_change
+                    && let Some(current_status) = extract_status(&status)
+                {
+                    callback.emit(current_status);
+                }
                 // Call on_finished callback if the execution has finished
                 if is_finished_any(&status)
                     && let FinishedStatusMode::RequestAndNotify(ref callback) = finished_status
@@ -171,10 +202,12 @@ pub fn execution_status(
         execution_id,
         finished_status,
         on_summary,
+        on_status_change,
     }: &ExecutionStatusProps,
 ) -> Html {
     let finished_status = finished_status.clone();
     let on_summary = on_summary.clone();
+    let on_status_change = on_status_change.clone();
     let request_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
 
     // Both hooks must be called unconditionally
@@ -216,6 +249,7 @@ pub fn execution_status(
         let execution_id = execution_id.clone();
         let connection_id = trace_id();
         let on_summary = on_summary.clone();
+        let on_status_change = on_status_change.clone();
         let finished_status = finished_status.clone();
 
         use_effect_with(
@@ -240,6 +274,7 @@ pub fn execution_status(
                         finished_status.clone(),
                         cancel_rx,
                         on_summary.clone(),
+                        on_status_change.clone(),
                     ));
                     Some(cancel_tx)
                 };
