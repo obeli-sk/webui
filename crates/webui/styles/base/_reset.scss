@@ -20,6 +20,21 @@ body {
   line-height: $line-height-base;
 }
 
+// Links
+a {
+  color: $color-accent-cyan;
+  text-decoration: none;
+
+  &:visited {
+    color: $color-accent-cyan;
+  }
+
+  &:hover {
+    color: $color-accent-yellow;
+    text-decoration: underline;
+  }
+}
+
 // List reset
 ul {
   list-style-type: none;
