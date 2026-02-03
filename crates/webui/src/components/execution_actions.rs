@@ -84,7 +84,7 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
                     Ok(_) => {
                         debug!("Replay requested for execution {}", execution_id);
                         result_state.set(ActionResult::Success(
-                            "Replay requested successfully".to_string(),
+                            "Replay finished successfully".to_string(),
                         ));
                     }
                     Err(e) => {
