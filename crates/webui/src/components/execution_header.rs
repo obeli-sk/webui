@@ -25,6 +25,7 @@ pub fn execution_header(
     ExecutionHeaderProps { execution_id, link }: &ExecutionHeaderProps,
 ) -> Html {
     let exec_info = use_state(|| None::<ExecutionInfo>);
+    let is_finished = use_state(|| false);
 
     // Callback to receive the summary from ExecutionStatus
     let on_summary = {
@@ -34,6 +35,14 @@ pub fn execution_header(
                 component_type: summary.component_type(),
                 component_digest: summary.component_digest.unwrap(),
             }));
+        })
+    };
+
+    // Callback when execution finishes
+    let on_finished = {
+        let is_finished = is_finished.clone();
+        Callback::from(move |()| {
+            is_finished.set(true);
         })
     };
 
@@ -73,27 +82,29 @@ pub fn execution_header(
                 </div>
             </div>
 
-            <ExecutionStatus execution_id={execution_id.clone()} status={None} print_finished_status={true} on_summary={on_summary} />
+            <ExecutionStatus execution_id={execution_id.clone()} status={None} print_finished_status={true} on_summary={on_summary} on_finished={on_finished} />
 
             if let Some(workflow_digest) = workflow_digest {
                 <div class="execution-actions">
-                    <PauseButton
-                        execution_id={execution_id.clone()}
-                    />
-                    <UnpauseButton
-                        execution_id={execution_id.clone()}
-                    />
+                    if !*is_finished {
+                        <PauseButton
+                            execution_id={execution_id.clone()}
+                        />
+                        <UnpauseButton
+                            execution_id={execution_id.clone()}
+                        />
+                        <UpgradeForm
+                            execution_id={execution_id.clone()}
+                            current_digest={workflow_digest}
+                        />
+                    }
                     <ReplayButton
                         execution_id={execution_id.clone()}
-                    />
-                    <UpgradeForm
-                        execution_id={execution_id.clone()}
-                        current_digest={workflow_digest}
                     />
                 </div>
             }
 
-            if is_activity {
+            if is_activity && !*is_finished {
                 <div class="execution-actions">
                     <CancelActivityButton
                         execution_id={execution_id.clone()}
