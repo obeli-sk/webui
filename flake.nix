@@ -36,6 +36,7 @@
             just
             protobuf
             rustToolchain
+            dart-sass # SCSS compiler for styles
             trunk
             wasm-bindgen-cli
           ];
