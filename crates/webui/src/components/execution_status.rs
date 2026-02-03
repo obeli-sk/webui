@@ -15,17 +15,28 @@ use log::{debug, error, trace};
 use std::rc::Rc;
 use yew::prelude::*;
 
+/// Controls how the ExecutionStatus component handles finished status
+#[derive(Clone, PartialEq, Default)]
+pub enum FinishedStatusMode {
+    /// Do not request detailed finished status from the server
+    #[default]
+    Skip,
+    /// Request detailed finished status from the server
+    Request,
+    /// Request detailed finished status and invoke callback when execution finishes
+    RequestAndNotify(Callback<()>),
+}
+
 #[derive(Properties, PartialEq)]
 pub struct ExecutionStatusProps {
     pub status: Option<grpc_client::execution_status::Status>,
     pub execution_id: grpc_client::ExecutionId,
-    pub print_finished_status: bool,
+    /// Controls whether to request detailed finished status and optional callback
+    #[prop_or_default]
+    pub finished_status: FinishedStatusMode,
     /// Called when the summary is received from the status stream
     #[prop_or_default]
     pub on_summary: Option<Callback<ExecutionSummary>>,
-    /// Called when the execution finishes
-    #[prop_or_default]
-    pub on_finished: Option<Callback<()>>,
 }
 
 fn status_as_message(
@@ -96,11 +107,11 @@ async fn run_status_subscription(
     status_state: UseReducerHandle<StatusState>,
     connection_id: Rc<str>,
     execution_id: grpc_client::ExecutionId,
-    print_finished_status: bool,
+    finished_status: FinishedStatusMode,
     cancel_rx: futures::channel::oneshot::Receiver<()>,
     on_summary: Option<Callback<ExecutionSummary>>,
-    on_finished: Option<Callback<()>>,
 ) {
+    let send_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
     let mut execution_client =
         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
             tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
@@ -109,7 +120,7 @@ async fn run_status_subscription(
         .get_status(grpc_client::GetStatusRequest {
             execution_id: Some(execution_id.clone()),
             follow: true,
-            send_finished_status: print_finished_status,
+            send_finished_status,
         })
         .await
         .unwrap()
@@ -134,7 +145,7 @@ async fn run_status_subscription(
                 }
                 // Call on_finished callback if the execution has finished
                 if is_finished_any(&status)
-                    && let Some(ref callback) = on_finished
+                    && let FinishedStatusMode::RequestAndNotify(ref callback) = finished_status
                 {
                     callback.emit(());
                 }
@@ -158,14 +169,13 @@ pub fn execution_status(
     ExecutionStatusProps {
         status,
         execution_id,
-        print_finished_status,
+        finished_status,
         on_summary,
-        on_finished,
     }: &ExecutionStatusProps,
 ) -> Html {
-    let print_finished_status = *print_finished_status;
+    let finished_status = finished_status.clone();
     let on_summary = on_summary.clone();
-    let on_finished = on_finished.clone();
+    let request_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
 
     // Both hooks must be called unconditionally
     let context_state = use_context::<StatusCacheContext>();
@@ -191,7 +201,7 @@ pub fn execution_status(
 
     // Determine if we have a sufficient finished status to avoid re-subscribing.
     let is_done = if let Some(msg) = &stored_message {
-        if print_finished_status {
+        if request_finished_status {
             is_finished_detailed(msg)
         } else {
             is_finished_any(msg)
@@ -206,7 +216,7 @@ pub fn execution_status(
         let execution_id = execution_id.clone();
         let connection_id = trace_id();
         let on_summary = on_summary.clone();
-        let on_finished = on_finished.clone();
+        let finished_status = finished_status.clone();
 
         use_effect_with(
             (execution_id.clone(), is_done),
@@ -227,10 +237,9 @@ pub fn execution_status(
                         status_state,
                         connection_id,
                         execution_id.clone(),
-                        print_finished_status,
+                        finished_status.clone(),
                         cancel_rx,
                         on_summary.clone(),
-                        on_finished.clone(),
                     ));
                     Some(cancel_tx)
                 };

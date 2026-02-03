@@ -3,7 +3,7 @@ use crate::components::execution_actions::{
     CancelActivityButton, PauseButton, ReplayButton, UnpauseButton, UpgradeForm,
 };
 use crate::components::execution_list_page::ExecutionQuery;
-use crate::components::execution_status::ExecutionStatus;
+use crate::components::execution_status::{ExecutionStatus, FinishedStatusMode};
 use crate::grpc::grpc_client::{ComponentType, ContentDigest, ExecutionId, ExecutionSummary};
 use yew::prelude::*;
 use yew_router::prelude::Link;
@@ -38,12 +38,12 @@ pub fn execution_header(
         })
     };
 
-    // Callback when execution finishes
-    let on_finished = {
+    // Callback when execution finishes - updates is_finished state
+    let finished_status = {
         let is_finished = is_finished.clone();
-        Callback::from(move |()| {
+        FinishedStatusMode::RequestAndNotify(Callback::from(move |()| {
             is_finished.set(true);
-        })
+        }))
     };
 
     let workflow_digest = exec_info.as_ref().and_then(|exec_info| {
@@ -82,7 +82,7 @@ pub fn execution_header(
                 </div>
             </div>
 
-            <ExecutionStatus execution_id={execution_id.clone()} status={None} print_finished_status={true} on_summary={on_summary} on_finished={on_finished} />
+            <ExecutionStatus execution_id={execution_id.clone()} status={None} {finished_status} on_summary={on_summary} />
 
             if let Some(workflow_digest) = workflow_digest {
                 <div class="execution-actions">
