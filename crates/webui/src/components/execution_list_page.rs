@@ -397,7 +397,7 @@ pub fn execution_list_page() -> Html {
                     </td>
                     <td>
                         // Status column
-                        <ExecutionStatus {status} {execution_id} print_finished_status={false} />
+                        <ExecutionStatus {status} {execution_id} />
                     </td>
                     <td>
                         // Created At column
