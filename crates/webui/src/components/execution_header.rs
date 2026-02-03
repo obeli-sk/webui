@@ -1,5 +1,5 @@
 use crate::app::Route;
-use crate::components::execution_actions::{ReplayButton, UpgradeForm};
+use crate::components::execution_actions::{PauseButton, ReplayButton, UnpauseButton, UpgradeForm};
 use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::ExecutionStatus;
 use crate::grpc::grpc_client::{ComponentType, ContentDigest, ExecutionId, ExecutionSummary};
@@ -66,6 +66,12 @@ pub fn execution_header(
 
             if let Some(workflow_digest) = workflow_digest {
                 <div class="execution-actions">
+                    <PauseButton
+                        execution_id={execution_id.clone()}
+                    />
+                    <UnpauseButton
+                        execution_id={execution_id.clone()}
+                    />
                     <ReplayButton
                         execution_id={execution_id.clone()}
                     />
