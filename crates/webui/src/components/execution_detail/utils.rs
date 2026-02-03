@@ -8,9 +8,11 @@ use crate::components::execution_detail::history::join_set_request::HistoryJoinS
 use crate::components::execution_detail::history::persist::HistoryPersistEvent;
 use crate::components::execution_detail::history::schedule::HistoryScheduleEvent;
 use crate::components::execution_detail::locked::LockedEvent;
+use crate::components::execution_detail::paused::PausedEvent;
 use crate::components::execution_detail::temporarily_failed::TemporarilyFailedEvent;
 use crate::components::execution_detail::timed_out::TemporarilyTimedOutEvent;
 use crate::components::execution_detail::unlocked::UnlockedEvent;
+use crate::components::execution_detail::unpaused::UnpausedEvent;
 use crate::components::execution_header::ExecutionLink;
 use crate::grpc::grpc_client::execution_event::HistoryEvent;
 use crate::grpc::grpc_client::{
@@ -159,5 +161,11 @@ pub fn event_to_detail(
             <HistoryStubEvent event={inner_event.clone()} version={event.version} {link} {is_selected}/>
         },
         execution_event::Event::HistoryVariant(HistoryEvent { event: None }) => unreachable!(),
+        execution_event::Event::Paused(_) => html! {
+            <PausedEvent version={event.version} {is_selected} />
+        },
+        execution_event::Event::Unpaused(_) => html! {
+            <UnpausedEvent version={event.version} {is_selected} />
+        },
     }
 }

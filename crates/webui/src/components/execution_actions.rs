@@ -1,4 +1,4 @@
-//! Execution action components: Replay and Upgrade functionality
+//! Execution action components: Replay, Pause, Unpause, and Upgrade functionality
 
 use crate::{
     BASE_URL,
@@ -384,5 +384,153 @@ fn render_result(result: &ActionResult) -> Html {
         ActionResult::Error(msg) => {
             html! { <div class="action-result error">{ msg }</div> }
         }
+    }
+}
+
+// ============================================================================
+// Pause Execution Button
+// ============================================================================
+
+#[derive(Properties, PartialEq)]
+pub struct PauseButtonProps {
+    pub execution_id: ExecutionId,
+}
+
+#[function_component(PauseButton)]
+pub fn pause_button(props: &PauseButtonProps) -> Html {
+    let result_state = use_state(|| ActionResult::None);
+    let loading_state = use_state(|| false);
+
+    let onclick = {
+        let execution_id = props.execution_id.clone();
+        let result_state = result_state.clone();
+        let loading_state = loading_state.clone();
+
+        Callback::from(move |_| {
+            let execution_id = execution_id.clone();
+            let result_state = result_state.clone();
+            let loading_state = loading_state.clone();
+
+            loading_state.set(true);
+            result_state.set(ActionResult::None);
+
+            spawn_local(async move {
+                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+
+                let result = client
+                    .pause_execution(grpc_client::PauseExecutionRequest {
+                        execution_id: Some(execution_id.clone()),
+                    })
+                    .await;
+
+                loading_state.set(false);
+
+                match result {
+                    Ok(_) => {
+                        debug!("Pause requested for execution {}", execution_id);
+                        result_state.set(ActionResult::Success(
+                            "Pause requested successfully".to_string(),
+                        ));
+                    }
+                    Err(e) => {
+                        error!("Failed to pause execution {}: {:?}", execution_id, e);
+                        result_state.set(ActionResult::Error(e.message().to_string()));
+                    }
+                }
+            });
+        })
+    };
+
+    let is_loading = *loading_state;
+
+    html! {
+        <div class="action-container pause-action">
+            <button
+                class="action-button pause-button"
+                onclick={onclick}
+                disabled={is_loading}
+            >
+                if is_loading {
+                    {"Pausing..."}
+                } else {
+                    {"Pause"}
+                }
+            </button>
+            { render_result(result_state.deref()) }
+        </div>
+    }
+}
+
+// ============================================================================
+// Unpause Execution Button
+// ============================================================================
+
+#[derive(Properties, PartialEq)]
+pub struct UnpauseButtonProps {
+    pub execution_id: ExecutionId,
+}
+
+#[function_component(UnpauseButton)]
+pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
+    let result_state = use_state(|| ActionResult::None);
+    let loading_state = use_state(|| false);
+
+    let onclick = {
+        let execution_id = props.execution_id.clone();
+        let result_state = result_state.clone();
+        let loading_state = loading_state.clone();
+
+        Callback::from(move |_| {
+            let execution_id = execution_id.clone();
+            let result_state = result_state.clone();
+            let loading_state = loading_state.clone();
+
+            loading_state.set(true);
+            result_state.set(ActionResult::None);
+
+            spawn_local(async move {
+                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+
+                let result = client
+                    .unpause_execution(grpc_client::UnpauseExecutionRequest {
+                        execution_id: Some(execution_id.clone()),
+                    })
+                    .await;
+
+                loading_state.set(false);
+
+                match result {
+                    Ok(_) => {
+                        debug!("Unpause requested for execution {}", execution_id);
+                        result_state.set(ActionResult::Success(
+                            "Unpause requested successfully".to_string(),
+                        ));
+                    }
+                    Err(e) => {
+                        error!("Failed to unpause execution {}: {:?}", execution_id, e);
+                        result_state.set(ActionResult::Error(e.message().to_string()));
+                    }
+                }
+            });
+        })
+    };
+
+    let is_loading = *loading_state;
+
+    html! {
+        <div class="action-container unpause-action">
+            <button
+                class="action-button unpause-button"
+                onclick={onclick}
+                disabled={is_loading}
+            >
+                if is_loading {
+                    {"Unpausing..."}
+                } else {
+                    {"Unpause"}
+                }
+            </button>
+            { render_result(result_state.deref()) }
+        </div>
     }
 }

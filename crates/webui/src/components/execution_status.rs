@@ -322,6 +322,7 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
                 None => html! {"Finished with unknown result"},
             }
         }
+        grpc_client::execution_status::Status::Paused(_) => html! {"Paused"},
     }
 }
 
