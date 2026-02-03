@@ -23,6 +23,9 @@ pub struct ExecutionStatusProps {
     /// Called when the summary is received from the status stream
     #[prop_or_default]
     pub on_summary: Option<Callback<ExecutionSummary>>,
+    /// Called when the execution finishes
+    #[prop_or_default]
+    pub on_finished: Option<Callback<()>>,
 }
 
 fn status_as_message(
@@ -96,6 +99,7 @@ async fn run_status_subscription(
     print_finished_status: bool,
     cancel_rx: futures::channel::oneshot::Receiver<()>,
     on_summary: Option<Callback<ExecutionSummary>>,
+    on_finished: Option<Callback<()>>,
 ) {
     let mut execution_client =
         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
@@ -128,6 +132,12 @@ async fn run_status_subscription(
                 {
                     callback.emit(summary.clone());
                 }
+                // Call on_finished callback if the execution has finished
+                if is_finished_any(&status)
+                    && let Some(ref callback) = on_finished
+                {
+                    callback.emit(());
+                }
                 status_state.dispatch(StatusStateAction::Update {
                     execution_id: execution_id.clone(),
                     message: status,
@@ -150,10 +160,12 @@ pub fn execution_status(
         execution_id,
         print_finished_status,
         on_summary,
+        on_finished,
     }: &ExecutionStatusProps,
 ) -> Html {
     let print_finished_status = *print_finished_status;
     let on_summary = on_summary.clone();
+    let on_finished = on_finished.clone();
 
     // Both hooks must be called unconditionally
     let context_state = use_context::<StatusCacheContext>();
@@ -194,6 +206,7 @@ pub fn execution_status(
         let execution_id = execution_id.clone();
         let connection_id = trace_id();
         let on_summary = on_summary.clone();
+        let on_finished = on_finished.clone();
 
         use_effect_with(
             (execution_id.clone(), is_done),
@@ -217,6 +230,7 @@ pub fn execution_status(
                         print_finished_status,
                         cancel_rx,
                         on_summary.clone(),
+                        on_finished.clone(),
                     ));
                     Some(cancel_tx)
                 };
