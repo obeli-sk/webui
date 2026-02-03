@@ -406,7 +406,7 @@ pub fn execution_list_page() -> Html {
                             if query.show_details {
                                 { created_at }
                             } else {
-                                {relative_time(created_at, now)}{" ago"}
+                                {relative_time(created_at, now, TimeGranularity::Coarse)}{" ago"}
                             }
                         </div>
                         // Duration

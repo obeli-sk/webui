@@ -1,8 +1,12 @@
 use chrono::{DateTime, TimeDelta, Utc};
 
-pub fn relative_time(old: DateTime<Utc>, new: DateTime<Utc>) -> String {
+pub fn relative_time(
+    old: DateTime<Utc>,
+    new: DateTime<Utc>,
+    granularity: TimeGranularity,
+) -> String {
     let duration = new.signed_duration_since(old);
-    human_formatted_timedelta(duration, TimeGranularity::Coarse)
+    human_formatted_timedelta(duration, granularity)
 }
 
 pub fn relative_time_if_significant(old: DateTime<Utc>, new: DateTime<Utc>) -> Option<String> {

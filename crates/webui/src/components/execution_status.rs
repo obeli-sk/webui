@@ -6,7 +6,10 @@ use crate::{
         execution_status::{Finished, Locked, PendingAt},
         get_status_response,
     },
-    util::{time::relative_time, trace_id},
+    util::{
+        time::{TimeGranularity, relative_time},
+        trace_id,
+    },
 };
 use chrono::DateTime;
 use futures::FutureExt as _;
@@ -315,10 +318,10 @@ pub fn execution_status(
         })) => {
             let finished_at = DateTime::from(*finished_at);
             let scheduled_at = DateTime::from(*scheduled_at);
-            let since_scheduled = relative_time(scheduled_at, finished_at);
+            let since_scheduled = relative_time(scheduled_at, finished_at, TimeGranularity::Fine);
             html! {<>
                 <FinishedEvent result_detail={result_detail.clone()} version={None} is_selected={false}/>
-                <p>{format!("Execution completed in {since_scheduled}.")}</p>
+                <p>{format!("Completed in {since_scheduled}.")}</p>
             </>}
         }
         Some(unknown) => unreachable!("unexpected {unknown:?}"),
