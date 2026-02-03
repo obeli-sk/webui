@@ -2,7 +2,8 @@ use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
     app::{Route, query::BacktraceVersionsPath},
     components::{
-        execution_detail::tree_component::TreeComponent, execution_header::ExecutionLink,
+        execution_actions::CancelDelayButton, execution_detail::tree_component::TreeComponent,
+        execution_header::ExecutionLink,
     },
     grpc::{
         grpc_client::{self, ExecutionId, execution_event::history_event::join_set_request},
@@ -92,6 +93,17 @@ impl HistoryJoinSetRequestEventProps {
                                 {"Expires At: "}
                                 {expires_at}
                             </>
+                        },
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&join_set_node),
+                )
+                .unwrap();
+                tree.insert(
+                    Node::new(NodeData {
+                        icon: Icon::Cross,
+                        label: html! {
+                            <CancelDelayButton delay_id={delay_id.clone()} />
                         },
                         ..Default::default()
                     }),
