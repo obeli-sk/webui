@@ -1,0 +1,37 @@
+// ============================================
+// Execution Actions (Replay, Upgrade, etc.)
+// ============================================
+@use '../base/variables' as *;
+
+.execution-actions {
+  margin-top: $spacing-md;
+  padding-top: $spacing-md;
+  border-top: 1px solid $color-border-primary;
+  display: flex;
+  gap: $spacing-md;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.action-container {
+  display: inline-block;
+}
+
+.action-result {
+  margin-top: $spacing-sm;
+  padding: 6px 10px;
+  border-radius: $border-radius-md;
+  font-size: 0.9em;
+
+  &.success {
+    background-color: rgba($color-accent-green, 0.2);
+    color: $color-accent-green;
+    border: 1px solid $color-accent-green;
+  }
+
+  &.error {
+    background-color: rgba($color-accent-red, 0.2);
+    color: $color-accent-red;
+    border: 1px solid $color-accent-red;
+  }
+}

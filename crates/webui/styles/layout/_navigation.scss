@@ -1,0 +1,23 @@
+// ============================================
+// Navigation
+// ============================================
+@use '../base/variables' as *;
+
+nav {
+  margin-bottom: $spacing-lg;
+  padding-bottom: $spacing-md;
+  border-bottom: 1px solid $color-border-primary;
+
+  a {
+    color: $color-accent-cyan;
+    text-decoration: none;
+    margin-right: $spacing-lg;
+    font-weight: bold;
+    transition: color $transition-normal;
+
+    &:hover {
+      color: $color-accent-yellow;
+      text-decoration: underline;
+    }
+  }
+}

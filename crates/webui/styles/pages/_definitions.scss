@@ -1,0 +1,25 @@
+// ============================================
+// World/Type Definitions Page
+// ============================================
+@use '../base/variables' as *;
+
+.world-definition,
+.types-interface {
+  margin-top: 20px;
+}
+
+h3 .highlight {
+  color: $color-accent-cyan;
+}
+
+.types-interface {
+  p {
+    margin: 10px 0;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  ul li span {
+    color: $color-accent-green;
+  }
+}

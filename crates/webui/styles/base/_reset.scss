@@ -1,0 +1,35 @@
+// ============================================
+// Reset & Base Styles
+// ============================================
+@use 'variables' as *;
+
+// Box-sizing reset
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+// Body defaults
+body {
+  font-family: $font-family-base;
+  background-color: $color-bg-primary;
+  color: $color-text-primary;
+  margin: 0;
+  padding: 0;
+  line-height: $line-height-base;
+}
+
+// List reset
+ul {
+  list-style-type: none;
+  padding-left: 20px;
+
+  li {
+    margin-bottom: 8px;
+
+    span {
+      color: $color-accent-cyan;
+    }
+  }
+}

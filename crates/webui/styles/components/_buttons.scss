@@ -1,0 +1,68 @@
+// ============================================
+// Buttons
+// ============================================
+@use '../base/variables' as *;
+
+.action-button {
+  padding: 8px 16px;
+  background-color: $color-border-primary;
+  color: $color-text-light;
+  border: 1px solid $color-border-secondary;
+  border-radius: $border-radius-md;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color $transition-normal;
+
+  &:hover:not(:disabled) {
+    background-color: $color-border-secondary;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// Expand Buttons (Code blocks)
+.expand-button {
+  display: block;
+  width: 100%;
+  padding: $spacing-sm;
+  border: none;
+  border-top: 1px solid $color-border-primary;
+  background-color: $color-bg-elevated;
+  color: #ccc;
+  text-align: center;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  transition: background-color $transition-normal;
+
+  &.expand-above {
+    border-top: none;
+    border-bottom: 1px solid $color-border-primary;
+  }
+
+  &:hover {
+    background-color: $color-bg-hover;
+  }
+}
+
+// Scroll Link Button
+.scroll-link {
+  background: $color-bg-tertiary;
+  border: 1px solid $color-border-secondary;
+  color: $color-text-light;
+  border-radius: $border-radius-md;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  padding: 2px 8px;
+  margin-left: 10px;
+  text-decoration: none;
+  transition: background-color $transition-normal, color $transition-normal;
+
+  &:hover {
+    background-color: $color-border-secondary;
+    color: $color-text-white;
+    text-decoration: none;
+  }
+}
