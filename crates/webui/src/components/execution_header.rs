@@ -1,5 +1,7 @@
 use crate::app::Route;
-use crate::components::execution_actions::{PauseButton, ReplayButton, UnpauseButton, UpgradeForm};
+use crate::components::execution_actions::{
+    CancelActivityButton, PauseButton, ReplayButton, UnpauseButton, UpgradeForm,
+};
 use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::ExecutionStatus;
 use crate::grpc::grpc_client::{ComponentType, ContentDigest, ExecutionId, ExecutionSummary};
@@ -43,6 +45,15 @@ pub fn execution_header(
         }
     });
 
+    let is_activity = exec_info.as_ref().is_some_and(|exec_info| {
+        matches!(
+            exec_info.component_type,
+            ComponentType::ActivityWasm
+                | ComponentType::ActivityExternal
+                | ComponentType::ActivityStub
+        )
+    });
+
     html! {
         <div class="execution-header">
             <div class="header-and-links">
@@ -78,6 +89,14 @@ pub fn execution_header(
                     <UpgradeForm
                         execution_id={execution_id.clone()}
                         current_digest={workflow_digest}
+                    />
+                </div>
+            }
+
+            if is_activity {
+                <div class="execution-actions">
+                    <CancelActivityButton
+                        execution_id={execution_id.clone()}
                     />
                 </div>
             }
