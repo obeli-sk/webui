@@ -1,0 +1,39 @@
+// ============================================
+// Tables
+// ============================================
+@use '../base/variables' as *;
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+
+  > table {
+    width: 100%;
+  }
+}
+
+// Execution & Deployment List Tables
+table.execution_list,
+table.deployment_list {
+  width: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    border: 1px solid $color-border-primary;
+    padding: 8px;
+    text-align: left;
+  }
+
+  th {
+    background-color: $color-border-primary;
+  }
+}
+
+table.deployment_list {
+  th.number,
+  td.number {
+    text-align: right;
+    width: 100px;
+  }
+}

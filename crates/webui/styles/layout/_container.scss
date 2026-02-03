@@ -1,0 +1,37 @@
+// ============================================
+// Container Layout
+// ============================================
+@use '../base/variables' as *;
+
+.container {
+  max-width: $container-max-width;
+  margin: 20px auto;
+  padding: 20px;
+  background-color: $color-bg-secondary;
+  border-radius: $border-radius-xl;
+  box-shadow: $shadow-md;
+
+  // Pagination within container
+  > .pagination {
+    margin-top: 20px;
+  }
+
+  > div.pagination button {
+    padding: 10px;
+    margin: 0 5px;
+    text-decoration: none;
+    color: $color-accent-cyan;
+    border: 1px solid $color-border-primary;
+    border-radius: $border-radius-md;
+    background: none;
+    cursor: pointer;
+
+    &:disabled {
+      color: $color-border-secondary;
+      border-color: $color-border-primary;
+      background: transparent;
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
+}

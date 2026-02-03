@@ -1,0 +1,26 @@
+// ============================================
+// Badges & Labels
+// ============================================
+@use '../base/variables' as *;
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: $border-radius-md;
+  font-size: $font-size-sm;
+  font-weight: bold;
+
+  &.current {
+    background-color: $color-accent-green;
+    color: $color-bg-primary;
+  }
+}
+
+.label {
+  background-color: $color-border-secondary;
+  color: $color-text-white;
+  padding: 4px 6px;
+  border-radius: $border-radius-md;
+  font-size: 14px;
+  margin: 10px;
+}

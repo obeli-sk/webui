@@ -1,0 +1,99 @@
+// ============================================
+// Code Blocks
+// ============================================
+@use '../base/variables' as *;
+
+// Legacy code block
+.code-block {
+  display: flex;
+  overflow-x: auto;
+
+  p {
+    margin: 0 0 10px;
+    font-weight: bold;
+  }
+
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    word-break: break-word;
+
+    // Syntax highlighting classes (may be overridden by syntect)
+    .keyword {
+      color: #0077b6;
+      font-weight: bold;
+    }
+
+    .type {
+      color: #9b59b6;
+    }
+
+    .func {
+      color: #ac9a40;
+    }
+
+    .version {
+      color: #6fa5c9;
+    }
+
+    .param {
+      color: #7f8c8d;
+    }
+
+    .case {
+      color: #2980b9;
+    }
+  }
+}
+
+// Syntect Code Block Container
+.code-block-container {
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  margin-top: $spacing-sm;
+  margin-bottom: $spacing-lg;
+  font-family: $font-family-mono;
+  font-size: 0.9em;
+  overflow: hidden;
+}
+
+// Line Numbers
+.line-numbers {
+  flex-shrink: 0;
+  padding: 0.8em 0.8em 0.8em 1em;
+  text-align: right;
+  color: $color-text-muted;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  border-right: 1px solid $color-border-primary;
+  background-color: inherit;
+
+  .line-number {
+    display: block;
+    line-height: $line-height-base;
+  }
+}
+
+// Code Content
+.code-content {
+  flex-grow: 1;
+  margin: 0;
+  padding: 0.8em;
+  overflow-x: visible;
+  white-space: pre;
+  line-height: $line-height-base;
+
+  code > span {
+    display: block;
+    min-height: 1.5em;
+  }
+
+  // Focused Line Highlighting
+  code .line-focused {
+    background-color: rgba(255, 255, 0, 0.1);
+    display: block;
+    outline: 1px solid rgba(255, 255, 0, 0.2);
+  }
+}

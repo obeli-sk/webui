@@ -1,0 +1,188 @@
+// ============================================
+// Trace View Page
+// ============================================
+@use '../base/variables' as *;
+
+.trace-layout-container {
+  display: flex;
+  gap: $spacing-lg;
+  margin-top: $spacing-lg;
+}
+
+.trace-view {
+  // Flex Item Properties
+  flex-shrink: 0;
+  
+  // Sizing
+  min-width: 400px;
+  max-width: 900px;
+  resize: horizontal;
+  overflow: auto;
+  
+  // Visual
+  padding: $spacing-md;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  background-color: $color-bg-tertiary;
+
+  // Step action links
+  .step a {
+    display: inline-block;
+    padding: 0.4em 0.8em;
+    margin-right: 0.75rem;
+    margin-bottom: $spacing-lg;
+    background-color: $color-border-primary;
+    color: $color-text-primary;
+    text-decoration: none;
+    border-radius: $border-radius-md;
+    font-size: 0.9em;
+    transition: background-color $transition-normal;
+
+    &.bold {
+      font-weight: bold;
+    }
+
+    &:hover {
+      background-color: $color-border-secondary;
+    }
+  }
+
+  .step span.disabled {
+    padding: 0.4em 0.8em;
+    margin-right: 0.75rem;
+    margin-bottom: $spacing-lg;
+    background-color: #3a3f4c;
+    color: $color-text-secondary;
+    border-radius: $border-radius-md;
+    font-size: 0.9em;
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  > p {
+    margin: 0 0 0.75rem 0;
+    padding-top: 0.75rem;
+    border-top: 1px dashed $color-border-primary;
+    font-size: 0.95em;
+    line-height: $line-height-tight;
+
+    &:first-of-type {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    &:has(+ .code-block-container) {
+      margin-bottom: $spacing-sm;
+      padding-bottom: $spacing-xs;
+      border-bottom: none;
+    }
+  }
+}
+
+.trace-detail {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  min-width: 300px;
+  padding: $spacing-md;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  background-color: $color-bg-tertiary;
+  overflow-y: auto;
+
+  > .bp3-tree {
+    margin-bottom: 1.25rem;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+}
+
+// Step Row
+.step-row {
+  display: flex;
+  align-items: center;
+  padding: 5px;
+  border-bottom: 1px solid #eee;
+}
+
+.step-icon {
+  margin-right: 5px;
+}
+
+.step-name {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.step-status {
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+// Duration visualization
+.relative-duration-container {
+  width: 200px;
+  height: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.total-duration-line {
+  height: 100%;
+  background-color: #ddd;
+  position: relative;
+}
+
+.busy-duration-line {
+  position: absolute;
+  height: 100%;
+}
+
+// Execution status colors
+.busy-http-trace-finished,
+.busy-execution-finished {
+  background-color: $color-exec-finished;
+}
+
+.busy-http-trace-unfinished,
+.busy-execution-unfinished {
+  background-color: $color-exec-unfinished;
+}
+
+.busy-http-trace-error,
+.busy-execution-returned-error-variant {
+  background-color: $color-exec-error-variant;
+}
+
+.busy-execution-timeout-temporary {
+  background-color: $color-exec-timeout-temp;
+}
+
+.busy-execution-timeout-permanent {
+  background-color: $color-exec-timeout-perm;
+}
+
+.busy-execution-error-temporary {
+  background-color: $color-exec-error-temp;
+}
+
+.busy-execution-error-permanent {
+  background-color: $color-exec-error-perm;
+}
+
+.busy-execution-locked {
+  background-color: $color-exec-locked;
+}
+
+.busy-execution-since-scheduled {
+  background-color: $color-exec-scheduled;
+}
+
+.indented-children {
+  margin-left: 20px;
+}

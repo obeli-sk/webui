@@ -1,0 +1,66 @@
+// ============================================
+// Logs Page
+// ============================================
+@use '../base/variables' as *;
+
+.logs-options {
+  margin: 10px 0;
+
+  .run-id {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+}
+
+.logs-list {
+  padding: 10px;
+  border-radius: $border-radius-md;
+  overflow-x: auto;
+}
+
+.logs-controls {
+  margin-top: 10px;
+
+  button {
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+}
+
+.log-row {
+  .time {
+    color: gray;
+    margin-right: 10px;
+  }
+
+  .run-id {
+    margin-right: 8px;
+    color: #888;
+  }
+
+  .kind {
+    margin-right: 10px;
+
+    &.kind-trace,
+    &.kind-debug,
+    &.kind-info,
+    &.kind-stdout {
+      color: rgb(66, 66, 172);
+    }
+
+    &.kind-warn {
+      color: orange;
+    }
+
+    &.kind-error,
+    &.kind-stderr {
+      color: red;
+    }
+  }
+
+  .payload {
+    white-space: pre-wrap;
+  }
+}

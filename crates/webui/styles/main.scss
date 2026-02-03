@@ -1,0 +1,36 @@
+// ============================================
+// Obelisk WebUI - Main Stylesheet
+// ============================================
+// 
+// This file imports all SCSS partials organized by:
+// - base: Variables, resets, and foundational styles
+// - layout: Page structure (container, navigation)
+// - components: Reusable UI components
+// - pages: Page-specific styles
+//
+// ============================================
+
+// Base
+@use 'base/variables';
+@use 'base/reset';
+
+// Layout
+@use 'layout/container';
+@use 'layout/navigation';
+
+// Components
+@use 'components/header';
+@use 'components/badges';
+@use 'components/tables';
+@use 'components/buttons';
+@use 'components/forms';
+@use 'components/filters';
+@use 'components/code-block';
+@use 'components/tree';
+@use 'components/actions';
+
+// Pages
+@use 'pages/trace';
+@use 'pages/timeline';
+@use 'pages/logs';
+@use 'pages/definitions';

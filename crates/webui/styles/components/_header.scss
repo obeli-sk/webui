@@ -1,0 +1,68 @@
+// ============================================
+// Header Components
+// ============================================
+@use '../base/variables' as *;
+
+header {
+  h1 {
+    font-size: 24px;
+    color: $color-text-white;
+  }
+
+  .badge {
+    background-color: #ffcc00;
+    color: #000000;
+    padding: 2px 8px;
+    margin-left: 10px;
+    border-radius: $border-radius-md;
+    font-size: 14px;
+  }
+
+  .hash {
+    font-size: 14px;
+    color: $color-text-secondary;
+  }
+}
+
+// Execution Header
+.execution-header {
+  margin-bottom: $spacing-lg;
+  padding-bottom: $spacing-md;
+  border-bottom: 1px solid $color-border-primary;
+
+  > .header-and-links {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    > .execution-links {
+      display: flex;
+      padding: 10px;
+      gap: 15px;
+    }
+  }
+
+  h3 {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-size: $font-size-lg;
+    color: $color-text-light;
+
+    a {
+      color: inherit;
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        color: $color-accent-cyan;
+      }
+    }
+  }
+
+  // Align status tree and time paragraph
+  > .bp3-tree {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: $spacing-md;
+  }
+}

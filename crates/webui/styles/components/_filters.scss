@@ -1,0 +1,28 @@
+// ============================================
+// Filters
+// ============================================
+
+.executions-filter,
+.deployments-filter {
+  margin-bottom: 1em;
+  padding: 1em;
+  border: 1px solid #ccc;
+}
+
+.executions-filter {
+  .checkboxes {
+    margin-bottom: 0.5em;
+
+    > * {
+      margin-right: 1em;
+    }
+  }
+
+  .inputs > * {
+    margin-right: 1em;
+  }
+}
+
+.deployments-filter > * {
+  margin-right: 1em;
+}
