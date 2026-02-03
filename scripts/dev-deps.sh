@@ -29,7 +29,7 @@ nix develop .#withObelisk --command obelisk --version >> dev-deps.txt
 protoc --version >> dev-deps.txt
 rustc --version >> dev-deps.txt
 
-sass --version >> dev-deps.txt # dart-sass for SCSS compilation
+echo "sass $(sass --version)" >> dev-deps.txt # dart-sass for SCSS compilation
 wasm-opt --version >> dev-deps.txt # binaryen
 echo "trunk $(grep wasm_opt crates/webui/Trunk.toml)" >> dev-deps.txt
 trunk --version >> dev-deps.txt

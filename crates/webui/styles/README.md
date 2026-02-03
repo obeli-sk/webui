@@ -6,7 +6,7 @@ This directory contains the SCSS stylesheets for the Obelisk WebUI, organized us
 
 ```
 styles/
-├── main.scss           # Main entry point - imports all partials
+├── styles.scss         # Main entry point - imports all partials
 ├── base/               # Foundation styles
 │   ├── _variables.scss # Design tokens (colors, spacing, fonts)
 │   └── _reset.scss     # CSS reset and body defaults
@@ -49,7 +49,7 @@ All design tokens are defined in `base/_variables.scss`:
 
 ## Usage
 
-The `main.scss` file imports all partials using the modern `@use` syntax.
+The `styles.scss` file imports all partials using the modern `@use` syntax.
 Trunk automatically compiles this to CSS during the build process.
 
 ## Adding New Styles
