@@ -5,7 +5,7 @@ pub fn relative_time(old: DateTime<Utc>, new: DateTime<Utc>) -> String {
     human_formatted_timedelta(duration, TimeGranularity::Coarse)
 }
 
-pub fn relative_time_maybe(old: DateTime<Utc>, new: DateTime<Utc>) -> Option<String> {
+pub fn relative_time_if_significant(old: DateTime<Utc>, new: DateTime<Utc>) -> Option<String> {
     let duration = new.signed_duration_since(old);
     if duration >= TimeDelta::seconds(1) {
         Some(human_formatted_timedelta(

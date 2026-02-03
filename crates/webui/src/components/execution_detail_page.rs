@@ -12,7 +12,7 @@ use crate::grpc::grpc_client::{
     join_set_response_event,
 };
 use crate::util::time::{
-    TimeGranularity, format_date, human_formatted_timedelta, relative_time_maybe,
+    TimeGranularity, format_date, human_formatted_timedelta, relative_time_if_significant,
 };
 use assert_matches::assert_matches;
 use chrono::DateTime;
@@ -267,7 +267,7 @@ fn render_execution_details(
         DateTime::from(create_event.scheduled_at.expect("scheduled_at sent"));
 
     let initial_scheduling_duration =
-        relative_time_maybe(execution_created_at, initially_scheduled_at);
+        relative_time_if_significant(execution_created_at, initially_scheduled_at);
 
     let last_known_version = events.last().map(|e| e.version).unwrap_or(0);
 
@@ -445,7 +445,7 @@ fn render_execution_details(
             };
 
             let event_duration = if let Some(next_event) = events.get(usize::try_from(event.version + 1).unwrap()) {
-                relative_time_maybe(event_created_at, DateTime::from(next_event.created_at.expect("created_at sent")))
+                relative_time_if_significant(event_created_at, DateTime::from(next_event.created_at.expect("created_at sent")))
             } else {
                 // Don't display event duration
                 None
