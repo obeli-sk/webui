@@ -27,6 +27,16 @@ pub fn execution_header(
     let exec_info = use_state(|| None::<ExecutionInfo>);
     let is_finished = use_state(|| false);
 
+    // Reset state when execution_id changes to prevent stale buttons
+    {
+        let exec_info = exec_info.clone();
+        let is_finished = is_finished.clone();
+        use_effect_with(execution_id.clone(), move |_| {
+            exec_info.set(None);
+            is_finished.set(false);
+        });
+    }
+
     // Callback to receive the summary from ExecutionStatus
     let on_summary = {
         let exec_info = exec_info.clone();
