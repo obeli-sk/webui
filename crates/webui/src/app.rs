@@ -1,12 +1,17 @@
 use crate::{
     app::query::BacktraceVersionsPath,
     components::{
-        component_list_page::ComponentListPage, debugger::debugger_view::DebuggerView,
-        deployment_list_page::DeploymentListPage, execution_detail_page::ExecutionLogPage,
-        execution_list_page::ExecutionListPage, execution_logs_page::LogsPage,
+        component_list_page::ComponentListPage,
+        debugger::debugger_view::DebuggerView,
+        deployment_list_page::DeploymentListPage,
+        execution_detail_page::ExecutionLogPage,
+        execution_list_page::ExecutionListPage,
+        execution_logs_page::LogsPage,
         execution_stub_submit_page::ExecutionStubResultPage,
-        execution_submit_page::ExecutionSubmitPage, not_found::NotFound,
-        notification::NotificationProvider, trace::trace_view::TraceView,
+        execution_submit_page::ExecutionSubmitPage,
+        not_found::NotFound,
+        notification::{Notification, NotificationContext, NotificationProvider},
+        trace::trace_view::TraceView,
     },
     grpc::{
         ffqn::FunctionFqn,
@@ -18,7 +23,7 @@ use crate::{
 };
 use gloo::timers::callback::Interval;
 use hashbrown::HashMap;
-use log::{debug, error};
+use log::{debug, error, info};
 use std::{fmt::Display, ops::Deref, rc::Rc, str::FromStr};
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
@@ -215,23 +220,63 @@ pub fn app(
         initial_deployment_id,
     }: &AppProps,
 ) -> Html {
+    html! {
+        <NotificationProvider>
+            <AppInner
+                initial_components={initial_components.clone()}
+                initial_deployment_id={initial_deployment_id.clone()}
+            />
+        </NotificationProvider>
+    }
+}
+
+/// Inner app component that has access to NotificationContext
+#[function_component(AppInner)]
+fn app_inner(
+    AppProps {
+        initial_components,
+        initial_deployment_id,
+    }: &AppProps,
+) -> Html {
+    let notifications = use_context::<NotificationContext>()
+        .expect("NotificationContext should be provided by App");
+
     let app_state =
         use_state(|| AppState::from_loaded(initial_components, initial_deployment_id.clone()));
 
     // Track deployment ID separately using a ref so the interval can read current value
     let deployment_id_ref = use_mut_ref(|| initial_deployment_id.clone());
 
+    // Track connection state: true = connected, false = disconnected
+    let was_connected_ref = use_mut_ref(|| true);
+
     // Poll for deployment changes
     {
         let app_state = app_state.clone();
         let deployment_id_ref = deployment_id_ref.clone();
+        let was_connected_ref = was_connected_ref.clone();
+        let notifications = notifications.clone();
         use_effect_with((), move |()| {
             let interval = Interval::new(DEPLOYMENT_POLL_INTERVAL_MS, move || {
                 let app_state = app_state.clone();
                 let deployment_id_ref = deployment_id_ref.clone();
+                let was_connected_ref = was_connected_ref.clone();
+                let notifications = notifications.clone();
                 spawn_local(async move {
                     match get_current_deployment_id().await {
                         Ok(new_deployment_id) => {
+                            // Check if we're reconnecting after a disconnect
+                            {
+                                let mut was_connected = was_connected_ref.borrow_mut();
+                                if !*was_connected {
+                                    info!("Connection to server re-established");
+                                    notifications.push(Notification::success(
+                                        "Connection to server established",
+                                    ));
+                                    *was_connected = true;
+                                }
+                            }
+
                             let should_reload = {
                                 let current_id = deployment_id_ref.borrow();
                                 let changed = current_id.as_ref() != Some(&new_deployment_id);
@@ -260,7 +305,15 @@ pub fn app(
                             }
                         }
                         Err(e) => {
-                            error!("Failed to get current deployment ID: {:?}", e);
+                            // Check if this is a new disconnect
+                            let mut was_connected = was_connected_ref.borrow_mut();
+                            if *was_connected {
+                                error!("Connection to server lost: {:?}", e);
+                                notifications.push(Notification::error(
+                                    "Connection to server lost. Retrying...",
+                                ));
+                                *was_connected = false;
+                            }
                         }
                     }
                 });
@@ -271,28 +324,26 @@ pub fn app(
     }
 
     html! {
-        <NotificationProvider>
-            <ContextProvider<AppState> context={app_state.deref().clone()}>
-                <div class="container">
-                    <BrowserRouter>
-                        <nav>
-                            <Link<Route> to={Route::DeploymentList }>
-                                {"Deployments"}
-                            </Link<Route>>
-                            {" "}
-                            <Link<Route> to={Route::ExecutionList }>
-                                {"Executions"}
-                            </Link<Route>>
-                            {" "}
-                            <Link<Route> to={Route::ComponentList }>
-                                {"Components"}
-                            </Link<Route>>
+        <ContextProvider<AppState> context={app_state.deref().clone()}>
+            <div class="container">
+                <BrowserRouter>
+                    <nav>
+                        <Link<Route> to={Route::DeploymentList }>
+                            {"Deployments"}
+                        </Link<Route>>
+                        {" "}
+                        <Link<Route> to={Route::ExecutionList }>
+                            {"Executions"}
+                        </Link<Route>>
+                        {" "}
+                        <Link<Route> to={Route::ComponentList }>
+                            {"Components"}
+                        </Link<Route>>
 
-                        </nav>
-                        <Switch<Route> render={Route::render} />
-                    </BrowserRouter>
-                </div>
-            </ContextProvider<AppState>>
-        </NotificationProvider>
+                    </nav>
+                    <Switch<Route> render={Route::render} />
+                </BrowserRouter>
+            </div>
+        </ContextProvider<AppState>>
     }
 }
