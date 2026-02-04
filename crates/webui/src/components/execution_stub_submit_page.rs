@@ -182,10 +182,10 @@ pub fn execution_stub_result_page(
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
 
         <header>
-            <h1>{"Stub execution result"}</h1>
-            <h2>
+            <h1>
+                {"Stub execution result for "}
                 <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} hide_submit={true}  />
-            </h2>
+            </h1>
             <h3>
                 {"Provided by "}
                 <Link<Route> to={Route::Component { component_id: component_id.clone() } }>
