@@ -4,6 +4,7 @@
 @use '../base/variables' as *;
 
 .action-button {
+  display: inline-block;
   padding: 8px 16px;
   background-color: $color-border-primary;
   color: $color-text-light;
@@ -11,10 +12,12 @@
   border-radius: $border-radius-md;
   cursor: pointer;
   font-size: 0.9em;
+  text-decoration: none;
   transition: background-color $transition-normal;
 
   &:hover:not(:disabled) {
     background-color: $color-border-secondary;
+    text-decoration: none;
   }
 
   &:disabled {
