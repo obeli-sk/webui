@@ -6,6 +6,7 @@ use crate::{
         debugger::version_slider::VersionSlider,
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
+        notification::{Notification, NotificationContext},
         trace::trace_view::{PAGE, SLEEP_MILLIS},
     },
     grpc::{
@@ -21,7 +22,7 @@ use crate::{
 };
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 use std::{collections::BTreeSet, ops::Deref as _, path::PathBuf, rc::Rc};
 use yew::prelude::*;
 use yew_router::prelude::{Link, use_navigator};
@@ -228,6 +229,8 @@ pub fn debugger_view(
     }: &DebuggerViewProps,
 ) -> Html {
     let debugger_state = use_reducer_eq(DebuggerState::default);
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
     // 1. Toggle for hiding frame locations
     let hide_frames = use_state(|| false);
@@ -262,7 +265,10 @@ pub fn debugger_view(
         }
     });
 
-    use_effect_with(debugger_state.clone(), on_state_change);
+    use_effect_with(
+        (debugger_state.clone(), notifications.clone()),
+        on_state_change,
+    );
 
     let backtraces_state = use_reducer_eq(BacktracesState::default);
     let sources_state = use_reducer_eq(SourcesState::default);
@@ -271,6 +277,7 @@ pub fn debugger_view(
     use_effect_with(ancestry.clone(), {
         let backtraces_state = backtraces_state.clone();
         let sources_state = sources_state.clone();
+        let notifications = notifications.clone();
         let hook_id = trace_id();
         move |ancestry| {
             for (execution_id, versions) in ancestry.iter() {
@@ -279,6 +286,7 @@ pub fn debugger_view(
 
                 let backtraces_state = backtraces_state.clone();
                 let sources_state = sources_state.clone();
+                let notifications = notifications.clone();
                 let hook_id = hook_id.clone();
 
                 wasm_bindgen_futures::spawn_local(async move {
@@ -309,6 +317,11 @@ pub fn debugger_view(
                             if err.code() == tonic::Code::NotFound {
                                 BacktraceError::NotFound
                             } else {
+                                error!("Failed to get backtrace: {:?}", err);
+                                notifications.push(Notification::error(format!(
+                                    "Failed to load backtrace: {}",
+                                    err.message()
+                                )));
                                 BacktraceError::Other
                             }
                         });
@@ -782,7 +795,9 @@ pub fn debugger_view(
     </>}
 }
 
-fn on_state_change(debugger_state: &UseReducerHandle<DebuggerState>) {
+fn on_state_change(
+    (debugger_state, notifications): &(UseReducerHandle<DebuggerState>, NotificationContext),
+) {
     trace!("Triggered use_effects");
     for (execution_id, cursors) in debugger_state
         .execution_ids_to_fetch_state
@@ -795,13 +810,14 @@ fn on_state_change(debugger_state: &UseReducerHandle<DebuggerState>) {
         debugger_state.dispatch(DebuggerStateAction::SetPending(execution_id.clone()));
         let execution_id = execution_id.clone();
         let debugger_state = debugger_state.clone();
+        let notifications = notifications.clone();
         wasm_bindgen_futures::spawn_local(async move {
             trace!("list_execution_events {cursors:?}");
             let mut execution_client =
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
                     tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                 );
-            let server_resp = execution_client
+            let response = execution_client
                 .list_execution_events_and_responses(
                     grpc_client::ListExecutionEventsAndResponsesRequest {
                         execution_id: Some(execution_id.clone()),
@@ -813,43 +829,54 @@ fn on_state_change(debugger_state: &UseReducerHandle<DebuggerState>) {
                         include_backtrace_id: true,
                     },
                 )
-                .await
-                .unwrap()
-                .into_inner();
-            debug!(
-                "{execution_id} Got {} events, {} responses",
-                server_resp.events.len(),
-                server_resp.responses.len()
-            );
+                .await;
 
-            let last_event = server_resp.events.last();
-            let is_finished = matches!(
-                last_event.and_then(|e| e.event.as_ref()),
-                Some(execution_event::Event::Finished(_))
-            );
-            let cursors = Cursors {
-                version_from: last_event
-                    .map(|e| e.version + 1)
-                    .unwrap_or(cursors.version_from),
-                responses_cursor_from: server_resp
-                    .responses
-                    .last()
-                    .map(|resp| resp.cursor)
-                    .unwrap_or(cursors.responses_cursor_from),
-            };
-            debugger_state.dispatch(DebuggerStateAction::SavePage {
-                execution_id: execution_id.clone(),
-                new_events: server_resp.events,
-                new_responses: server_resp.responses,
-                is_finished,
-            });
-            if !is_finished {
-                TimeoutFuture::new(SLEEP_MILLIS).await;
-                debugger_state.dispatch(DebuggerStateAction::RequestNextPage {
-                    execution_id,
-                    cursors,
-                });
-            };
+            match response {
+                Ok(resp) => {
+                    let server_resp = resp.into_inner();
+                    debug!(
+                        "{execution_id} Got {} events, {} responses",
+                        server_resp.events.len(),
+                        server_resp.responses.len()
+                    );
+
+                    let last_event = server_resp.events.last();
+                    let is_finished = matches!(
+                        last_event.and_then(|e| e.event.as_ref()),
+                        Some(execution_event::Event::Finished(_))
+                    );
+                    let cursors = Cursors {
+                        version_from: last_event
+                            .map(|e| e.version + 1)
+                            .unwrap_or(cursors.version_from),
+                        responses_cursor_from: server_resp
+                            .responses
+                            .last()
+                            .map(|resp| resp.cursor)
+                            .unwrap_or(cursors.responses_cursor_from),
+                    };
+                    debugger_state.dispatch(DebuggerStateAction::SavePage {
+                        execution_id: execution_id.clone(),
+                        new_events: server_resp.events,
+                        new_responses: server_resp.responses,
+                        is_finished,
+                    });
+                    if !is_finished {
+                        TimeoutFuture::new(SLEEP_MILLIS).await;
+                        debugger_state.dispatch(DebuggerStateAction::RequestNextPage {
+                            execution_id,
+                            cursors,
+                        });
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to list execution events: {:?}", e);
+                    notifications.push(Notification::error(format!(
+                        "Failed to load debugger data: {}",
+                        e.message()
+                    )));
+                }
+            }
         });
     }
 }

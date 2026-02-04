@@ -6,6 +6,7 @@ use crate::{
         component_tree::{ComponentTree, ComponentTreeConfig},
         ffqn_with_links::FfqnWithLinks,
         function_signature::FunctionSignature,
+        notification::{Notification, NotificationContext},
     },
     grpc::{
         ffqn::FunctionFqn,
@@ -16,7 +17,7 @@ use crate::{
     util::wit_highlighter,
 };
 use hashbrown::HashSet;
-use log::warn;
+use log::{error, warn};
 use std::ops::Deref;
 use yew::prelude::*;
 use yew_router::{hooks::use_navigator, prelude::Link};
@@ -35,6 +36,8 @@ pub fn component_list_page(
 ) -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let components_by_id = app_state.components_by_id;
     let components_by_exported_ifc = app_state.components_by_exported_ifc;
 
@@ -42,6 +45,7 @@ pub fn component_list_page(
     // Fetch GetWit
     use_effect_with(maybe_component_id.clone(), {
         let wit_state = wit_state.clone();
+        let notifications = notifications.clone();
         if let Some(component_id) = maybe_component_id {
             let component = components_by_id
                 .get(component_id)
@@ -70,21 +74,29 @@ pub fn component_list_page(
                             grpc_client::function_repository_client::FunctionRepositoryClient::new(
                                 tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                             );
-                        let wit = fn_client
+                        let response = fn_client
                             .get_wit(grpc_client::GetWitRequest {
                                 component_digest: Some(component_digest),
                             })
-                            .await
-                            .unwrap()
-                            .into_inner()
-                            .content;
-                        if let Some(wit) = wit {
-                            let wit = wit_highlighter::print_all(&wit, render_ffqn_with_links)
-                                .inspect_err(|err| warn!("Cannot render WIT - {err:?}"))
-                                .ok();
-
-                            wit_state.set(wit);
-                        } // else - no WIT is associated with the component.
+                            .await;
+                        match response {
+                            Ok(resp) => {
+                                if let Some(wit) = resp.into_inner().content {
+                                    let wit =
+                                        wit_highlighter::print_all(&wit, render_ffqn_with_links)
+                                            .inspect_err(|err| warn!("Cannot render WIT - {err:?}"))
+                                            .ok();
+                                    wit_state.set(wit);
+                                } // else - no WIT is associated with the component.
+                            }
+                            Err(e) => {
+                                error!("Failed to get WIT: {:?}", e);
+                                notifications.push(Notification::error(format!(
+                                    "Failed to get WIT: {}",
+                                    e.message()
+                                )));
+                            }
+                        }
                     });
                 });
             boxed_closure

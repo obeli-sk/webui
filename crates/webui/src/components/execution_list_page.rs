@@ -5,6 +5,7 @@ use crate::{
     components::{
         component_tree::{ComponentTree, ComponentTreeConfig},
         execution_status::{ExecutionStatus, StatusCacheContext, StatusState},
+        notification::{Notification, NotificationContext},
     },
     grpc::{
         ffqn::FunctionFqn,
@@ -17,7 +18,7 @@ use crate::{
     util::time::{TimeGranularity, human_formatted_timedelta, relative_time},
 };
 use chrono::{DateTime, Utc};
-use log::debug;
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::{ops::Deref, str::FromStr};
 use tonic_web_wasm_client::Client;
@@ -148,6 +149,8 @@ pub enum CursorType {
 pub fn execution_list_page() -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
     let location = use_location().expect("should be called inside a router");
     let navigator = use_navigator().expect("should be called inside a router");
@@ -177,6 +180,7 @@ pub fn execution_list_page() -> Html {
         let deployment_id_ref = deployment_id_ref.clone();
         let component_digest_ref = component_digest_ref.clone();
         let refresh_counter_state = refresh_counter_state.clone();
+        let notifications = notifications.clone();
 
         use_effect_with((query, *refresh_counter_state), move |(query_params, _)| {
             let query_params = query_params.clone();
@@ -246,7 +250,13 @@ pub fn execution_list_page() -> Html {
 
                 match response {
                     Ok(resp) => response_state.set(Some(resp.into_inner())),
-                    Err(e) => log::error!("Failed to list executions: {:?}", e),
+                    Err(e) => {
+                        error!("Failed to list executions: {:?}", e);
+                        notifications.push(Notification::error(format!(
+                            "Failed to list executions: {}",
+                            e.message()
+                        )));
+                    }
                 }
             })
         });

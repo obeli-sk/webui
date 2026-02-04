@@ -1,6 +1,7 @@
 use crate::BASE_URL;
 use crate::components::execution_detail::utils::{compute_join_next_to_response, event_to_detail};
 use crate::components::execution_header::{ExecutionHeader, ExecutionLink};
+use crate::components::notification::{Notification, NotificationContext};
 use crate::components::trace::trace_view::{PAGE, SLEEP_MILLIS};
 use crate::grpc::grpc_client::{
     self, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
@@ -18,7 +19,7 @@ use assert_matches::assert_matches;
 use chrono::DateTime;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
-use log::trace;
+use log::{error, trace};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
@@ -147,6 +148,8 @@ struct IdMetadata {
 #[function_component(ExecutionLogPage)]
 pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogPageProps) -> Html {
     let log_state = use_reducer_eq(ExecutionLogState::default);
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
     use_effect_with(execution_id.clone(), {
         let log_state = log_state.clone();
@@ -155,7 +158,7 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
         }
     });
 
-    use_effect_with(log_state.clone(), on_state_change);
+    use_effect_with((log_state.clone(), notifications.clone()), on_state_change);
 
     let dummy_events = Vec::new();
     let events = log_state.events.get(execution_id).unwrap_or(&dummy_events);
@@ -184,7 +187,9 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
     }
 }
 
-fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
+fn on_state_change(
+    (log_state, notifications): &(UseReducerHandle<ExecutionLogState>, NotificationContext),
+) {
     trace!("Triggered on_state_change");
     for (execution_id, cursors) in
         log_state
@@ -198,12 +203,13 @@ fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
         log_state.dispatch(ExecutionLogAction::SetPending(execution_id.clone()));
         let execution_id = execution_id.clone();
         let log_state = log_state.clone();
+        let notifications = notifications.clone();
         wasm_bindgen_futures::spawn_local(async move {
             let mut execution_client =
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
                     tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                 );
-            let server_resp = execution_client
+            let response = execution_client
                 .list_execution_events_and_responses(
                     grpc_client::ListExecutionEventsAndResponsesRequest {
                         execution_id: Some(execution_id.clone()),
@@ -215,38 +221,48 @@ fn on_state_change(log_state: &UseReducerHandle<ExecutionLogState>) {
                         include_backtrace_id: true,
                     },
                 )
-                .await
-                .unwrap()
-                .into_inner();
+                .await;
 
-            let last_event = server_resp.events.last();
-            let is_finished = matches!(
-                last_event.and_then(|e| e.event.as_ref()),
-                Some(execution_event::Event::Finished(_))
-            );
-            let cursors = Cursors {
-                version_from: last_event
-                    .map(|e| e.version + 1)
-                    .unwrap_or(cursors.version_from),
-                responses_cursor_from: server_resp
-                    .responses
-                    .last()
-                    .map(|resp| resp.cursor)
-                    .unwrap_or(cursors.responses_cursor_from),
-            };
-            log_state.dispatch(ExecutionLogAction::SavePage {
-                execution_id: execution_id.clone(),
-                new_events: server_resp.events,
-                new_responses: server_resp.responses,
-                is_finished,
-            });
-            if !is_finished {
-                TimeoutFuture::new(SLEEP_MILLIS).await;
-                log_state.dispatch(ExecutionLogAction::RequestNextPage {
-                    execution_id,
-                    cursors,
-                });
-            };
+            match response {
+                Ok(resp) => {
+                    let server_resp = resp.into_inner();
+                    let last_event = server_resp.events.last();
+                    let is_finished = matches!(
+                        last_event.and_then(|e| e.event.as_ref()),
+                        Some(execution_event::Event::Finished(_))
+                    );
+                    let cursors = Cursors {
+                        version_from: last_event
+                            .map(|e| e.version + 1)
+                            .unwrap_or(cursors.version_from),
+                        responses_cursor_from: server_resp
+                            .responses
+                            .last()
+                            .map(|resp| resp.cursor)
+                            .unwrap_or(cursors.responses_cursor_from),
+                    };
+                    log_state.dispatch(ExecutionLogAction::SavePage {
+                        execution_id: execution_id.clone(),
+                        new_events: server_resp.events,
+                        new_responses: server_resp.responses,
+                        is_finished,
+                    });
+                    if !is_finished {
+                        TimeoutFuture::new(SLEEP_MILLIS).await;
+                        log_state.dispatch(ExecutionLogAction::RequestNextPage {
+                            execution_id,
+                            cursors,
+                        });
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to list execution events: {:?}", e);
+                    notifications.push(Notification::error(format!(
+                        "Failed to load execution events: {}",
+                        e.message()
+                    )));
+                }
+            }
         });
     }
 }
