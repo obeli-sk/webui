@@ -2,10 +2,13 @@
 
 use crate::{
     BASE_URL,
-    app::AppState,
-    grpc::grpc_client::{
-        self, ComponentType, ContentDigest, ExecutionId,
-        execution_repository_client::ExecutionRepositoryClient,
+    app::{AppState, Route},
+    grpc::{
+        ffqn::FunctionFqn,
+        grpc_client::{
+            self, ComponentType, ContentDigest, ExecutionId,
+            execution_repository_client::ExecutionRepositoryClient,
+        },
     },
 };
 use log::{debug, error};
@@ -14,6 +17,7 @@ use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
+use yew_router::prelude::Link;
 
 /// Validates a digest string has the correct format (sha256:hex)
 fn validate_digest(input: &str) -> Result<(), String> {
@@ -717,5 +721,42 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
             </button>
             { render_result(result_state.deref()) }
         </div>
+    }
+}
+
+// ============================================================================
+// Submit Stub Response Link
+// ============================================================================
+
+#[derive(Properties, PartialEq)]
+pub struct SubmitStubLinkProps {
+    pub execution_id: ExecutionId,
+    pub ffqn: FunctionFqn,
+    /// Number of events in the execution (stub executions should have only 1 event - Created)
+    pub event_count: usize,
+}
+
+/// Renders a "Submit stub response" link for ActivityStub executions that haven't finished.
+/// Returns empty Html if the execution is not eligible (not a stub or already has events beyond Created).
+#[function_component(SubmitStubLink)]
+pub fn submit_stub_link(props: &SubmitStubLinkProps) -> Html {
+    let app_state =
+        use_context::<AppState>().expect("AppState context is set when starting the App");
+
+    let component_type = app_state
+        .ffqns_to_details
+        .get(&props.ffqn)
+        .map(|(_, c)| c.component_type());
+
+    // Stub execution can only contain Created and Finished events
+    // Show link only if there's just 1 event (Created) and it's an ActivityStub
+    if props.event_count == 1 && component_type == Some(ComponentType::ActivityStub) {
+        html! {
+            <Link<Route> to={Route::ExecutionStubResult { ffqn: props.ffqn.clone(), execution_id: props.execution_id.clone() }}>
+                {"Submit stub response"}
+            </Link<Route>>
+        }
+    } else {
+        html! {}
     }
 }
