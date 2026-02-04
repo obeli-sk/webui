@@ -3,6 +3,7 @@
 use crate::{
     BASE_URL,
     app::{AppState, Route},
+    components::notification::{Notification, NotificationContext},
     grpc::{
         ffqn::FunctionFqn,
         grpc_client::{
@@ -12,7 +13,6 @@ use crate::{
     },
 };
 use log::{debug, error};
-use std::ops::Deref;
 use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
@@ -39,13 +39,6 @@ fn validate_digest(input: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Clone, PartialEq)]
-pub enum ActionResult {
-    None,
-    Success(String),
-    Error(String),
-}
-
 // ============================================================================
 // Replay Execution Button
 // ============================================================================
@@ -57,21 +50,21 @@ pub struct ReplayButtonProps {
 
 #[function_component(ReplayButton)]
 pub fn replay_button(props: &ReplayButtonProps) -> Html {
-    let result_state = use_state(|| ActionResult::None);
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let loading_state = use_state(|| false);
 
     let onclick = {
         let execution_id = props.execution_id.clone();
-        let result_state = result_state.clone();
+        let notifications = notifications.clone();
         let loading_state = loading_state.clone();
 
         Callback::from(move |_| {
             let execution_id = execution_id.clone();
-            let result_state = result_state.clone();
+            let notifications = notifications.clone();
             let loading_state = loading_state.clone();
 
             loading_state.set(true);
-            result_state.set(ActionResult::None);
 
             spawn_local(async move {
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
@@ -87,13 +80,11 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
                 match result {
                     Ok(_) => {
                         debug!("Replay requested for execution {}", execution_id);
-                        result_state.set(ActionResult::Success(
-                            "Replay finished successfully".to_string(),
-                        ));
+                        notifications.push(Notification::success("Replay finished successfully"));
                     }
                     Err(e) => {
                         error!("Failed to replay execution {}: {:?}", execution_id, e);
-                        result_state.set(ActionResult::Error(e.message().to_string()));
+                        notifications.push(Notification::error(e.message().to_string()));
                     }
                 }
             });
@@ -115,7 +106,6 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
                     {"Replay"}
                 }
             </button>
-            { render_result(result_state.deref()) }
         </div>
     }
 }
@@ -134,8 +124,9 @@ pub struct UpgradeFormProps {
 pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
-    let result_state = use_state(|| ActionResult::None);
     let loading_state = use_state(|| false);
     let new_digest_state = use_state(String::new);
     let skip_determinism_state = use_state(|| false);
@@ -206,7 +197,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
         let current_digest = props.current_digest.clone();
         let new_digest_state = new_digest_state.clone();
         let skip_determinism_state = skip_determinism_state.clone();
-        let result_state = result_state.clone();
+        let notifications = notifications.clone();
         let loading_state = loading_state.clone();
         let validation_error_state = validation_error_state.clone();
 
@@ -227,12 +218,11 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
             }
 
             loading_state.set(true);
-            result_state.set(ActionResult::None);
 
             spawn_local({
                 let execution_id = execution_id.clone();
                 let skip_determinism = *skip_determinism_state;
-                let result_state = result_state.clone();
+                let notifications = notifications.clone();
                 let loading_state = loading_state.clone();
                 let current_digest = current_digest.clone();
 
@@ -261,14 +251,14 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                                 "Upgrade requested for execution {} to {}",
                                 execution_id, new_digest
                             );
-                            result_state.set(ActionResult::Success(format!(
+                            notifications.push(Notification::success(format!(
                                 "Upgraded to {}",
                                 &new_digest[..20.min(new_digest.len())]
                             )));
                         }
                         Err(e) => {
                             error!("Failed to upgrade execution {}: {:?}", execution_id, e);
-                            result_state.set(ActionResult::Error(e.message().to_string()));
+                            notifications.push(Notification::error(e.message().to_string()));
                         }
                     }
                 }
@@ -371,23 +361,9 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                             }
                         </button>
                     </div>
-
-                    { render_result(result_state.deref()) }
                 </form>
             }
         </div>
-    }
-}
-
-fn render_result(result: &ActionResult) -> Html {
-    match result {
-        ActionResult::None => html! {},
-        ActionResult::Success(msg) => {
-            html! { <div class="action-result success">{ msg }</div> }
-        }
-        ActionResult::Error(msg) => {
-            html! { <div class="action-result error">{ msg }</div> }
-        }
     }
 }
 
@@ -402,21 +378,21 @@ pub struct CancelActivityButtonProps {
 
 #[function_component(CancelActivityButton)]
 pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
-    let result_state = use_state(|| ActionResult::None);
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let loading_state = use_state(|| false);
 
     let onclick = {
         let execution_id = props.execution_id.clone();
-        let result_state = result_state.clone();
+        let notifications = notifications.clone();
         let loading_state = loading_state.clone();
 
         Callback::from(move |_| {
             let execution_id = execution_id.clone();
-            let result_state = result_state.clone();
+            let notifications = notifications.clone();
             let loading_state = loading_state.clone();
 
             loading_state.set(true);
-            result_state.set(ActionResult::None);
 
             spawn_local(async move {
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
@@ -442,20 +418,20 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
                         );
                         let message = match outcome {
                             grpc_client::cancel_response::CancelOutcome::Cancelled => {
-                                "Cancel requested successfully".to_string()
+                                "Cancel requested successfully"
                             }
                             grpc_client::cancel_response::CancelOutcome::AlreadyFinished => {
-                                "Activity already finished".to_string()
+                                "Activity already finished"
                             }
                             grpc_client::cancel_response::CancelOutcome::Unspecified => {
-                                "Unknown cancel outcome".to_string()
+                                "Unknown cancel outcome"
                             }
                         };
-                        result_state.set(ActionResult::Success(message));
+                        notifications.push(Notification::success(message));
                     }
                     Err(e) => {
                         error!("Failed to cancel activity {}: {:?}", execution_id, e);
-                        result_state.set(ActionResult::Error(e.message().to_string()));
+                        notifications.push(Notification::error(e.message().to_string()));
                     }
                 }
             });
@@ -477,7 +453,6 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
                     {"Cancel Activity"}
                 }
             </button>
-            { render_result(result_state.deref()) }
         </div>
     }
 }
@@ -495,21 +470,21 @@ pub struct PauseButtonProps {
 
 #[function_component(PauseButton)]
 pub fn pause_button(props: &PauseButtonProps) -> Html {
-    let result_state = use_state(|| ActionResult::None);
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let loading_state = use_state(|| false);
 
     let onclick = {
         let execution_id = props.execution_id.clone();
-        let result_state = result_state.clone();
+        let notifications = notifications.clone();
         let loading_state = loading_state.clone();
 
         Callback::from(move |_| {
             let execution_id = execution_id.clone();
-            let result_state = result_state.clone();
+            let notifications = notifications.clone();
             let loading_state = loading_state.clone();
 
             loading_state.set(true);
-            result_state.set(ActionResult::None);
 
             spawn_local(async move {
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
@@ -525,13 +500,11 @@ pub fn pause_button(props: &PauseButtonProps) -> Html {
                 match result {
                     Ok(_) => {
                         debug!("Pause requested for execution {}", execution_id);
-                        result_state.set(ActionResult::Success(
-                            "Pause requested successfully".to_string(),
-                        ));
+                        notifications.push(Notification::success("Pause requested successfully"));
                     }
                     Err(e) => {
                         error!("Failed to pause execution {}: {:?}", execution_id, e);
-                        result_state.set(ActionResult::Error(e.message().to_string()));
+                        notifications.push(Notification::error(e.message().to_string()));
                     }
                 }
             });
@@ -554,7 +527,6 @@ pub fn pause_button(props: &PauseButtonProps) -> Html {
                     {"Pause"}
                 }
             </button>
-            { render_result(result_state.deref()) }
         </div>
     }
 }
@@ -572,21 +544,21 @@ pub struct UnpauseButtonProps {
 
 #[function_component(UnpauseButton)]
 pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
-    let result_state = use_state(|| ActionResult::None);
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let loading_state = use_state(|| false);
 
     let onclick = {
         let execution_id = props.execution_id.clone();
-        let result_state = result_state.clone();
+        let notifications = notifications.clone();
         let loading_state = loading_state.clone();
 
         Callback::from(move |_| {
             let execution_id = execution_id.clone();
-            let result_state = result_state.clone();
+            let notifications = notifications.clone();
             let loading_state = loading_state.clone();
 
             loading_state.set(true);
-            result_state.set(ActionResult::None);
 
             spawn_local(async move {
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
@@ -602,13 +574,11 @@ pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
                 match result {
                     Ok(_) => {
                         debug!("Unpause requested for execution {}", execution_id);
-                        result_state.set(ActionResult::Success(
-                            "Unpause requested successfully".to_string(),
-                        ));
+                        notifications.push(Notification::success("Unpause requested successfully"));
                     }
                     Err(e) => {
                         error!("Failed to unpause execution {}: {:?}", execution_id, e);
-                        result_state.set(ActionResult::Error(e.message().to_string()));
+                        notifications.push(Notification::error(e.message().to_string()));
                     }
                 }
             });
@@ -631,7 +601,6 @@ pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
                     {"Unpause"}
                 }
             </button>
-            { render_result(result_state.deref()) }
         </div>
     }
 }
@@ -647,21 +616,21 @@ pub struct CancelDelayButtonProps {
 
 #[function_component(CancelDelayButton)]
 pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
-    let result_state = use_state(|| ActionResult::None);
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let loading_state = use_state(|| false);
 
     let onclick = {
         let delay_id = props.delay_id.clone();
-        let result_state = result_state.clone();
+        let notifications = notifications.clone();
         let loading_state = loading_state.clone();
 
         Callback::from(move |_| {
             let delay_id = delay_id.clone();
-            let result_state = result_state.clone();
+            let notifications = notifications.clone();
             let loading_state = loading_state.clone();
 
             loading_state.set(true);
-            result_state.set(ActionResult::None);
 
             spawn_local(async move {
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
@@ -684,20 +653,20 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
                         debug!("Cancel requested for delay {}: {:?}", delay_id, outcome);
                         let message = match outcome {
                             grpc_client::cancel_response::CancelOutcome::Cancelled => {
-                                "Delay cancelled successfully".to_string()
+                                "Delay cancelled successfully"
                             }
                             grpc_client::cancel_response::CancelOutcome::AlreadyFinished => {
-                                "Delay already finished".to_string()
+                                "Delay already finished"
                             }
                             grpc_client::cancel_response::CancelOutcome::Unspecified => {
-                                "Unknown cancel outcome".to_string()
+                                "Unknown cancel outcome"
                             }
                         };
-                        result_state.set(ActionResult::Success(message));
+                        notifications.push(Notification::success(message));
                     }
                     Err(e) => {
                         error!("Failed to cancel delay {}: {:?}", delay_id, e);
-                        result_state.set(ActionResult::Error(e.message().to_string()));
+                        notifications.push(Notification::error(e.message().to_string()));
                     }
                 }
             });
@@ -719,7 +688,6 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
                     {"Cancel Delay"}
                 }
             </button>
-            { render_result(result_state.deref()) }
         </div>
     }
 }

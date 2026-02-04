@@ -5,6 +5,7 @@ use crate::{
         code::code_block::CodeBlock,
         execution_header::{ExecutionHeader, ExecutionLink},
         ffqn_with_links::FfqnWithLinks,
+        notification::{Notification, NotificationContext},
     },
     grpc::{
         ffqn::FunctionFqn,
@@ -50,10 +51,12 @@ pub fn execution_stub_result_page(
         .component_id
         .clone()
         .expect("`component_id` is sent");
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
     // disable the submit button while a request is inflight
     let request_processing_state = use_state(|| false);
     let input_ref = use_node_ref();
-    let err_state = use_state(|| None);
+    let validation_err_state = use_state(|| None::<String>);
 
     let wit_state: UseStateHandle<Option<String>> = use_state(|| None);
     // Fetch GetWit
@@ -83,7 +86,8 @@ pub fn execution_stub_result_page(
 
     let on_submit = {
         let request_processing_state = request_processing_state.clone();
-        let err_state = err_state.clone();
+        let validation_err_state = validation_err_state.clone();
+        let notifications = notifications.clone();
         let ffqn = ffqn.clone();
         let navigator = use_navigator().unwrap();
         let execution_id = execution_id.clone();
@@ -98,7 +102,8 @@ pub fn execution_stub_result_page(
                     }
                     Err(serde_err) => {
                         error!("Cannot serialize input - {serde_err:?}");
-                        err_state.set(Some(format!("cannot serialize input - {serde_err}")));
+                        validation_err_state
+                            .set(Some(format!("cannot serialize input - {serde_err}")));
                         return;
                     }
                 };
@@ -108,13 +113,13 @@ pub fn execution_stub_result_page(
                 }
             };
             {
-                err_state.set(None);
+                validation_err_state.set(None);
                 request_processing_state.set(true); // disable the submit button
             }
 
             wasm_bindgen_futures::spawn_local({
                 let execution_id = execution_id.clone();
-                let err_state = err_state.clone();
+                let notifications = notifications.clone();
                 let navigator = navigator.clone();
                 let request_processing_state = request_processing_state.clone();
                 async move {
@@ -134,8 +139,9 @@ pub fn execution_stub_result_page(
                         Ok(_response) => navigator.push(&Route::ExecutionTrace { execution_id }),
                         Err(err) => {
                             error!("Got error {err:?}");
-                            err_state
-                                .set(Some(format!("cannot stub the execution result - {err}")));
+                            notifications.push(Notification::error(format!(
+                                "Cannot stub the execution result: {err}"
+                            )));
                         }
                     }
                 }
@@ -145,30 +151,30 @@ pub fn execution_stub_result_page(
 
     // Validate on first render
     use_effect_with((), {
-        let err_state = err_state.clone();
+        let validation_err_state = validation_err_state.clone();
         let input_ref = input_ref.clone();
         let return_type = return_type.clone();
         move |_| {
             debug!("Validating the form after first render");
             let input = input_ref.cast::<HtmlInputElement>().unwrap().value();
             if let Err(err) = validate_response(&return_type, &input) {
-                err_state.set(Some(err));
+                validation_err_state.set(Some(err));
             } else {
-                err_state.set(None);
+                validation_err_state.set(None);
             }
         }
     });
 
     let oninput = {
-        let err_state = err_state.clone();
+        let validation_err_state = validation_err_state.clone();
         let return_type = return_type.clone();
         let input_ref = input_ref.clone();
         Some(move |_| {
             let input = input_ref.cast::<HtmlInputElement>().unwrap().value();
             if let Err(err) = validate_response(&return_type, &input) {
-                err_state.set(Some(err));
+                validation_err_state.set(Some(err));
             } else {
-                err_state.set(None);
+                validation_err_state.set(None);
             }
         })
     };
@@ -200,13 +206,13 @@ pub fn execution_stub_result_page(
                 <label for="input">{return_type.wit_type.as_str()}</label>
                 <input id="input" type="text" ref={input_ref.clone()} {oninput}/>
             </p>
-            <button type="submit" id={SUBMIT_RETVAL} disabled={*request_processing_state}>
+            if let Some(err) = validation_err_state.deref() {
+                <div class="validation-error">{err}</div>
+            }
+            <button type="submit" id={SUBMIT_RETVAL} disabled={*request_processing_state || validation_err_state.is_some()}>
                 {"Submit execution result"}
             </button>
         </form>
-        if let Some(err) = err_state.deref() {
-            <p style={"color:red"}>{err}</p>
-        }
         if let Some(Ok(wit)) = wit {
             <h3>{"WIT"}</h3>
             <CodeBlock source={wit.clone()} />
