@@ -231,6 +231,40 @@ nix develop -c cargo clippy
 nix develop -c cargo fmt
 ```
 
+## Notification System
+
+The app uses a unified notification/toast system for displaying success, error, and info messages.
+
+### Usage
+
+```rust
+use crate::components::notification::{Notification, NotificationContext};
+
+// In a component:
+let notifications = use_context::<NotificationContext>()
+    .expect("NotificationContext should be provided");
+
+// Push notifications:
+notifications.push(Notification::success("Operation completed"));
+notifications.push(Notification::error(format!("Failed: {}", e.message())));
+notifications.push(Notification::info("Processing..."));
+```
+
+### Guidelines
+
+- **Always notify on gRPC errors** - When any RPC call fails, push an error notification
+- **Use success notifications sparingly** - Only for user-initiated actions (button clicks, form submissions)
+- **Include error details** - Use `e.message()` from tonic errors for context
+- **Connection status** - The app automatically notifies when server connection is lost/restored
+
+### Implementation
+
+- `NotificationProvider` wraps the app in `app.rs`
+- `NotificationContext` is available to all components via `use_context`
+- Notifications auto-dismiss after 5 seconds with fade-out animation
+- Users can manually dismiss via the X button
+- Styles in `styles/components/_notifications.scss`
+
 ## Tree Component
 
 The tree component (`crates/webui/src/tree/`) is a custom implementation replacing the archived yewprint library.
