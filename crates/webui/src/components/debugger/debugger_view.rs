@@ -233,7 +233,7 @@ pub fn debugger_view(
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
     // 1. Toggle for hiding frame locations
-    let hide_frames = use_state(|| false);
+    let hide_frames = use_state(|| true);
     let on_toggle_frames = {
         let hide_frames = hide_frames.clone();
         Callback::from(move |_| hide_frames.set(!*hide_frames))
