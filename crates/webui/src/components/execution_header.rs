@@ -1,9 +1,10 @@
 use crate::app::Route;
 use crate::components::execution_actions::{
-    CancelActivityButton, PauseButton, ReplayButton, UnpauseButton, UpgradeForm,
+    CancelActivityButton, PauseButton, ReplayButton, SubmitStubButton, UnpauseButton, UpgradeForm,
 };
 use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::{ExecutionStatus, FinishedStatusMode};
+use crate::grpc::ffqn::FunctionFqn;
 use crate::grpc::grpc_client::{
     ComponentType, ContentDigest, ExecutionId, ExecutionSummary, execution_status,
 };
@@ -14,6 +15,7 @@ use yew_router::prelude::Link;
 struct ExecutionInfo {
     component_type: ComponentType,
     component_digest: ContentDigest,
+    ffqn: Option<FunctionFqn>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -49,6 +51,7 @@ pub fn execution_header(
             exec_info.set(Some(ExecutionInfo {
                 component_type: summary.component_type(),
                 component_digest: summary.component_digest.unwrap(),
+                ffqn: summary.function_name.map(FunctionFqn::from),
             }));
         })
     };
@@ -84,6 +87,14 @@ pub fn execution_header(
                 | ComponentType::ActivityExternal
                 | ComponentType::ActivityStub
         )
+    });
+
+    let stub_info = exec_info.as_ref().and_then(|exec_info| {
+        if exec_info.component_type == ComponentType::ActivityStub {
+            exec_info.ffqn.clone()
+        } else {
+            None
+        }
     });
 
     html! {
@@ -134,6 +145,12 @@ pub fn execution_header(
                     <CancelActivityButton
                         execution_id={execution_id.clone()}
                     />
+                    if let Some(ffqn) = &stub_info {
+                        <SubmitStubButton
+                            execution_id={execution_id.clone()}
+                            ffqn={ffqn.clone()}
+                        />
+                    }
                 </div>
             }
         </div>
