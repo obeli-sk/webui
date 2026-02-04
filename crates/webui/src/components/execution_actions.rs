@@ -725,38 +725,27 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
 }
 
 // ============================================================================
-// Submit Stub Response Link
+// Submit Stub Response Button
 // ============================================================================
 
 #[derive(Properties, PartialEq)]
-pub struct SubmitStubLinkProps {
+pub struct SubmitStubButtonProps {
     pub execution_id: ExecutionId,
     pub ffqn: FunctionFqn,
-    /// Number of events in the execution (stub executions should have only 1 event - Created)
-    pub event_count: usize,
 }
 
-/// Renders a "Submit stub response" link for ActivityStub executions that haven't finished.
-/// Returns empty Html if the execution is not eligible (not a stub or already has events beyond Created).
-#[function_component(SubmitStubLink)]
-pub fn submit_stub_link(props: &SubmitStubLinkProps) -> Html {
-    let app_state =
-        use_context::<AppState>().expect("AppState context is set when starting the App");
-
-    let component_type = app_state
-        .ffqns_to_details
-        .get(&props.ffqn)
-        .map(|(_, c)| c.component_type());
-
-    // Stub execution can only contain Created and Finished events
-    // Show link only if there's just 1 event (Created) and it's an ActivityStub
-    if props.event_count == 1 && component_type == Some(ComponentType::ActivityStub) {
-        html! {
-            <Link<Route> to={Route::ExecutionStubResult { ffqn: props.ffqn.clone(), execution_id: props.execution_id.clone() }}>
-                {"Submit stub response"}
+/// Renders a "Submit stub response" button for ActivityStub executions.
+/// Should only be rendered when the execution is an unfinished ActivityStub.
+#[function_component(SubmitStubButton)]
+pub fn submit_stub_button(props: &SubmitStubButtonProps) -> Html {
+    html! {
+        <div class="action-container submit-stub-action">
+            <Link<Route>
+                to={Route::ExecutionStubResult { ffqn: props.ffqn.clone(), execution_id: props.execution_id.clone() }}
+                classes="action-button submit-stub-button"
+            >
+                {"Submit Stub Response"}
             </Link<Route>>
-        }
-    } else {
-        html! {}
+        </div>
     }
 }

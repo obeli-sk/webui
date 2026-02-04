@@ -3,7 +3,6 @@ use crate::{
     BASE_URL,
     app::{AppState, Route},
     components::{
-        execution_actions::SubmitStubLink,
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
         trace::{
@@ -443,7 +442,7 @@ fn compute_root_trace(
         .ffqns_to_details
         .get(&ffqn)
         .map(|(_, c)| c.component_type());
-    let event_count = events.len();
+    let is_stub = component_type == Some(ComponentType::ActivityStub);
 
     let child_ids_to_results = compute_child_execution_id_to_child_execution_finished(responses);
 
@@ -761,11 +760,9 @@ fn compute_root_trace(
         <>
             {execution_id.render_execution_parts(true, ExecutionLink::Trace)}
             {format!(" {} ", ffqn.short())}
-            <SubmitStubLink
-                execution_id={execution_id.clone()}
-                ffqn={ffqn.clone()}
-                {event_count}
-            />
+            if is_stub {
+                <span class="stub-indicator">{"(stub)"}</span>
+            }
         </>
     };
     Some(TraceDataRoot {
