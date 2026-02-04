@@ -1,7 +1,11 @@
 use crate::{
     BASE_URL,
     app::{AppState, Route},
-    components::{code::code_block::CodeBlock, ffqn_with_links::FfqnWithLinks},
+    components::{
+        code::code_block::CodeBlock,
+        execution_header::{ExecutionHeader, ExecutionLink},
+        ffqn_with_links::FfqnWithLinks,
+    },
     grpc::{
         ffqn::FunctionFqn,
         grpc_client::{self, ExecutionId},
@@ -175,6 +179,8 @@ pub fn execution_stub_result_page(
         .map(|wit| wit_highlighter::print_interface_with_single_fn(wit, ffqn));
 
     html! {<>
+        <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
+
         <header>
             <h1>{"Stub execution result"}</h1>
             <h2>
