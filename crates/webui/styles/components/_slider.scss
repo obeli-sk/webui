@@ -1,0 +1,149 @@
+// ============================================
+// Version Slider Component
+// ============================================
+@use '../base/variables' as *;
+@use 'sass:color';
+
+.version-slider-container {
+  background-color: $color-bg-tertiary;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  padding: $spacing-md;
+  margin-bottom: $spacing-md;
+}
+
+.version-slider-header {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-sm;
+  font-size: $font-size-sm;
+}
+
+.version-slider-label {
+  color: $color-text-secondary;
+}
+
+.version-slider-current {
+  font-weight: bold;
+  color: $color-accent-cyan;
+  font-family: $font-family-mono;
+}
+
+.version-slider-range {
+  color: $color-text-muted;
+  font-size: $font-size-xs;
+}
+
+.version-slider-track-container {
+  position: relative;
+  height: 30px;
+  margin: $spacing-sm 0;
+}
+
+.version-slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  background: $color-border-primary;
+  border-radius: $border-radius-sm;
+  outline: none;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+
+  // Webkit (Chrome, Safari, Edge)
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: $color-accent-cyan;
+    border-radius: 50%;
+    cursor: grab;
+    border: 2px solid $color-bg-primary;
+    box-shadow: $shadow-sm;
+    transition: transform $transition-fast, background-color $transition-fast;
+
+    &:hover {
+      transform: scale(1.15);
+      background: color.adjust($color-accent-cyan, $lightness: 10%);
+    }
+
+    &:active {
+      cursor: grabbing;
+      transform: scale(1.1);
+    }
+  }
+
+  // Firefox
+  &::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: $color-accent-cyan;
+    border-radius: 50%;
+    cursor: grab;
+    border: 2px solid $color-bg-primary;
+    box-shadow: $shadow-sm;
+    transition: transform $transition-fast, background-color $transition-fast;
+
+    &:hover {
+      transform: scale(1.15);
+      background: color.adjust($color-accent-cyan, $lightness: 10%);
+    }
+
+    &:active {
+      cursor: grabbing;
+      transform: scale(1.1);
+    }
+  }
+
+  &::-moz-range-track {
+    background: $color-border-primary;
+    height: 8px;
+    border-radius: $border-radius-sm;
+  }
+}
+
+.version-slider-ticks {
+  position: absolute;
+  top: 0;
+  left: 9px; // Half of thumb width
+  right: 9px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.version-slider-tick {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: $color-text-secondary;
+  border-radius: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: background-color $transition-fast, transform $transition-fast;
+
+  &.selected {
+    background: $color-accent-cyan;
+    transform: translate(-50%, -50%) scale(1.5);
+  }
+}
+
+.version-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  font-family: $font-family-mono;
+  margin-top: $spacing-xs;
+}
+
+.version-slider-empty {
+  color: $color-text-muted;
+  font-style: italic;
+  padding: $spacing-md;
+  text-align: center;
+}

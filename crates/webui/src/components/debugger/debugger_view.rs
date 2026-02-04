@@ -3,6 +3,7 @@ use crate::{
     app::{Route, query::BacktraceVersionsPath},
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
+        debugger::version_slider::VersionSlider,
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
         trace::trace_view::{PAGE, SLEEP_MILLIS},
@@ -23,7 +24,7 @@ use hashbrown::HashMap;
 use log::{debug, info, trace};
 use std::{collections::BTreeSet, ops::Deref as _, path::PathBuf, rc::Rc};
 use yew::prelude::*;
-use yew_router::prelude::Link;
+use yew_router::prelude::{Link, use_navigator};
 
 #[derive(Properties, PartialEq)]
 pub struct DebuggerViewProps {
@@ -421,6 +422,27 @@ pub fn debugger_view(
         .0
         .get(&(execution_id.clone(), leaf_version));
 
+    // Compute backtrace versions for the slider (leaf execution only)
+    let leaf_backtrace_versions: BTreeSet<VersionType> = leaf_events
+        .iter()
+        .filter_map(|event| event.backtrace_id)
+        .collect();
+
+    // Setup navigator for slider navigation
+    let navigator = use_navigator().expect("navigator should be available");
+    let on_version_change = {
+        let navigator = navigator.clone();
+        let execution_id = execution_id.clone();
+        let versions = versions.clone();
+        Callback::from(move |new_version: VersionType| {
+            let new_versions = versions.change(new_version);
+            navigator.push(&Route::ExecutionDebuggerWithVersions {
+                execution_id: execution_id.clone(),
+                versions: new_versions,
+            });
+        })
+    };
+
     let execution_log = leaf_events
         .iter()
         .filter(|event| {
@@ -732,6 +754,12 @@ pub fn debugger_view(
 
     html! {<>
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Debug} />
+
+        <VersionSlider
+            backtrace_versions={leaf_backtrace_versions.clone()}
+            selected_version={leaf_version}
+            on_version_change={on_version_change}
+        />
 
         <div class="trace-layout-container">
             <div class="trace-view">
