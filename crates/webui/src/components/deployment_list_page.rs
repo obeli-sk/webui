@@ -1,13 +1,14 @@
 use crate::{
     BASE_URL,
     app::{AppState, Route},
+    components::notification::{Notification, NotificationContext},
     grpc::grpc_client::{
         self, DeploymentId, DeploymentState,
         deployment_repository_client::DeploymentRepositoryClient,
         list_deployment_states_request::{NewerThan, OlderThan, Pagination},
     },
 };
-use log::debug;
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::{ops::Deref, str::FromStr};
 use tonic_web_wasm_client::Client;
@@ -87,6 +88,8 @@ impl DeploymentCursor {
 pub fn deployment_list_page() -> Html {
     let location = use_location().expect("should be called inside a router");
     let navigator = use_navigator().expect("should be called inside a router");
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
     // Get current deployment ID from AppState to trigger refresh on change
     let app_state = use_context::<AppState>().expect("AppState context must be provided");
@@ -102,6 +105,7 @@ pub fn deployment_list_page() -> Html {
     {
         let query = query.clone();
         let response_state = response_state.clone();
+        let notifications = notifications.clone();
 
         use_effect_with((query, current_deployment_id), move |(query_params, _)| {
             let query_params = query_params.clone();
@@ -138,7 +142,13 @@ pub fn deployment_list_page() -> Html {
 
                 match response {
                     Ok(resp) => response_state.set(Some(resp.into_inner())),
-                    Err(e) => log::error!("Failed to list deployments: {:?}", e),
+                    Err(e) => {
+                        error!("Failed to list deployments: {:?}", e);
+                        notifications.push(Notification::error(format!(
+                            "Failed to list deployments: {}",
+                            e.message()
+                        )));
+                    }
                 }
             })
         });

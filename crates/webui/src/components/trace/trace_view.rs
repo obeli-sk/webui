@@ -5,6 +5,7 @@ use crate::{
     components::{
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
+        notification::{Notification, NotificationContext},
         trace::{
             data::{BusyInterval, TraceDataChild, TraceDataRoot},
             execution_trace::ExecutionTrace,
@@ -28,7 +29,7 @@ use assert_matches::assert_matches;
 use chrono::{DateTime, Utc};
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
-use log::{debug, trace};
+use log::{debug, error, trace};
 use std::{ops::Deref as _, rc::Rc};
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
@@ -183,6 +184,8 @@ impl Reducible for TraceViewState {
 #[function_component(TraceView)]
 pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     let trace_view_state = use_reducer_eq(TraceViewState::default);
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
     // Fill the current execution id
     use_effect_with(execution_id.clone(), {
         let trace_view_state = trace_view_state.clone();
@@ -191,7 +194,10 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         }
     });
 
-    use_effect_with(trace_view_state.clone(), on_state_change);
+    use_effect_with(
+        (trace_view_state.clone(), notifications.clone()),
+        on_state_change,
+    );
 
     let trace_view = trace_view_state.deref();
 
@@ -324,7 +330,9 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     </>}
 }
 
-fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
+fn on_state_change(
+    (trace_view_state, notifications): &(UseReducerHandle<TraceViewState>, NotificationContext),
+) {
     trace!("Triggered use_effects");
     for (execution_id, cursors) in trace_view_state
         .execution_ids_to_fetch_state
@@ -337,13 +345,14 @@ fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
         trace_view_state.dispatch(TraceviewStateAction::SetPending(execution_id.clone()));
         let execution_id = execution_id.clone();
         let trace_view_state = trace_view_state.clone();
+        let notifications = notifications.clone();
         wasm_bindgen_futures::spawn_local(async move {
             trace!("list_execution_events {cursors:?}");
             let mut execution_client =
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
                     tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
                 );
-            let server_resp = execution_client
+            let response = execution_client
                 .list_execution_events_and_responses(
                     grpc_client::ListExecutionEventsAndResponsesRequest {
                         execution_id: Some(execution_id.clone()),
@@ -355,48 +364,59 @@ fn on_state_change(trace_view_state: &UseReducerHandle<TraceViewState>) {
                         include_backtrace_id: true,
                     },
                 )
-                .await
-                .unwrap()
-                .into_inner();
-            debug!(
-                "{execution_id} Got {} events, {} responses",
-                server_resp.events.len(),
-                server_resp.responses.len()
-            );
+                .await;
 
-            let last_event = server_resp.events.last();
-            let is_finished = matches!(
-                last_event.and_then(|e| e.event.as_ref()),
-                Some(execution_event::Event::Finished(_))
-            );
-            let cursors = Cursors {
-                version_from: last_event
-                    .map(|e| e.version + 1)
-                    .unwrap_or(cursors.version_from),
-                responses_cursor_from: server_resp
-                    .responses
-                    .last()
-                    .map(|resp| resp.cursor)
-                    .unwrap_or(cursors.responses_cursor_from),
-            };
-            trace_view_state.dispatch(TraceviewStateAction::SavePage {
-                execution_id: execution_id.clone(),
-                new_events: server_resp.events,
-                new_responses: server_resp.responses,
-                current_status: server_resp
-                    .current_status
-                    .expect("`current_status` is sent")
-                    .status
-                    .expect("`status` is sent"),
-                is_finished,
-            });
-            if !is_finished {
-                TimeoutFuture::new(SLEEP_MILLIS).await;
-                trace_view_state.dispatch(TraceviewStateAction::RequestNextPage {
-                    execution_id,
-                    cursors,
-                });
-            };
+            match response {
+                Ok(resp) => {
+                    let server_resp = resp.into_inner();
+                    debug!(
+                        "{execution_id} Got {} events, {} responses",
+                        server_resp.events.len(),
+                        server_resp.responses.len()
+                    );
+
+                    let last_event = server_resp.events.last();
+                    let is_finished = matches!(
+                        last_event.and_then(|e| e.event.as_ref()),
+                        Some(execution_event::Event::Finished(_))
+                    );
+                    let cursors = Cursors {
+                        version_from: last_event
+                            .map(|e| e.version + 1)
+                            .unwrap_or(cursors.version_from),
+                        responses_cursor_from: server_resp
+                            .responses
+                            .last()
+                            .map(|resp| resp.cursor)
+                            .unwrap_or(cursors.responses_cursor_from),
+                    };
+                    trace_view_state.dispatch(TraceviewStateAction::SavePage {
+                        execution_id: execution_id.clone(),
+                        new_events: server_resp.events,
+                        new_responses: server_resp.responses,
+                        current_status: server_resp
+                            .current_status
+                            .expect("`current_status` is sent")
+                            .status
+                            .expect("`status` is sent"),
+                        is_finished,
+                    });
+                    if !is_finished {
+                        TimeoutFuture::new(SLEEP_MILLIS).await;
+                        trace_view_state.dispatch(TraceviewStateAction::RequestNextPage {
+                            execution_id,
+                            cursors,
+                        });
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to list execution events: {:?}", e);
+                    notifications.push(Notification::error(format!(
+                        "Failed to load trace data: {}",
+                        e.message()
+                    )));
+                }
+            }
         });
     }
 }
