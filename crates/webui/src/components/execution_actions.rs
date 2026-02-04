@@ -474,7 +474,7 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
                 if is_loading {
                     {"Cancelling..."}
                 } else {
-                    {"Cancel"}
+                    {"Cancel Activity"}
                 }
             </button>
             { render_result(result_state.deref()) }
