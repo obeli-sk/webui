@@ -24,12 +24,9 @@ pub fn version_slider(
 ) -> Html {
     let versions: Vec<VersionType> = backtrace_versions.iter().copied().collect();
 
-    if versions.is_empty() {
-        return html! {
-            <div class="version-slider-empty">
-                {"No backtrace versions available"}
-            </div>
-        };
+    // Hide slider if there's only one or zero backtrace versions
+    if versions.len() <= 1 {
+        return html! {};
     }
 
     // Find the index of the currently selected version (or closest)
