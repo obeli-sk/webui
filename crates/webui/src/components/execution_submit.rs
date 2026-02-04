@@ -1,6 +1,7 @@
 use crate::{
     BASE_URL,
     app::Route,
+    components::notification::{Notification, NotificationContext},
     grpc::{
         ffqn::FunctionFqn,
         grpc_client::{self, ExecutionId},
@@ -85,6 +86,8 @@ pub fn execution_submit_form(
     }: &ExecutionSubmitFormProps,
 ) -> Html {
     let ffqn = FunctionFqn::from_fn_detail(fn_detail).expect("ffqn should be parseable");
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
     // disable the submit button while a request is inflight
     let request_processing_state = use_state(|| false);
@@ -95,11 +98,12 @@ pub fn execution_submit_form(
             .collect(),
         param_errs: std::iter::repeat_n(None, fn_detail.params.len()).collect(),
     });
-    let submit_err_state = use_state(|| None);
+    // Tracks validation errors (shown inline)
+    let validation_err_state = use_state(|| None::<String>);
 
     // Validate on first render
     use_effect_with(form_data_state.deref().clone(), {
-        let submit_err_state = submit_err_state.clone();
+        let validation_err_state = validation_err_state.clone();
         let fn_detail = fn_detail.clone();
         let form_data_state = form_data_state.clone();
         move |form_data| {
@@ -107,9 +111,9 @@ pub fn execution_submit_form(
             let mut form_data = form_data.clone();
             if let Err(err) = form_data.validate(&fn_detail) {
                 log::warn!("Validation failed - {err}");
-                submit_err_state.set(Some(err));
+                validation_err_state.set(Some(err));
             } else {
-                submit_err_state.set(None);
+                validation_err_state.set(None);
             }
             form_data_state.set(form_data);
         }
@@ -118,7 +122,8 @@ pub fn execution_submit_form(
     let on_submit = {
         let request_processing_state = request_processing_state.clone();
         let form_data_state = form_data_state.clone();
-        let submit_err_state = submit_err_state.clone();
+        let validation_err_state = validation_err_state.clone();
+        let notifications = notifications.clone();
         let ffqn = ffqn.clone();
         let navigator = use_navigator().unwrap();
         Callback::from(move |e: SubmitEvent| {
@@ -137,7 +142,7 @@ pub fn execution_submit_form(
                 Ok(params) => params,
                 Err((idx, serde_err)) => {
                     error!("Cannot serialize parameters - {serde_err:?}");
-                    submit_err_state.set(Some(format!(
+                    validation_err_state.set(Some(format!(
                         "cannot serialize {idx}-th parameter - {serde_err}"
                     )));
                     return;
@@ -145,14 +150,14 @@ pub fn execution_submit_form(
             };
             debug!("Params: {params:?}");
             {
-                submit_err_state.set(None);
+                validation_err_state.set(None);
                 request_processing_state.set(true); // disable the submit button
             }
 
             wasm_bindgen_futures::spawn_local({
                 let params = params.clone();
                 let ffqn = ffqn.clone();
-                let submit_err_state = submit_err_state.clone();
+                let notifications = notifications.clone();
                 let navigator = navigator.clone();
                 let request_processing_state = request_processing_state.clone();
                 async move {
@@ -177,8 +182,9 @@ pub fn execution_submit_form(
                         Ok(_response) => navigator.push(&Route::ExecutionTrace { execution_id }),
                         Err(err) => {
                             error!("Got error {err:?}");
-                            submit_err_state
-                                .set(Some(format!("Cannot submit the execution - {err}")));
+                            notifications.push(Notification::error(format!(
+                                "Cannot submit the execution: {err}"
+                            )));
                         }
                     }
                 }
@@ -199,15 +205,15 @@ pub fn execution_submit_form(
 
             let on_param_change = {
                 let form_data_state = form_data_state.clone();
-                let submit_err_state = submit_err_state.clone();
+                let validation_err_state = validation_err_state.clone();
                 let fn_detail = fn_detail.clone();
                 move || {
                     let mut form_data = form_data_state.deref().clone();
                     if let Err(err) = form_data.validate(&fn_detail) {
                         log::warn!("Validation failed - {err}");
-                        submit_err_state.set(Some(err));
+                        validation_err_state.set(Some(err));
                     } else {
-                        submit_err_state.set(None);
+                        validation_err_state.set(None);
                     }
                     form_data_state.set(form_data);
                 }
@@ -226,12 +232,12 @@ pub fn execution_submit_form(
     html! {<>
         <form id="execution-submit-form" onsubmit = {on_submit }>
             {for params_html}
-            <button type="submit" disabled={*request_processing_state}>
+            if let Some(err) = validation_err_state.deref() {
+                <div class="validation-error">{err}</div>
+            }
+            <button type="submit" disabled={*request_processing_state || validation_err_state.is_some()}>
                 {"Submit"}
             </button>
         </form>
-        if let Some(err) = submit_err_state.deref() {
-            <p style={"color:red"}>{err}</p>
-        }
     </>}
 }

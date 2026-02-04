@@ -17,4 +17,5 @@ pub mod ffqn_with_links;
 pub mod function_signature;
 pub mod json_tree;
 pub mod not_found;
+pub mod notification;
 pub mod trace;

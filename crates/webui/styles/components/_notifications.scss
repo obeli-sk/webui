@@ -1,0 +1,119 @@
+// ============================================
+// Notification Toast System
+// ============================================
+@use '../base/variables' as *;
+
+// Container for all notifications (fixed position)
+.notification-container {
+  position: fixed;
+  bottom: $spacing-lg;
+  right: $spacing-lg;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: $spacing-sm;
+  max-width: 400px;
+  pointer-events: none;
+}
+
+// Individual notification toast
+.notification-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-sm;
+  padding: $spacing-md;
+  border-radius: $border-radius-lg;
+  box-shadow: $shadow-md, 0 4px 20px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  animation: notification-slide-in 0.3s ease-out;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  border: 1px solid;
+  
+  // Default (info) colors
+  background-color: $color-bg-tertiary;
+  border-color: $color-border-secondary;
+  color: $color-text-primary;
+}
+
+// Fade-out state
+.notification-fading-out {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+// Success variant
+.notification-success {
+  background-color: rgba($color-accent-green, 0.15);
+  border-color: $color-accent-green;
+  
+  .notification-icon {
+    color: $color-accent-green;
+  }
+}
+
+// Error variant
+.notification-error {
+  background-color: rgba($color-accent-red, 0.15);
+  border-color: $color-accent-red;
+  
+  .notification-icon {
+    color: $color-accent-red;
+  }
+}
+
+// Info variant
+.notification-info {
+  background-color: rgba($color-accent-cyan, 0.15);
+  border-color: $color-accent-cyan;
+  
+  .notification-icon {
+    color: $color-accent-cyan;
+  }
+}
+
+// Icon
+.notification-icon {
+  flex-shrink: 0;
+  font-size: 1.2em;
+  line-height: 1;
+  padding-top: 2px;
+}
+
+// Message text
+.notification-message {
+  flex-grow: 1;
+  line-height: $line-height-base;
+  word-break: break-word;
+}
+
+// Dismiss button
+.notification-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: $color-text-secondary;
+  font-size: 1.4em;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin-left: $spacing-sm;
+  opacity: 0.7;
+  transition: opacity $transition-fast, color $transition-fast;
+  
+  &:hover {
+    opacity: 1;
+    color: $color-text-primary;
+  }
+}
+
+// Slide-in animation
+@keyframes notification-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

@@ -6,7 +6,7 @@ use crate::{
         execution_list_page::ExecutionListPage, execution_logs_page::LogsPage,
         execution_stub_submit_page::ExecutionStubResultPage,
         execution_submit_page::ExecutionSubmitPage, not_found::NotFound,
-        trace::trace_view::TraceView,
+        notification::NotificationProvider, trace::trace_view::TraceView,
     },
     grpc::{
         ffqn::FunctionFqn,
@@ -271,26 +271,28 @@ pub fn app(
     }
 
     html! {
-        <ContextProvider<AppState> context={app_state.deref().clone()}>
-            <div class="container">
-                <BrowserRouter>
-                    <nav>
-                        <Link<Route> to={Route::DeploymentList }>
-                            {"Deployments"}
-                        </Link<Route>>
-                        {" "}
-                        <Link<Route> to={Route::ExecutionList }>
-                            {"Executions"}
-                        </Link<Route>>
-                        {" "}
-                        <Link<Route> to={Route::ComponentList }>
-                            {"Components"}
-                        </Link<Route>>
+        <NotificationProvider>
+            <ContextProvider<AppState> context={app_state.deref().clone()}>
+                <div class="container">
+                    <BrowserRouter>
+                        <nav>
+                            <Link<Route> to={Route::DeploymentList }>
+                                {"Deployments"}
+                            </Link<Route>>
+                            {" "}
+                            <Link<Route> to={Route::ExecutionList }>
+                                {"Executions"}
+                            </Link<Route>>
+                            {" "}
+                            <Link<Route> to={Route::ComponentList }>
+                                {"Components"}
+                            </Link<Route>>
 
-                    </nav>
-                    <Switch<Route> render={Route::render} />
-                </BrowserRouter>
-            </div>
-        </ContextProvider<AppState>>
+                        </nav>
+                        <Switch<Route> render={Route::render} />
+                    </BrowserRouter>
+                </div>
+            </ContextProvider<AppState>>
+        </NotificationProvider>
     }
 }
