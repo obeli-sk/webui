@@ -196,8 +196,8 @@ impl Output for OutputToHtml {
     fn indent_if_needed(&mut self) -> bool {
         if self.ignore_until_end_of_line == 0 && self.needs_indent {
             for _ in 0..self.indent {
-                // Indenting by two spaces.
-                self.push_str("  ");
+                // Indenting by 4 spaces.
+                self.push_str("    ");
             }
             self.needs_indent = false;
             true
