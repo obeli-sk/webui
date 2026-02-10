@@ -1,5 +1,6 @@
 use crate::app::query::BacktraceVersionsPath;
 use crate::grpc::grpc_client::ExecutionId;
+use crate::grpc::grpc_client::execution_event::history_event::join_next_try::Outcome;
 use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
@@ -30,16 +31,11 @@ impl HistoryJoinNextTryEventProps {
             .as_ref()
             .expect("JoinNextTry.join_set_id is sent");
 
-        let icon = if self.event.found_response {
-            Icon::Tick
-        } else {
-            Icon::Search
-        };
-
-        let status = if self.event.found_response {
-            "found"
-        } else {
-            "pending"
+        let outcome = Outcome::try_from(self.event.outcome).unwrap_or(Outcome::Found);
+        let (icon, status) = match outcome {
+            Outcome::Found => (Icon::Tick, "found"),
+            Outcome::Pending => (Icon::Search, "pending"),
+            Outcome::AllProcessed => (Icon::Tick, "all processed"),
         };
 
         let join_next_try_node = tree
