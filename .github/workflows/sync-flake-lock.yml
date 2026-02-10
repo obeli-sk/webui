@@ -43,6 +43,10 @@ jobs:
         run: |
           nix develop --command echo
 
+      - name: Sync wasm-bindgen pinned versions
+        run: |
+          nix develop .#noObelisk --command ./scripts/sync-wasm-bindgen.sh
+
       - name: Update dev-deps.txt
         run: |
           nix develop . --command ./scripts/dev-deps.sh
