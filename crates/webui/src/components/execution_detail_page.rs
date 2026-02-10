@@ -7,8 +7,8 @@ use crate::grpc::grpc_client::{
     self, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
     execution_event,
     execution_event::history_event::{
-        Event as HistoryEventEnum, JoinNext, JoinNextTooMany, JoinNextTry, JoinSetCreated, JoinSetRequest,
-        join_set_request,
+        Event as HistoryEventEnum, JoinNext, JoinNextTooMany, JoinNextTry, JoinSetCreated,
+        JoinSetRequest, join_set_request,
     },
     join_set_response_event,
 };
