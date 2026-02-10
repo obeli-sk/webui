@@ -3,6 +3,7 @@ use crate::components::execution_detail::created::CreatedEvent;
 use crate::components::execution_detail::finished::FinishedEvent;
 use crate::components::execution_detail::history::join_next::HistoryJoinNextEvent;
 use crate::components::execution_detail::history::join_next_too_many::HistoryJoinNextTooManyEvent;
+use crate::components::execution_detail::history::join_next_try::HistoryJoinNextTryEvent;
 use crate::components::execution_detail::history::join_set_created::HistoryJoinSetCreatedEvent;
 use crate::components::execution_detail::history::join_set_request::HistoryJoinSetRequestEvent;
 use crate::components::execution_detail::history::persist::HistoryPersistEvent;
@@ -133,6 +134,19 @@ pub fn event_to_detail(
                     backtrace_id={event.backtrace_id}
                     version={event.version}
                     {link}
+                    {is_selected}
+                />
+            }
+        }
+        execution_event::Event::HistoryVariant(HistoryEvent {
+            event: Some(execution_event::history_event::Event::JoinNextTry(join_next_try)),
+        }) => {
+            html! {
+                <HistoryJoinNextTryEvent
+                    event={join_next_try.clone()}
+                    execution_id={execution_id.clone()}
+                    backtrace_id={event.backtrace_id}
+                    version={event.version}
                     {is_selected}
                 />
             }
