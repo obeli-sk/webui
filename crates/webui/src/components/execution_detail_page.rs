@@ -7,7 +7,7 @@ use crate::grpc::grpc_client::{
     self, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
     execution_event,
     execution_event::history_event::{
-        Event as HistoryEventEnum, JoinNext, JoinNextTooMany, JoinSetCreated, JoinSetRequest,
+        Event as HistoryEventEnum, JoinNext, JoinNextTooMany, JoinNextTry, JoinSetCreated, JoinSetRequest,
         join_set_request,
     },
     join_set_response_event,
@@ -389,6 +389,7 @@ fn render_execution_details(
                             HistoryEventEnum::JoinSetRequest(JoinSetRequest { join_set_id: Some(jid), .. }) => Some(jid),
                             HistoryEventEnum::JoinNext(JoinNext { join_set_id: Some(jid), .. }) => Some(jid),
                             HistoryEventEnum::JoinSetCreated(JoinSetCreated { join_set_id: Some(jid), .. }) => Some(jid),
+                            HistoryEventEnum::JoinNextTry(JoinNextTry { join_set_id: Some(jid), .. }) => Some(jid),
                             HistoryEventEnum::JoinNextTooMany(JoinNextTooMany { join_set_id: Some(jid), .. }) => Some(jid),
                             _ => None
                         };
