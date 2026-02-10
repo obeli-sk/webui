@@ -35,7 +35,7 @@ impl HistoryJoinNextTryEventProps {
         let (icon, status) = match outcome {
             Outcome::Found => (Icon::Tick, "found"),
             Outcome::Pending => (Icon::Search, "pending"),
-            Outcome::AllProcessed => (Icon::Tick, "all processed"),
+            Outcome::AllProcessed => (Icon::Error, "all processed"),
         };
 
         let join_next_try_node = tree
