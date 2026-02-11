@@ -110,7 +110,8 @@ pub fn event_to_detail(
                 />
         },
         execution_event::Event::HistoryVariant(HistoryEvent {
-            event: Some(execution_event::history_event::Event::JoinSetRequest(join_set_request_event)),
+            event:
+                Some(execution_event::history_event::Event::JoinSetRequest(join_set_request_event)),
         }) => {
             // Look up child's Created event if this is a ChildExecutionRequest
             let child_created = match &join_set_request_event.join_set_request {
