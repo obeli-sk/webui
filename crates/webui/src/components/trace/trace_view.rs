@@ -239,13 +239,29 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     });
 
     let execution_log = {
-        let events = &trace_view.events;
+        let all_events = &trace_view.events;
         let dummy_events = Vec::new();
-        let events = events.get(execution_id).unwrap_or(&dummy_events);
+        let events = all_events.get(execution_id).unwrap_or(&dummy_events);
         let dummy_response_map = HashMap::new();
         let responses = &trace_view.responses;
         let responses = responses.get(execution_id).unwrap_or(&dummy_response_map);
         let join_next_version_to_response = compute_join_next_to_response(events, responses);
+        // Build map of child execution ID -> Created event from fetched child events
+        let child_created_events: hashbrown::HashMap<
+            grpc_client::ExecutionId,
+            execution_event::Created,
+        > = all_events
+            .iter()
+            .filter(|(id, _)| *id != execution_id)
+            .filter_map(|(id, evts)| {
+                evts.first().and_then(|e| match &e.event {
+                    Some(execution_event::Event::Created(created)) => {
+                        Some((id.clone(), created.clone()))
+                    }
+                    _ => None,
+                })
+            })
+            .collect();
         events
             .iter()
             .filter(|event| {
@@ -264,6 +280,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                     execution_id,
                     event,
                     &join_next_version_to_response,
+                    &child_created_events,
                     ExecutionLink::Trace,
                     false,
                 )

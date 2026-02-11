@@ -1,15 +1,16 @@
-use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    app::{Route, query::BacktraceVersionsPath},
-    components::{
-        execution_actions::CancelDelayButton, execution_detail::tree_component::TreeComponent,
-        execution_header::ExecutionLink,
-    },
-    grpc::{
-        grpc_client::{self, ExecutionId, execution_event::history_event::join_set_request},
-        version::VersionType,
-    },
+use crate::app::AppState;
+use crate::app::{Route, query::BacktraceVersionsPath};
+use crate::components::execution_actions::CancelDelayButton;
+use crate::components::execution_detail::tree_component::TreeComponent;
+use crate::components::execution_header::ExecutionLink;
+use crate::components::ffqn_with_links::FfqnWithLinks;
+use crate::components::json_tree::{JsonValue, insert_json_into_tree};
+use crate::grpc::ffqn::FunctionFqn;
+use crate::grpc::grpc_client::{
+    self, ExecutionId, execution_event::history_event::join_set_request,
 };
+use crate::grpc::version::VersionType;
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use chrono::DateTime;
 use yew::prelude::*;
 use yew_router::prelude::Link;
@@ -22,16 +23,19 @@ pub struct HistoryJoinSetRequestEventProps {
     pub version: VersionType,
     pub link: ExecutionLink,
     pub is_selected: bool,
+    /// Optional Created event of the child execution.
+    /// When provided, the component displays the child's function name and parameters.
+    #[prop_or_default]
+    pub child_created: Option<grpc_client::execution_event::Created>,
 }
 
 impl HistoryJoinSetRequestEventProps {
-    fn construct_tree(&self) -> TreeData<u32> {
+    fn construct_tree(&self, app_state: &AppState) -> TreeData<u32> {
         let mut tree = TreeBuilder::new().build();
         let root_id = tree
             .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
             .unwrap();
 
-        // Add node for JoinSet ID
         let join_set_id = self
             .event
             .join_set_id
@@ -57,7 +61,6 @@ impl HistoryJoinSetRequestEventProps {
             )
             .unwrap();
 
-        // Handle different types of join set requests
         match self
             .event
             .join_set_request
@@ -116,20 +119,104 @@ impl HistoryJoinSetRequestEventProps {
                     .child_execution_id
                     .as_ref()
                     .expect("`child_execution_id` is sent in `ChildExecutionRequest`");
-                tree.insert(
+
+                // Extract function name and params from child's Created event if available
+                let child_info = self.child_created.as_ref().map(|created| {
+                    let function_name = created
+                        .function_name
+                        .as_ref()
+                        .expect("`function_name` is sent in Created");
+                    let ffqn = FunctionFqn::from(function_name.clone());
+                    let raw_params: Vec<serde_json::Value> = serde_json::from_slice(
+                        &created
+                            .params
+                            .as_ref()
+                            .expect("`params` is sent in Created")
+                            .value,
+                    )
+                    .expect("`params` must be a JSON array");
+                    let params: Vec<(String, serde_json::Value)> = match app_state.ffqns_to_details.get(&ffqn) {
+                        Some((function_detail, _))
+                            if function_detail.params.len() == raw_params.len() =>
+                        {
+                            function_detail
+                                .params
+                                .iter()
+                                .zip(raw_params.iter())
+                                .map(|(fn_param, param_value)| {
+                                    (fn_param.name.clone(), param_value.clone())
+                                })
+                                .collect()
+                        }
+                        _ => raw_params
+                            .iter()
+                            .map(|v| ("(unknown)".to_string(), v.clone()))
+                            .collect(),
+                    };
+                    (ffqn, params)
+                });
+
+                let fn_label = match &child_info {
+                    Some((ffqn, _)) => html! {
+                        <>
+                            {"Child Execution Request: "}
+                            <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={false} />
+                            {" "}
+                            { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
+                        </>
+                    },
+                    None => html! {
+                        <>
+                            {"Child Execution Request: "}
+                            { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
+                        </>
+                    },
+                };
+                let child_node = tree
+                    .insert(
                         Node::new(NodeData {
                             icon: Icon::Flows,
-                            label: html! {
-                                <>
-                                    {"Child Execution Request: "}
-                                    { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
-                                </>
-                            },
+                            label: fn_label,
+                            has_caret: child_info.is_some(),
+                            is_expanded: true,
                             ..Default::default()
                         }),
                         InsertBehavior::UnderNode(&join_set_node),
                     )
                     .unwrap();
+
+                if let Some((_, params)) = &child_info {
+                    let params_node_id = tree
+                        .insert(
+                            Node::new(NodeData {
+                                icon: Icon::FolderClose,
+                                label: "Parameters".into_html(),
+                                has_caret: true,
+                                is_expanded: true,
+                                ..Default::default()
+                            }),
+                            InsertBehavior::UnderNode(&child_node),
+                        )
+                        .unwrap();
+                    for (param_name, param_value) in params {
+                        let param_name_node = tree
+                            .insert(
+                                Node::new(NodeData {
+                                    icon: Icon::Function,
+                                    label: format!("{param_name}: {param_value}").into_html(),
+                                    has_caret: true,
+                                    ..Default::default()
+                                }),
+                                InsertBehavior::UnderNode(&params_node_id),
+                            )
+                            .unwrap();
+                        let _ = insert_json_into_tree(
+                            &mut tree,
+                            &param_name_node,
+                            JsonValue::Parsed(param_value),
+                        );
+                    }
+                }
             }
         }
         if let Some(backtrace_id) = self.backtrace_id {
@@ -153,7 +240,9 @@ impl HistoryJoinSetRequestEventProps {
 
 #[function_component(HistoryJoinSetRequestEvent)]
 pub fn history_join_set_request_event(props: &HistoryJoinSetRequestEventProps) -> Html {
-    let tree = props.construct_tree();
+    let app_state =
+        use_context::<AppState>().expect("AppState context is set when starting the App");
+    let tree = props.construct_tree(&app_state);
     html! {
         <TreeComponent {tree} />
     }

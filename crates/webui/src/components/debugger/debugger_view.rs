@@ -470,6 +470,7 @@ pub fn debugger_view(
                 execution_id,
                 event,
                 &join_next_version_to_response,
+                &hashbrown::HashMap::new(),
                 ExecutionLink::Debug,
                 // is_selected
                 leaf_backtrace_response
