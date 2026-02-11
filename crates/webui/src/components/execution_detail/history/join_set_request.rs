@@ -157,43 +157,41 @@ impl HistoryJoinSetRequestEventProps {
                     (ffqn, params)
                 });
 
-                let fn_label = match &child_info {
-                    Some((ffqn, _)) => html! {
-                        <>
-                            {"Child Execution Request: "}
-                            <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={false} />
-                            {" "}
-                            { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
-                        </>
-                    },
-                    None => html! {
-                        <>
-                            {"Child Execution Request: "}
-                            { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
-                        </>
-                    },
-                };
                 let child_node = tree
                     .insert(
                         Node::new(NodeData {
                             icon: Icon::Flows,
-                            label: fn_label,
+                            label: html! {
+                                <>
+                                    {"Child Execution Request: "}
+                                    { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
+                                </>
+                            },
                             has_caret: child_info.is_some(),
-                            is_expanded: true,
                             ..Default::default()
                         }),
                         InsertBehavior::UnderNode(&join_set_node),
                     )
                     .unwrap();
 
-                if let Some((_, params)) = &child_info {
+                if let Some((ffqn, params)) = &child_info {
+                    tree.insert(
+                        Node::new(NodeData {
+                            icon: Icon::Function,
+                            label: html! {
+                                <FfqnWithLinks ffqn={ffqn.clone()} />
+                            },
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&child_node),
+                    )
+                    .unwrap();
                     let params_node_id = tree
                         .insert(
                             Node::new(NodeData {
                                 icon: Icon::FolderClose,
                                 label: "Parameters".into_html(),
                                 has_caret: true,
-                                is_expanded: true,
                                 ..Default::default()
                             }),
                             InsertBehavior::UnderNode(&child_node),

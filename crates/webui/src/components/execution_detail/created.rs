@@ -138,7 +138,6 @@ impl ProcessedProps {
                     icon: Icon::FolderClose,
                     label: "Parameters".into_html(),
                     has_caret: true,
-                    is_expanded: true,
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&event_type),
