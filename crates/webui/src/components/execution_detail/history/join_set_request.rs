@@ -135,24 +135,25 @@ impl HistoryJoinSetRequestEventProps {
                             .value,
                     )
                     .expect("`params` must be a JSON array");
-                    let params: Vec<(String, serde_json::Value)> = match app_state.ffqns_to_details.get(&ffqn) {
-                        Some((function_detail, _))
-                            if function_detail.params.len() == raw_params.len() =>
-                        {
-                            function_detail
-                                .params
+                    let params: Vec<(String, serde_json::Value)> =
+                        match app_state.ffqns_to_details.get(&ffqn) {
+                            Some((function_detail, _))
+                                if function_detail.params.len() == raw_params.len() =>
+                            {
+                                function_detail
+                                    .params
+                                    .iter()
+                                    .zip(raw_params.iter())
+                                    .map(|(fn_param, param_value)| {
+                                        (fn_param.name.clone(), param_value.clone())
+                                    })
+                                    .collect()
+                            }
+                            _ => raw_params
                                 .iter()
-                                .zip(raw_params.iter())
-                                .map(|(fn_param, param_value)| {
-                                    (fn_param.name.clone(), param_value.clone())
-                                })
-                                .collect()
-                        }
-                        _ => raw_params
-                            .iter()
-                            .map(|v| ("(unknown)".to_string(), v.clone()))
-                            .collect(),
-                    };
+                                .map(|v| ("(unknown)".to_string(), v.clone()))
+                                .collect(),
+                        };
                     (ffqn, params)
                 });
 
