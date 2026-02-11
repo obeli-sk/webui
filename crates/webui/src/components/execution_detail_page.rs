@@ -171,8 +171,29 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
 
     let join_next_version_to_response = compute_join_next_to_response(events, responses);
 
+    // Build map of child execution ID -> Created event from any fetched child events
+    let child_created_events: HashMap<grpc_client::ExecutionId, execution_event::Created> =
+        log_state
+            .events
+            .iter()
+            .filter(|(id, _)| *id != execution_id)
+            .filter_map(|(id, evts)| {
+                evts.first().and_then(|e| match &e.event {
+                    Some(execution_event::Event::Created(created)) => {
+                        Some((id.clone(), created.clone()))
+                    }
+                    _ => None,
+                })
+            })
+            .collect();
+
     let details_html = if !events.is_empty() {
-        render_execution_details(execution_id, events, &join_next_version_to_response)
+        render_execution_details(
+            execution_id,
+            events,
+            &join_next_version_to_response,
+            &child_created_events,
+        )
     } else {
         html! { <div class="loading-details">{"Loading execution details..."}</div> }
     };
@@ -271,6 +292,7 @@ fn render_execution_details(
     current_execution_id: &ExecutionId,
     events: &[ExecutionEvent],
     join_next_version_to_response: &HashMap<u32, &JoinSetResponseEvent>,
+    child_created_events: &HashMap<ExecutionId, execution_event::Created>,
 ) -> Html {
     let create_event = events.first().expect("not found");
     let execution_created_at = DateTime::from(create_event.created_at.expect("crated_at is sent"));
@@ -363,6 +385,7 @@ fn render_execution_details(
                 current_execution_id,
                 event,
                 join_next_version_to_response,
+                child_created_events,
                 ExecutionLink::ExecutionLog,
                 false,
             );

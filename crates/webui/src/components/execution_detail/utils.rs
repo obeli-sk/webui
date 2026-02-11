@@ -18,6 +18,7 @@ use crate::components::execution_header::ExecutionLink;
 use crate::grpc::grpc_client::execution_event::HistoryEvent;
 use crate::grpc::grpc_client::{
     ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent, execution_event,
+    execution_event::history_event::join_set_request,
 };
 use hashbrown::HashMap;
 use yew::prelude::*;
@@ -54,6 +55,7 @@ pub fn event_to_detail(
     execution_id: &ExecutionId,
     event: &ExecutionEvent,
     join_next_version_to_response: &HashMap<u32, &JoinSetResponseEvent>,
+    child_created_events: &HashMap<ExecutionId, execution_event::Created>,
     link: ExecutionLink,
     is_selected: bool,
 ) -> Html {
@@ -108,17 +110,31 @@ pub fn event_to_detail(
                 />
         },
         execution_event::Event::HistoryVariant(HistoryEvent {
-            event: Some(execution_event::history_event::Event::JoinSetRequest(join_set_request)),
-        }) => html! {
-            <HistoryJoinSetRequestEvent
-                event={join_set_request.clone()}
-                execution_id={execution_id.clone()}
-                backtrace_id={event.backtrace_id}
-                version={event.version}
-                {link}
-                {is_selected}
-                />
-        },
+            event: Some(execution_event::history_event::Event::JoinSetRequest(join_set_request_event)),
+        }) => {
+            // Look up child's Created event if this is a ChildExecutionRequest
+            let child_created = match &join_set_request_event.join_set_request {
+                Some(join_set_request::JoinSetRequest::ChildExecutionRequest(child_req)) => {
+                    child_req
+                        .child_execution_id
+                        .as_ref()
+                        .and_then(|id| child_created_events.get(id))
+                        .cloned()
+                }
+                _ => None,
+            };
+            html! {
+                <HistoryJoinSetRequestEvent
+                    event={join_set_request_event.clone()}
+                    execution_id={execution_id.clone()}
+                    backtrace_id={event.backtrace_id}
+                    version={event.version}
+                    {link}
+                    {is_selected}
+                    {child_created}
+                    />
+            }
+        }
         execution_event::Event::HistoryVariant(HistoryEvent {
             event: Some(execution_event::history_event::Event::JoinNext(join_next)),
         }) => {
