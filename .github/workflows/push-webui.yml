@@ -14,6 +14,11 @@ on:
         description: "The ref (branch or SHA) to process"
         required: false
         type: string
+      push_to_main:
+        description: "Push directly to main instead of creating a PR"
+        required: false
+        type: boolean
+        default: false
 
 defaults:
   run:
@@ -72,7 +77,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
         working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
 
+      - name: Push directly to main
+        if: ${{ github.event.inputs.push_to_main == 'true' }}
+        run: |
+          git add assets/webui-version.txt
+          git commit -m "chore: Bump webui to $TAG"
+          git push origin main
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
+
       - name: Create a PR
+        if: ${{ github.event.inputs.push_to_main != 'true' }}
         run: |
           git checkout -b ${{ steps.branch-name.outputs.branch_name }}
           git add assets/webui-version.txt
