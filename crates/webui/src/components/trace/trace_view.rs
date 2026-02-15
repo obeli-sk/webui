@@ -766,7 +766,7 @@ fn compute_root_trace(
             }
         });
         Some(html! {
-            <a {onclick} >
+            <a {onclick} style="cursor: pointer" >
                 if show {
                     {"+"}
                 } else {
