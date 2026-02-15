@@ -37,6 +37,7 @@ impl yew::ToHtml for ComponentType {
             ComponentType::ActivityWasm => "Activity",
             ComponentType::ActivityStub => "Activity Stub",
             ComponentType::ActivityExternal => "External Activity",
+            ComponentType::ActivityJs => "JavaScript Activity",
             ComponentType::WebhookEndpoint => "Webhook Endpoint",
         }
         .to_html()
@@ -48,7 +49,7 @@ impl ComponentType {
         match self {
             ComponentType::Unspecified => Icon::Cog,
             ComponentType::Workflow => Icon::GanttChart,
-            ComponentType::ActivityWasm => Icon::CodeBlock,
+            ComponentType::ActivityWasm | ComponentType::ActivityJs => Icon::CodeBlock,
             ComponentType::ActivityStub | ComponentType::ActivityExternal => Icon::Import,
             ComponentType::WebhookEndpoint => Icon::GlobeNetwork,
         }
@@ -59,6 +60,7 @@ impl ComponentType {
             ComponentType::Unspecified => "Unspecified",
             ComponentType::Workflow => "Workflows",
             ComponentType::ActivityWasm => "WASM Activities",
+            ComponentType::ActivityJs => "JavaScript Activities",
             ComponentType::WebhookEndpoint => "Webhooks",
             ComponentType::ActivityStub => "Stub Activities",
             ComponentType::ActivityExternal => "External Activities",
