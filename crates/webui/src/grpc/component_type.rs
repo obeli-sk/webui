@@ -11,7 +11,6 @@ impl Display for ComponentType {
             ComponentType::WebhookEndpoint => "webhook_endpoint",
             ComponentType::ActivityStub => "activity_stub",
             ComponentType::ActivityExternal => "activity_external",
-            ComponentType::ActivityJs => "activity_js",
         };
         f.write_str(str)
     }
@@ -28,7 +27,6 @@ impl FromStr for ComponentType {
             "webhook_endpoint" => Ok(ComponentType::WebhookEndpoint),
             "activity_stub" => Ok(ComponentType::ActivityStub),
             "activity_external" => Ok(ComponentType::ActivityExternal),
-            "activity_js" => Ok(ComponentType::ActivityJs),
             _ => Err(format!("invalid ComponentType: {}", s)),
         }
     }
