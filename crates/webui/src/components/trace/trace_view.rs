@@ -577,7 +577,7 @@ fn compute_root_trace(
                             Some(execution_event::history_event::Event::JoinSetRequest(
                                 JoinSetRequest {
                                     join_set_request: Some(join_set_request::JoinSetRequest::ChildExecutionRequest(
-                                        join_set_request::ChildExecutionRequest{child_execution_id: Some(child_execution_id)})),
+                                        join_set_request::ChildExecutionRequest{child_execution_id: Some(child_execution_id), ..})),
                                     ..
                                 },
                             )),

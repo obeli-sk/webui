@@ -29,7 +29,11 @@ impl HistoryScheduleEventProps {
         let event_type = tree
             .insert(
                 Node::new(NodeData {
-                    icon: Icon::History,
+                    icon: if self.event.success {
+                        Icon::History
+                    } else {
+                        Icon::Error
+                    },
                     label: html!{<>
                         { self.version }
                         {". Scheduled execution "}

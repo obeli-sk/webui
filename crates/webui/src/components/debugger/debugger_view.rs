@@ -623,7 +623,7 @@ pub fn debugger_view(
                             event: Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
                                 event: Some(history_event::Event::JoinSetRequest(history_event::JoinSetRequest{
                                     join_set_request: Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
-                                        history_event::join_set_request::ChildExecutionRequest{child_execution_id: Some(child_execution_id)}
+                                        history_event::join_set_request::ChildExecutionRequest{child_execution_id: Some(child_execution_id), ..}
                                     ))
                                 , ..})),
                             })),
@@ -908,6 +908,7 @@ fn get_parent_execution_bounds(
                             Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
                                 history_event::join_set_request::ChildExecutionRequest {
                                     child_execution_id: Some(found_id),
+                                    ..
                                 },
                             )),
                         ..

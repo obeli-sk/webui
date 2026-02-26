@@ -160,7 +160,11 @@ impl HistoryJoinSetRequestEventProps {
                 let child_node = tree
                     .insert(
                         Node::new(NodeData {
-                            icon: Icon::Flows,
+                            icon: if child_req.success {
+                                Icon::Flows
+                            } else {
+                                Icon::Error
+                            },
                             label: html! {
                                 <>
                                     {"Child Execution Request: "}
