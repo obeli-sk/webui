@@ -47,7 +47,12 @@
           withObeliskShell = pkgs.mkShell {
             nativeBuildInputs = withObelisk;
           };
-          sandboxShell = pkgs.mkShell {
+        in
+        {
+          devShells.noObelisk = noObeliskShell;
+          devShells.withObelisk = withObeliskShell;
+          devShells.default = noObeliskShell;
+          devShells.sandbox = pkgs.mkShell {
             packages = with pkgs; [
               codex
               gemini-cli
@@ -118,16 +123,11 @@
                 --setenv HOME /tmp
                 --setenv TMPDIR /tmp
                 --setenv TEMP /tmp
+                --setenv CARGO_TARGET_DIR target-sandbox
               )
               exec "''${BWRAP_CMD[@]}" ${pkgs.bashInteractive}/bin/bash -l +m
             '';
           };
-        in
-        {
-          devShells.noObelisk = noObeliskShell;
-          devShells.withObelisk = withObeliskShell;
-          devShells.default = noObeliskShell;
-          devShells.sandbox = sandboxShell;
         }
       );
 }
