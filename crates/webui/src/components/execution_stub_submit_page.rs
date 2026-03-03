@@ -14,6 +14,7 @@ use crate::{
     util::wit_highlighter,
 };
 use log::{debug, error, trace};
+use serde_json::json;
 use std::ops::Deref;
 use val_json::wast_val::WastValWithType;
 use web_sys::HtmlInputElement;
@@ -223,9 +224,12 @@ pub fn execution_stub_result_page(
 fn validate_response(return_type: &grpc_client::WitType, value: &str) -> Result<(), String> {
     match serde_json::from_str::<serde_json::Value>(value) {
         Ok(value) => {
-            let type_wrapper = return_type.type_wrapper.as_str();
-            let type_and_value_json = format!("{{\"type\": {type_wrapper}, \"value\": {value}}}");
-            match serde_json::from_str::<WastValWithType>(&type_and_value_json) {
+            let wit_type_inline = return_type.wit_type_inline.as_str();
+            let type_and_value_json = json!({
+                "type": wit_type_inline,
+                "value": value,
+            });
+            match serde_json::from_value::<WastValWithType>(type_and_value_json) {
                 Ok(_) => Ok(()),
                 Err(err) => Err(format!("Typecheck error: {err}")),
             }

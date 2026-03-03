@@ -8,6 +8,7 @@ use crate::{
     },
 };
 use log::{debug, error, trace, warn};
+use serde_json::json;
 use std::ops::Deref;
 use val_json::wast_val::WastValWithType;
 use web_sys::HtmlInputElement;
@@ -28,7 +29,7 @@ impl FormData {
     ) -> Result<(), String> {
         match serde_json::from_str::<serde_json::Value>(param_value) {
             Ok(param_value) => {
-                let type_wrapper = function_detail
+                let wit_type_inline = function_detail
                     .params
                     .get(idx)
                     .as_ref()
@@ -36,11 +37,13 @@ impl FormData {
                     .r#type
                     .as_ref()
                     .expect("`FunctionParameter.type` is sent")
-                    .type_wrapper
+                    .wit_type_inline
                     .as_str();
-                let type_and_value_json =
-                    format!("{{\"type\": {type_wrapper}, \"value\": {param_value}}}");
-                match serde_json::from_str::<WastValWithType>(&type_and_value_json) {
+                let type_and_value_json = json!({
+                    "type": wit_type_inline,
+                    "value": param_value,
+                });
+                match serde_json::from_value::<WastValWithType>(type_and_value_json) {
                     Ok(_) => Ok(()),
                     Err(err) => {
                         warn!("oninput[{idx}] - typecheck error {err:?}");
