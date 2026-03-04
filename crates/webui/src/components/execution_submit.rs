@@ -6,9 +6,11 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{self, ExecutionId},
     },
+    util::wit_type_formatter::format_wit_type,
 };
 use log::{debug, error, trace, warn};
 use serde_json::json;
+use std::collections::HashSet;
 use std::ops::Deref;
 use val_json::wast_val::WastValWithType;
 use web_sys::HtmlInputElement;
@@ -103,6 +105,8 @@ pub fn execution_submit_form(
     });
     // Tracks validation errors (shown inline)
     let validation_err_state = use_state(|| None::<String>);
+    // Tracks which parameter type hints are expanded
+    let expanded_type_hints = use_state(HashSet::<usize>::new);
 
     // Validate on first render
     use_effect_with(form_data_state.deref().clone(), {
@@ -222,13 +226,34 @@ pub fn execution_submit_form(
                 }
             };
 
-            html! {<p>
-                <label for={id.clone()}>{ format!("{}: {}", param.name, ty.wit_type) }</label>
-                <input id={id} type="text" ref={&form_data_state.param_refs[idx]} oninput = {Callback::from(move |_| { on_param_change()})} />
-                if let Some(err) = form_data_state.param_errs.get(idx) {
-                    <span>{err}</span>
+            let is_expanded = expanded_type_hints.contains(&idx);
+            let on_toggle_type = {
+                let expanded_type_hints = expanded_type_hints.clone();
+                Callback::from(move |_: MouseEvent| {
+                    let mut set = (*expanded_type_hints).clone();
+                    if set.contains(&idx) {
+                        set.remove(&idx);
+                    } else {
+                        set.insert(idx);
+                    }
+                    expanded_type_hints.set(set);
+                })
+            };
+            let wit_type_formatted = format_wit_type(&ty.wit_type_inline);
+
+            html! {<div class="form-field">
+                <div class="form-field-row">
+                    <label for={id.clone()}>{ format!("{}:", &param.name) }</label>
+                    <input id={id} type="text" placeholder={ty.wit_type.clone()} ref={&form_data_state.param_refs[idx]} oninput = {Callback::from(move |_| { on_param_change()})} />
+                    <span class="wit-type-toggle" onclick={on_toggle_type} title="Show full type">{ "ℹ" }</span>
+                    if let Some(err) = form_data_state.param_errs.get(idx) {
+                        <span class="validation-error">{err}</span>
+                    }
+                </div>
+                if is_expanded {
+                    <pre class="wit-type-inline">{ wit_type_formatted }</pre>
                 }
-            </p>}
+            </div>}
         })
         .collect();
 

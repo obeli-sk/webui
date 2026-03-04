@@ -1,6 +1,7 @@
 pub mod color;
 pub mod time;
 pub mod wit_highlighter;
+pub mod wit_type_formatter;
 
 use std::rc::Rc;
 

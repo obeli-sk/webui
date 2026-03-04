@@ -11,7 +11,7 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{self, ExecutionId},
     },
-    util::wit_highlighter,
+    util::{wit_highlighter, wit_type_formatter::format_wit_type},
 };
 use log::{debug, error, trace};
 use serde_json::json;
@@ -58,6 +58,7 @@ pub fn execution_stub_result_page(
     let request_processing_state = use_state(|| false);
     let input_ref = use_node_ref();
     let validation_err_state = use_state(|| None::<String>);
+    let type_hint_expanded = use_state(|| false);
 
     let wit_state: UseStateHandle<Option<String>> = use_state(|| None);
     // Fetch GetWit
@@ -203,13 +204,24 @@ pub fn execution_stub_result_page(
             </h3>
         </header>
         <form id="execution-stub-result-form" onsubmit = {on_submit }>
-            <p>
-                <label for="input">{return_type.wit_type.as_str()}</label>
-                <input id="input" type="text" ref={input_ref.clone()} {oninput}/>
-            </p>
-            if let Some(err) = validation_err_state.deref() {
-                <div class="validation-error">{err}</div>
-            }
+            <div class="form-field">
+                <div class="form-field-row">
+                    <label for="input">{"result:"}</label>
+                    <input id="input" type="text" placeholder={return_type.wit_type.clone()} ref={input_ref.clone()} {oninput}/>
+                    <span class="wit-type-toggle" onclick={{
+                        let type_hint_expanded = type_hint_expanded.clone();
+                        Callback::from(move |_: MouseEvent| {
+                            type_hint_expanded.set(!*type_hint_expanded);
+                        })
+                    }} title="Show full type">{ "ℹ" }</span>
+                    if let Some(err) = validation_err_state.deref() {
+                        <span class="validation-error">{err}</span>
+                    }
+                </div>
+                if *type_hint_expanded {
+                    <pre class="wit-type-inline">{ format_wit_type(&return_type.wit_type_inline) }</pre>
+                }
+            </div>
             <button type="submit" id={SUBMIT_RETVAL} disabled={*request_processing_state || validation_err_state.is_some()}>
                 {"Submit execution result"}
             </button>
