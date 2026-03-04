@@ -17,7 +17,7 @@ use log::{debug, error, trace};
 use serde_json::json;
 use std::ops::Deref;
 use val_json::wast_val::WastValWithType;
-use web_sys::HtmlInputElement;
+use web_sys::HtmlTextAreaElement;
 use yew::prelude::*;
 use yew_router::{hooks::use_navigator, prelude::Link};
 
@@ -97,7 +97,7 @@ pub fn execution_stub_result_page(
         Callback::from(move |event: SubmitEvent| {
             event.prevent_default(); // prevent form submission
             let return_value = {
-                let input = input_ref.cast::<HtmlInputElement>().unwrap().value();
+                let input = input_ref.cast::<HtmlTextAreaElement>().unwrap().value();
                 match serde_json::from_str::<serde_json::Value>(&input) {
                     Ok(_) => {
                         debug!("serde ok")
@@ -158,7 +158,7 @@ pub fn execution_stub_result_page(
         let return_type = return_type.clone();
         move |_| {
             debug!("Validating the form after first render");
-            let input = input_ref.cast::<HtmlInputElement>().unwrap().value();
+            let input = input_ref.cast::<HtmlTextAreaElement>().unwrap().value();
             if let Err(err) = validate_response(&return_type, &input) {
                 validation_err_state.set(Some(err));
             } else {
@@ -172,7 +172,7 @@ pub fn execution_stub_result_page(
         let return_type = return_type.clone();
         let input_ref = input_ref.clone();
         Some(move |_| {
-            let input = input_ref.cast::<HtmlInputElement>().unwrap().value();
+            let input = input_ref.cast::<HtmlTextAreaElement>().unwrap().value();
             if let Err(err) = validate_response(&return_type, &input) {
                 validation_err_state.set(Some(err));
             } else {
@@ -207,7 +207,7 @@ pub fn execution_stub_result_page(
             <div class="form-field">
                 <div class="form-field-row">
                     <label for="input">{"result:"}</label>
-                    <input id="input" type="text" placeholder={return_type.wit_type.clone()} ref={input_ref.clone()} {oninput}/>
+                    <textarea id="input" rows="1" placeholder={return_type.wit_type.clone()} ref={input_ref.clone()} {oninput}></textarea>
                     <span class="wit-type-toggle" onclick={{
                         let type_hint_expanded = type_hint_expanded.clone();
                         Callback::from(move |_: MouseEvent| {

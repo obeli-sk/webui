@@ -30,18 +30,27 @@
     color: $color-accent-cyan;
   }
 
-  input {
+  textarea {
     flex: 1;
     max-width: 300px;
+    min-height: 1.5em;
     background-color: $color-bg-primary;
     border: 1px solid $color-border-primary;
     color: $color-text-primary;
     padding: 5px 8px;
     border-radius: $border-radius-md;
+    font-family: $font-family-mono;
+    font-size: $font-size-sm;
+    resize: vertical;
+    line-height: 1.4;
 
     &:focus {
       outline: none;
       border-color: $color-accent-cyan;
+    }
+
+    &::placeholder {
+      color: $color-text-muted;
     }
   }
 

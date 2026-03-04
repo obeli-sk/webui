@@ -13,7 +13,7 @@ use serde_json::json;
 use std::collections::HashSet;
 use std::ops::Deref;
 use val_json::wast_val::WastValWithType;
-use web_sys::HtmlInputElement;
+use web_sys::HtmlTextAreaElement;
 use yew::prelude::*;
 use yew_router::hooks::use_navigator;
 
@@ -63,7 +63,7 @@ impl FormData {
     fn validate(&mut self, function_detail: &grpc_client::FunctionDetail) -> Result<(), String> {
         let mut is_err = false;
         for (idx, param_ref) in self.param_refs.iter().enumerate() {
-            let param_value = param_ref.cast::<HtmlInputElement>().unwrap().value();
+            let param_value = param_ref.cast::<HtmlTextAreaElement>().unwrap().value();
             debug!("oninput[{idx}] value {param_value}");
             if let Err(err) = Self::validate_param(function_detail, &param_value, idx) {
                 self.param_errs[idx] = Some(err);
@@ -141,7 +141,7 @@ pub fn execution_submit_form(
                 .iter()
                 .enumerate()
                 .map(|(idx, param_ref)| {
-                    let param_value = param_ref.cast::<HtmlInputElement>().unwrap().value();
+                    let param_value = param_ref.cast::<HtmlTextAreaElement>().unwrap().value();
                     serde_json::from_str(&param_value).map_err(|err| (idx, err))
                 })
                 .collect::<Result<Vec<_>, _>>()
@@ -244,7 +244,7 @@ pub fn execution_submit_form(
             html! {<div class="form-field">
                 <div class="form-field-row">
                     <label for={id.clone()}>{ format!("{}:", &param.name) }</label>
-                    <input id={id} type="text" placeholder={ty.wit_type.clone()} ref={&form_data_state.param_refs[idx]} oninput = {Callback::from(move |_| { on_param_change()})} />
+                    <textarea id={id} rows="1" placeholder={ty.wit_type.clone()} ref={&form_data_state.param_refs[idx]} oninput={Callback::from(move |_| { on_param_change()})}></textarea>
                     <span class="wit-type-toggle" onclick={on_toggle_type} title="Show full type">{ "ℹ" }</span>
                     if let Some(err) = form_data_state.param_errs.get(idx) {
                         <span class="validation-error">{err}</span>
