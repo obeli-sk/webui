@@ -163,7 +163,7 @@ impl TraceDataRoot {
             self.last_event_at.timestamp_micros() - self.scheduled_at.timestamp_micros(),
         )
         .to_std()
-        .expect("scheduled_at must be <= last_event_at")
+        .unwrap_or_default() // If scheduled to the future, current duration is 0
     }
 }
 
