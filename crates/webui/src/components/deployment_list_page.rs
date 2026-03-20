@@ -3,9 +3,9 @@ use crate::{
     app::{AppState, Route},
     components::notification::{Notification, NotificationContext},
     grpc::grpc_client::{
-        self, DeploymentId, DeploymentState,
+        self, DeploymentId, DeploymentStatus, DeploymentSummary,
         deployment_repository_client::DeploymentRepositoryClient,
-        list_deployment_states_request::{NewerThan, OlderThan, Pagination},
+        list_deployments_request::{NewerThan, OlderThan, Pagination},
     },
 };
 use log::{debug, error};
@@ -72,9 +72,12 @@ impl DeploymentCursor {
         DeploymentId { id: self.0 }
     }
 
-    fn from_deployment(deployment: &DeploymentState) -> Self {
+    fn from_deployment(deployment: &DeploymentSummary) -> Self {
         DeploymentCursor(
             deployment
+                .deployment
+                .as_ref()
+                .expect("`deployment` is sent by the server")
                 .deployment_id
                 .as_ref()
                 .expect("`deployment_id` is sent by the server")
@@ -136,9 +139,12 @@ pub fn deployment_list_page() -> Html {
                 };
 
                 // Send request
-                let req = grpc_client::ListDeploymentStatesRequest { pagination };
+                let req = grpc_client::ListDeploymentsRequest {
+                    pagination,
+                    include_config_json: false,
+                };
                 debug!("Fetching deployments with query: {req:?}");
-                let response = deployment_client.list_deployment_states(req).await;
+                let response = deployment_client.list_deployments(req).await;
 
                 match response {
                     Ok(resp) => response_state.set(Some(resp.into_inner())),
@@ -168,14 +174,18 @@ pub fn deployment_list_page() -> Html {
         let rows = response
             .deployments
             .iter()
-            .map(|deployment| {
+            .map(|deployment_summary| {
+                let deployment = deployment_summary
+                    .deployment
+                    .as_ref()
+                    .expect("`deployment` is sent");
                 let deployment_id = deployment
                     .deployment_id
                     .as_ref()
                     .expect("`deployment_id` is sent")
                     .id
                     .clone();
-                let current_badge = if deployment.current {
+                let current_badge = if deployment.status() == DeploymentStatus::Active {
                     html! { <span class="badge current">{"Current"}</span> }
                 } else {
                     html! {}
@@ -199,11 +209,11 @@ pub fn deployment_list_page() -> Html {
                             {" "}
                             {current_badge}
                         </td>
-                        <td class="number">{deployment.locked}</td>
-                        <td class="number">{deployment.pending}</td>
-                        <td class="number">{deployment.scheduled}</td>
-                        <td class="number">{deployment.blocked}</td>
-                        <td class="number">{deployment.finished}</td>
+                        <td class="number">{deployment_summary.locked}</td>
+                        <td class="number">{deployment_summary.pending}</td>
+                        <td class="number">{deployment_summary.scheduled}</td>
+                        <td class="number">{deployment_summary.blocked}</td>
+                        <td class="number">{deployment_summary.finished}</td>
                     </tr>
                 }
             })

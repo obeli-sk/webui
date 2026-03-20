@@ -5,3 +5,4 @@ target-sandbox
 /crates/webui/dist/
 /crates/webui/dist-dev/
 /.vscode/
+.claude/
