@@ -82,7 +82,7 @@ jobs:
           git add assets/webui-version.txt
           git commit -m "chore: Bump webui to $TAG"
           git push origin ${{ steps.branch-name.outputs.branch_name }}
-          gh pr create --repo obeli-sk/obelisk --title "chore: Bump webui" --body ""
+          gh pr create --repo obeli-sk/obelisk --head obelisk-webui-bot:${{ steps.branch-name.outputs.branch_name }} --title "chore: Bump webui" --body ""
         env:
           TAG: ${{ github.event.inputs.tag }}
           GH_TOKEN: ${{ secrets.GH_TOKEN_PR_RW }}
