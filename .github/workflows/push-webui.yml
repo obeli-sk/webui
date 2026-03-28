@@ -56,13 +56,9 @@ jobs:
       - id: obelisk-clone
         run: echo "obelisk_dir=obelisk-pr" >> $GITHUB_OUTPUT
 
-      - name: Clone fork and sync with upstream
+      - name: Clone obelisk
         run: |
-          git clone https://${{ secrets.OBELISK_WEBUI_BOT_CONTENTS }}@github.com/obeli-sk/obelisk-webui-bot.git ${{ steps.obelisk-clone.outputs.obelisk_dir }}
-          cd ${{ steps.obelisk-clone.outputs.obelisk_dir }}
-          git remote add upstream https://github.com/obeli-sk/obelisk.git
-          git fetch upstream main
-          git reset --hard upstream/main
+          git clone https://${{ secrets.WEBUI_TO_OBELISK_PR }}@github.com/obeli-sk/obelisk.git ${{ steps.obelisk-clone.outputs.obelisk_dir }}
 
       - name: Push webui
         run: |
@@ -82,8 +78,8 @@ jobs:
           git add assets/webui-version.txt
           git commit -m "chore: Bump webui to $TAG"
           git push origin ${{ steps.branch-name.outputs.branch_name }}
-          gh pr create --repo obeli-sk/obelisk --head obelisk-webui-bot:${{ steps.branch-name.outputs.branch_name }} --title "chore: Bump webui" --body ""
+          gh pr create --title "chore: Bump webui" --body ""
         env:
           TAG: ${{ github.event.inputs.tag }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN_PR_RW }}
+          GH_TOKEN: ${{ secrets.WEBUI_TO_OBELISK_PR }}
         working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
