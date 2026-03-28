@@ -7,10 +7,9 @@ impl Display for ComponentType {
         let str = match self {
             ComponentType::Unspecified => "unspecified",
             ComponentType::Workflow => "workflow",
-            ComponentType::ActivityWasm => "activity_wasm",
+            ComponentType::Activity => "activity",
             ComponentType::WebhookEndpoint => "webhook_endpoint",
             ComponentType::ActivityStub => "activity_stub",
-            ComponentType::ActivityExternal => "activity_external",
         };
         f.write_str(str)
     }
@@ -23,10 +22,9 @@ impl FromStr for ComponentType {
         match s {
             "unspecified" => Ok(ComponentType::Unspecified),
             "workflow" => Ok(ComponentType::Workflow),
-            "activity_wasm" => Ok(ComponentType::ActivityWasm),
+            "activity" => Ok(ComponentType::Activity),
             "webhook_endpoint" => Ok(ComponentType::WebhookEndpoint),
             "activity_stub" => Ok(ComponentType::ActivityStub),
-            "activity_external" => Ok(ComponentType::ActivityExternal),
             _ => Err(format!("invalid ComponentType: {}", s)),
         }
     }

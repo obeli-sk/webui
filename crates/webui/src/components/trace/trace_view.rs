@@ -748,7 +748,7 @@ fn compute_root_trace(
 
     let http_traces_button = if matches!(
         component_type,
-        Some(ComponentType::ActivityWasm | ComponentType::WebhookEndpoint)
+        Some(ComponentType::Activity | ComponentType::WebhookEndpoint)
     ) {
         let show = !http_traces_enabled;
         let onclick = Callback::from({

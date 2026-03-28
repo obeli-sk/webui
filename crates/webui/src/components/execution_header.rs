@@ -83,9 +83,7 @@ pub fn execution_header(
     let is_activity = exec_info.as_ref().is_some_and(|exec_info| {
         matches!(
             exec_info.component_type,
-            ComponentType::ActivityWasm
-                | ComponentType::ActivityExternal
-                | ComponentType::ActivityStub
+            ComponentType::Activity | ComponentType::ActivityStub
         )
     });
 

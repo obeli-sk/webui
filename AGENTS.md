@@ -155,7 +155,7 @@ All gRPC calls are made via `tonic-web-wasm-client` which works in the browser W
 - `ExecutionId` - Unique identifier for executions (format: `E_<ulid>`)
 - `ContentDigest` - Component hash (format: `sha256:<64 hex chars>`)
 - `ComponentId` - Contains `component_type`, `name`, and `digest`
-- `ComponentType` - Enum: `Workflow`, `ActivityWasm`, `WebhookEndpoint`, etc.
+- `ComponentType` - Enum: `Workflow`, `Activity`, `WebhookEndpoint`, `ActivityStub`
 
 ## Pagination Pattern
 

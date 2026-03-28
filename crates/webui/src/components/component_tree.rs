@@ -168,8 +168,7 @@ impl ComponentTree {
         };
 
         attach(ComponentType::Workflow);
-        attach(ComponentType::ActivityWasm);
-        attach(ComponentType::ActivityExternal);
+        attach(ComponentType::Activity);
         if matches!(config, ComponentTreeConfig::ComponentsOnly { .. }) {
             attach(ComponentType::WebhookEndpoint);
             attach(ComponentType::ActivityStub);
