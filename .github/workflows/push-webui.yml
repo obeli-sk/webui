@@ -82,17 +82,8 @@ jobs:
           git add assets/webui-version.txt
           git commit -m "chore: Bump webui to $TAG"
           git push origin ${{ steps.branch-name.outputs.branch_name }}
-          curl -v --fail -X POST \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            https://api.github.com/repos/obeli-sk/obelisk/pulls \
-            -d '{
-              "title": "chore: Bump webui",
-              "head": "obeli-sk/obelisk-webui-bot:'${{ steps.branch-name.outputs.branch_name }}'",
-              "base": "main",
-              "body": ""
-            }'
+          gh pr create --repo obeli-sk/obelisk --title "chore: Bump webui" --body ""
         env:
           TAG: ${{ github.event.inputs.tag }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN_PR_RW }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN_PR_RW }}
         working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
