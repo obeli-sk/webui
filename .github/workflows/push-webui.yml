@@ -88,7 +88,7 @@ jobs:
             https://api.github.com/repos/obeli-sk/obelisk/pulls \
             -d '{
               "title": "chore: Bump webui",
-              "head": "obeli-sk:'${{ steps.branch-name.outputs.branch_name }}'",
+              "head": "obeli-sk/obelisk-webui-bot:'${{ steps.branch-name.outputs.branch_name }}'",
               "base": "main",
               "body": ""
             }'
