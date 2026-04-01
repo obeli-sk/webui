@@ -2,7 +2,9 @@ use crate::{
     BASE_URL,
     app::{Route, query::BacktraceVersionsPath},
     components::{
-        code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
+        code::syntect_code_block::{
+            DEFAULT_CONTEXT_LINES, SyntectCodeBlock, highlight_code_line_by_line,
+        },
         debugger::version_slider::VersionSlider,
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
@@ -234,6 +236,9 @@ pub fn debugger_view(
 
     // 1. Toggle for hiding frame locations
     let hide_frames = use_state(|| true);
+    // Expansion state for SyntectCodeBlock instances, keyed by "{exec_id}:{file}".
+    // Persists across backtrace loading (which remounts the child component).
+    let expansion_map = use_state(HashMap::<String, (usize, usize)>::new);
     let on_toggle_frames = {
         let hide_frames = hide_frames.clone();
         Callback::from(move |_| hide_frames.set(!*hide_frames))
@@ -719,8 +724,32 @@ pub fn debugger_view(
                                             .0
                                             .get(&(component_id.clone(), file.clone()))
                                     {
+                                        let map_key = format!("{curr_exec_id}:{file}");
+                                        let (cb_lines_above, cb_lines_below) = expansion_map
+                                            .get(&map_key)
+                                            .copied()
+                                            .unwrap_or((
+                                                DEFAULT_CONTEXT_LINES,
+                                                DEFAULT_CONTEXT_LINES,
+                                            ));
+                                        let on_expand = {
+                                            let expansion_map = expansion_map.clone();
+                                            let map_key = map_key.clone();
+                                            Callback::from(move |(new_above, new_below): (usize, usize)| {
+                                                let mut next = (*expansion_map).clone();
+                                                next.insert(map_key.clone(), (new_above, new_below));
+                                                expansion_map.set(next);
+                                            })
+                                        };
                                         frame_html.push(html! {
-                                            <SyntectCodeBlock source={source.clone()} focus_line={Some(line as usize)}/>
+                                            <SyntectCodeBlock
+                                                key={map_key}
+                                                source={source.clone()}
+                                                focus_line={Some(line as usize)}
+                                                lines_above={cb_lines_above}
+                                                lines_below={cb_lines_below}
+                                                on_expand={on_expand}
+                                            />
                                         });
                                     }
                                 }

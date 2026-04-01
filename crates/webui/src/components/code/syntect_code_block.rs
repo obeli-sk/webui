@@ -6,7 +6,7 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 use yew::{prelude::*, virtual_dom::VNode};
 
-const DEFAULT_CONTEXT_LINES: usize = 3;
+pub const DEFAULT_CONTEXT_LINES: usize = 3;
 const DEFAULT_THEME: &str = "base16-ocean.dark"; // NB: Sync with build.rs
 
 pub static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
@@ -48,6 +48,12 @@ pub fn highlight_code_line_by_line(
 pub struct CodeBlockProps {
     pub source: Rc<[(Html, usize)]>,
     pub focus_line: Option<usize>,
+    /// How many lines above the focus line to show (controlled by parent).
+    pub lines_above: usize,
+    /// How many lines below the focus line to show (controlled by parent).
+    pub lines_below: usize,
+    /// Called with `(new_lines_above, new_lines_below)` when the user expands.
+    pub on_expand: Callback<(usize, usize)>,
 }
 
 enum ExpandDirection {
@@ -59,84 +65,37 @@ enum ExpandDirection {
 #[function_component(SyntectCodeBlock)]
 pub fn code_block(props: &CodeBlockProps) -> Html {
     let total_lines = props.source.len();
+    let lines_above = props.lines_above;
+    let lines_below = props.lines_below;
 
-    // State for the visible range [start_line_idx, end_line_idx) (0-based index)
-    let visible_start_idx = use_state(|| {
-        if let Some(focus_line) = props.focus_line {
-            // Calculate initial start index based on focus_line and context
-            // focus_line is 1-based, convert to 0-based index
-            let focus_idx = focus_line.saturating_sub(1);
-            focus_idx.saturating_sub(DEFAULT_CONTEXT_LINES)
-        } else {
-            0 // Show all from the beginning if no focus line
-        }
-    });
+    // Derive the visible range from focus + offsets each render.
+    let (visible_start_idx, visible_end_idx) = if let Some(focus_line) = props.focus_line {
+        let focus_idx = focus_line.saturating_sub(1);
+        let start = focus_idx.saturating_sub(lines_above);
+        let end = min(total_lines, focus_idx + lines_below + 1);
+        (start, end)
+    } else {
+        (0, total_lines)
+    };
 
-    let visible_end_idx = use_state(|| {
-        if let Some(focus_line) = props.focus_line {
-            // Calculate initial end index based on focus_line and context
-            let focus_idx = focus_line.saturating_sub(1);
-            min(total_lines, focus_idx + DEFAULT_CONTEXT_LINES + 1)
-        } else {
-            total_lines // Show all to the end if no focus line
-        }
-    });
-
-    // Clamp values on prop change if needed (e.g., source shrinks)
-    use_effect_with((total_lines, props.focus_line), {
-        let visible_start_idx = visible_start_idx.clone();
-        let visible_end_idx = visible_end_idx.clone();
-        move |(total_lines, focus_line)| {
-            let (new_start, new_end) = if let Some(focus) = focus_line {
-                let focus_idx = focus.saturating_sub(1);
-                (
-                    focus_idx.saturating_sub(DEFAULT_CONTEXT_LINES),
-                    min(*total_lines, focus_idx + DEFAULT_CONTEXT_LINES + 1),
-                )
-            } else {
-                (0, *total_lines)
-            };
-            if *visible_start_idx != new_start {
-                visible_start_idx.set(new_start);
-            }
-            if *visible_end_idx != new_end {
-                visible_end_idx.set(new_end);
-            }
-        }
-    });
+    let show_expand_above = visible_start_idx > 0;
+    let show_expand_below = visible_end_idx < total_lines;
 
     let handle_expand = {
-        let visible_start_idx = visible_start_idx.clone();
-        let visible_end_idx = visible_end_idx.clone();
+        let on_expand = props.on_expand.clone();
         Callback::from(move |direction: ExpandDirection| {
-            match direction {
-                ExpandDirection::Above => {
-                    let current_start = *visible_start_idx;
-                    // Show more lines above, e.g., double the context or a fixed step
-                    let new_start = current_start.saturating_sub(DEFAULT_CONTEXT_LINES * 2);
-                    visible_start_idx.set(new_start);
-                }
-                ExpandDirection::Below => {
-                    let current_end = *visible_end_idx;
-                    // Show more lines below
-                    let new_end = min(total_lines, current_end + DEFAULT_CONTEXT_LINES * 2);
-                    visible_end_idx.set(new_end);
-                }
-                ExpandDirection::All => {
-                    visible_start_idx.set(0);
-                    visible_end_idx.set(total_lines);
-                }
-            }
+            let (new_above, new_below) = match direction {
+                ExpandDirection::Above => (lines_above + DEFAULT_CONTEXT_LINES * 2, lines_below),
+                ExpandDirection::Below => (lines_above, lines_below + DEFAULT_CONTEXT_LINES * 2),
+                ExpandDirection::All => (total_lines, total_lines),
+            };
+            on_expand.emit((new_above, new_below));
         })
     };
 
-    let show_expand_above = *visible_start_idx > 0;
-    let show_expand_below = *visible_end_idx < total_lines;
-
-    // Slice the highlighted lines based on the visible range state
     let lines_to_render = props
         .source
-        .get(*visible_start_idx..*visible_end_idx)
+        .get(visible_start_idx..visible_end_idx)
         .unwrap_or_default();
 
     html! {
@@ -144,7 +103,7 @@ pub fn code_block(props: &CodeBlockProps) -> Html {
             { if show_expand_above {
                 html!{
                     <button class="expand-button expand-above" onclick={handle_expand.reform(move |_| ExpandDirection::Above)}>
-                        { format!("Expand {} lines above", min(*visible_start_idx, DEFAULT_CONTEXT_LINES*2)) }
+                        { format!("Expand {} lines above", min(visible_start_idx, DEFAULT_CONTEXT_LINES*2)) }
                     </button>
                 }
             } else {
@@ -184,7 +143,7 @@ pub fn code_block(props: &CodeBlockProps) -> Html {
             { if show_expand_below {
                 html!{
                     <button class="expand-button expand-below" onclick={handle_expand.reform(move |_| ExpandDirection::Below)}>
-                         { format!("Expand {} lines below", min(total_lines - *visible_end_idx, DEFAULT_CONTEXT_LINES*2)) }
+                         { format!("Expand {} lines below", min(total_lines - visible_end_idx, DEFAULT_CONTEXT_LINES*2)) }
                     </button>
                 }
             } else {
