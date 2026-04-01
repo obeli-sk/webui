@@ -608,6 +608,7 @@ pub fn debugger_view(
                 }
 
                 // Into (Only valid for Leaf)
+                let mut step_into_shown = false;
                 if is_leaf {
                     let version_child_request = if wasm_backtrace.version_max_excluding
                         - wasm_backtrace.version_min_including
@@ -635,6 +636,7 @@ pub fn debugger_view(
                                     {"Step Into"}
                                 </Link<Route>>
                             });
+                            step_into_shown = true;
                         },
                         Some(event@ExecutionEvent {
                             event: Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
@@ -651,15 +653,20 @@ pub fn debugger_view(
                                        {"Step Into"}
                                     </Link<Route>>
                                 });
+                                step_into_shown = true;
                             }
                         }
                         _ => {}
                     }
                 }
+                if !step_into_shown {
+                    step_buttons.push(html! { <span class="disabled">{"Step Into"}</span> });
+                }
             } else {
                 // If backtrace not loaded yet, placeholder buttons
                 step_buttons.push(html! { <span class="disabled">{"Step Prev"}</span> });
                 step_buttons.push(html! { <span class="disabled">{"Step Next"}</span> });
+                step_buttons.push(html! { <span class="disabled">{"Step Into"}</span> });
             }
 
             let step_buttons_content = match backtraces_state
