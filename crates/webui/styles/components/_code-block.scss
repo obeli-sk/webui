@@ -3,15 +3,14 @@
 // ============================================
 // Used by:
 //   - src/components/code/code_block.rs         (.code-block and manual syntax tokens)
-//   - src/components/code/syntect_code_block.rs (.code-block-container, .code-block,
-//                                                .line-numbers, .line-number, .code-content,
-//                                                .expand-button — see also _buttons.scss)
+//   - src/components/code/syntect_code_block.rs (.code-block-container, .code-scroll-area,
+//                                                .syntect-block, .expand-button — see also _buttons.scss)
 // Note: syntect token classes (e.g. .entity.name.label) come from the generated
 // syntect.css (build.rs) and are intentionally NOT defined here.
 // ============================================
 @use '../base/variables' as *;
 
-// Legacy code block
+// Legacy code block — code_block.rs (WIT display, wrapping allowed)
 .code-block {
   display: flex;
   overflow-x: auto;
@@ -26,7 +25,7 @@
     word-wrap: break-word;
     word-break: break-word;
 
-    // Syntax highlighting classes (may be overridden by syntect)
+    // Syntax highlighting classes
     .keyword {
       color: #0077b6;
       font-weight: bold;
@@ -54,7 +53,8 @@
   }
 }
 
-// Syntect Code Block Container
+// Syntect Code Block Container — syntect_code_block.rs
+// overflow: hidden clips children to the border-radius (expand buttons, scroll area).
 .code-block-container {
   border: 1px solid $color-border-primary;
   border-radius: $border-radius-md;
@@ -65,43 +65,45 @@
   overflow: hidden;
 }
 
-// Line Numbers
-.line-numbers {
-  flex-shrink: 0;
-  padding: 0.8em 0.8em 0.8em 1em;
-  text-align: right;
-  color: $color-text-muted;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  border-right: 1px solid $color-border-primary;
-  background-color: inherit;
-
-  .line-number {
-    display: block;
-    line-height: $line-height-base;
-  }
+// Horizontal scroll wrapper inside the container.
+// Kept as a separate element from .code-block-container so that the expand
+// buttons above/below remain full-width and are not part of the scroll area.
+.code-scroll-area {
+  overflow-x: auto;
 }
 
-// Code Content
-.code-content {
-  flex-grow: 1;
-  margin: 0;
-  padding: 0.8em;
-  overflow-x: visible;
-  white-space: pre;
-  line-height: $line-height-base;
+// Per-line table — one <tr> per source line.
+// Putting the line number and code in the same row makes misalignment
+// structurally impossible: the cells always share the same row height.
+.syntect-block {
+  border-collapse: collapse;
+  min-width: 100%; // fill at least the scroll-area width
 
-  code > span {
-    display: block;
-    min-height: 1.5em;
+  td.line-number {
+    padding: 0 0.8em 0 1em;
+    text-align: right;
+    color: $color-text-muted;
+    border-right: 1px solid $color-border-primary;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    vertical-align: top;
+    white-space: nowrap;
+    line-height: $line-height-base;
   }
 
-  // Focused Line Highlighting
-  code .line-focused {
+  td.line-code {
+    padding: 0 0.8em;
+    white-space: pre; // never wrap — long lines scroll horizontally
+    vertical-align: top;
+    line-height: $line-height-base;
+    width: 100%; // fill remaining horizontal space
+  }
+
+  // Focused line highlight
+  tr.line-focused td.line-code {
     background-color: rgba(255, 255, 0, 0.1);
-    display: block;
-    outline: 1px solid rgba(255, 255, 0, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 0, 0.2);
   }
 }

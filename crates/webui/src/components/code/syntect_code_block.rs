@@ -161,20 +161,24 @@ pub fn code_block(props: &CodeBlockProps) -> Html {
                 html!{}
             } }
 
-            <div class="code-block">
-                <div class="line-numbers">
-                    { for lines_to_render.iter().map(|(_, line_num)| html! {
-                        <span class="line-number">{ line_num }</span>
-                    }) }
-                </div>
-                <pre class="code-content"><code>
+            // Each source line occupies exactly one <tr>, keeping the line number
+            // and its code content in the same row.  This prevents any mismatch
+            // between the number column and the code column regardless of font
+            // size or zoom level.  Horizontal scrolling is handled by the
+            // .code-scroll-area wrapper so lines are never wrapped.
+            <div class="code-scroll-area">
+                <table class="syntect-block">
                     { for lines_to_render.iter().map(|(line_html, line_num)| {
                         let is_focused = props.focus_line == Some(*line_num);
-                        let line_class = classes!(is_focused.then_some("line-focused"));
-                        // Wrap each line in a div or span to apply line-specific classes like focus highlight
-                        html! { <span class={line_class}>{ line_html.clone() }</span> }
+                        let row_class = classes!(is_focused.then_some("line-focused"));
+                        html! {
+                            <tr class={row_class}>
+                                <td class="line-number" aria-hidden="true">{ *line_num }</td>
+                                <td class="line-code">{ line_html.clone() }</td>
+                            </tr>
+                        }
                     }) }
-                </code></pre>
+                </table>
             </div>
 
             { if show_expand_below {
