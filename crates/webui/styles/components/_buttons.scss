@@ -1,6 +1,11 @@
 // ============================================
 // Buttons
 // ============================================
+// Used by:
+//   - src/components/execution_actions.rs        (.action-button)
+//   - src/components/code/syntect_code_block.rs  (.expand-button)
+//   - src/components/execution_detail_page.rs    (.scroll-link)
+// ============================================
 @use '../base/variables' as *;
 
 .action-button {

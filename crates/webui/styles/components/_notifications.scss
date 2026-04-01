@@ -1,6 +1,9 @@
 // ============================================
 // Notification Toast System
 // ============================================
+// Used by:
+//   - src/components/notification.rs  (all .notification-* classes)
+// ============================================
 @use '../base/variables' as *;
 
 // Container for all notifications (fixed position)

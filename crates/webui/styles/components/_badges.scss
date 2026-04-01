@@ -1,22 +1,33 @@
 // ============================================
 // Badges & Labels
 // ============================================
+// Used by:
+//   - src/components/deployment_list_page.rs  (.badge.current inside table.deployment_list)
+//   - src/components/component_list_page.rs   (.component-type-label)
+// Note: header-scoped .badge styles live in _header.scss
+// ============================================
 @use '../base/variables' as *;
 
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: $border-radius-md;
-  font-size: $font-size-sm;
-  font-weight: bold;
+// Deployment status badge — scoped to deployment_list_page.rs
+table.deployment_list {
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: $border-radius-md;
+    font-size: $font-size-sm;
+    font-weight: bold;
 
-  &.current {
-    background-color: $color-accent-green;
-    color: $color-bg-primary;
+    &.current {
+      background-color: $color-accent-green;
+      color: $color-bg-primary;
+    }
   }
 }
 
-.label {
+// Component type indicator pill — component_list_page.rs
+// Renamed from `.label` to avoid collision with syntect tokens
+// (syntect emits e.g. `class="entity name label js"` which matched the old global `.label`)
+.component-type-label {
   background-color: $color-border-secondary;
   color: $color-text-white;
   padding: 4px 6px;

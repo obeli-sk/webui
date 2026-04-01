@@ -1,6 +1,14 @@
 // ============================================
 // Code Blocks
 // ============================================
+// Used by:
+//   - src/components/code/code_block.rs         (.code-block and manual syntax tokens)
+//   - src/components/code/syntect_code_block.rs (.code-block-container, .code-block,
+//                                                .line-numbers, .line-number, .code-content,
+//                                                .expand-button — see also _buttons.scss)
+// Note: syntect token classes (e.g. .entity.name.label) come from the generated
+// syntect.css (build.rs) and are intentionally NOT defined here.
+// ============================================
 @use '../base/variables' as *;
 
 // Legacy code block

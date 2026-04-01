@@ -1,6 +1,11 @@
 // ============================================
 // Forms & Inputs
 // ============================================
+// Used by:
+//   - src/components/execution_submit.rs           (#execution-submit-form)
+//   - src/components/execution_stub_submit_page.rs (#execution-stub-result-form)
+//   - src/components/execution_actions.rs          (.upgrade-form)
+// ============================================
 @use '../base/variables' as *;
 
 // Execution Submit Forms (shared styles)

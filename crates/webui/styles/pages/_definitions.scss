@@ -1,6 +1,9 @@
 // ============================================
 // World/Type Definitions Page
 // ============================================
+// Used by:
+//   - src/components/component_list_page.rs  (.world-definition, .types-interface, h3 .highlight)
+// ============================================
 @use '../base/variables' as *;
 
 .world-definition,

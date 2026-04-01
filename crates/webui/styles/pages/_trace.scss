@@ -1,6 +1,11 @@
 // ============================================
 // Trace View Page
 // ============================================
+// Used by:
+//   - src/components/trace/trace_view.rs       (.trace-layout-container, .trace-view, .trace-detail)
+//   - src/components/trace/execution_trace.rs  (.step-row, .step-icon, .step-name, .step-status,
+//                                               .busy-duration-line, .busy-execution-*, .indented-children)
+// ============================================
 @use '../base/variables' as *;
 
 .trace-layout-container {

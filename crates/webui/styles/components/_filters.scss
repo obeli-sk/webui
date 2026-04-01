@@ -1,6 +1,10 @@
 // ============================================
 // Filters
 // ============================================
+// Used by:
+//   - src/components/execution_list_page.rs   (.executions-filter)
+//   - src/components/deployment_list_page.rs  (.deployments-filter)
+// ============================================
 
 .executions-filter,
 .deployments-filter {

@@ -1,6 +1,9 @@
 // ============================================
 // Version Slider Component
 // ============================================
+// Used by:
+//   - src/components/debugger/version_slider.rs  (all .version-slider-* classes)
+// ============================================
 @use '../base/variables' as *;
 @use 'sass:color';
 

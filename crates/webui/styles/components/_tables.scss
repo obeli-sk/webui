@@ -1,6 +1,10 @@
 // ============================================
 // Tables
 // ============================================
+// Used by:
+//   - src/components/execution_list_page.rs   (table.execution_list)
+//   - src/components/deployment_list_page.rs  (table.deployment_list)
+// ============================================
 @use '../base/variables' as *;
 
 .table-wrapper {

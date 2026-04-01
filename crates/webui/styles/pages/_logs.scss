@@ -1,6 +1,9 @@
 // ============================================
 // Logs Page
 // ============================================
+// Used by:
+//   - src/components/execution_logs_page.rs  (.logs-options, .logs-list, .logs-controls, .log-row)
+// ============================================
 @use '../base/variables' as *;
 
 .logs-options {

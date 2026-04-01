@@ -1,6 +1,11 @@
 // ============================================
 // Timeline / Execution Log Detail
 // ============================================
+// Used by:
+//   - src/components/execution_detail_page.rs  (.timeline-container, .timeline-row,
+//                                               .timeline-content, .timeline-meta,
+//                                               .loading-details, .event-duration)
+// ============================================
 @use '../base/variables' as *;
 
 .timeline-container {

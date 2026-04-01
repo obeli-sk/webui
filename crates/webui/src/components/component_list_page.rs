@@ -175,7 +175,7 @@ pub fn component_list_page(
             html! { <>
                 <h2>
                     {&component.component_id.as_ref().expect("`component_id` is sent").name}
-                    <span class="label">
+                    <span class="component-type-label">
                         { component.as_type().as_icon().to_html() }
                         {component.as_type().to_html()}
                     </span>

@@ -1,6 +1,10 @@
 // ============================================
 // Header Components
 // ============================================
+// Used by:
+//   - src/app.rs                          (site-wide <header> with version .badge)
+//   - src/components/execution_header.rs  (.execution-header)
+// ============================================
 @use '../base/variables' as *;
 
 header {
@@ -9,7 +13,11 @@ header {
     color: $color-text-white;
   }
 
+  // Version badge in site header (app.rs).
+  // Carries display/font-weight explicitly since there is no longer a global .badge base rule.
   .badge {
+    display: inline-block;
+    font-weight: bold;
     background-color: #ffcc00;
     color: #000000;
     padding: 2px 8px;
@@ -24,7 +32,7 @@ header {
   }
 }
 
-// Execution Header
+// Execution Header — execution_header.rs
 .execution-header {
   margin-bottom: $spacing-lg;
   padding-bottom: $spacing-md;

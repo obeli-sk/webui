@@ -1,6 +1,10 @@
 // ============================================
 // Execution Actions (Replay, Upgrade, etc.)
 // ============================================
+// Used by:
+//   - src/components/execution_actions.rs  (.action-container, .action-result)
+//   - src/components/execution_header.rs   (.execution-actions)
+// ============================================
 @use '../base/variables' as *;
 
 .execution-actions {
