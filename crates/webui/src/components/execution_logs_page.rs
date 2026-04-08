@@ -242,6 +242,7 @@ fn on_state_change(execution_id: &ExecutionId, logs_state: &UseReducerHandle<Log
                     show_streams: true,
                     levels: Vec::new(),
                     stream_types: Vec::new(),
+                    show_derived: false,
                 })
                 .await;
 
