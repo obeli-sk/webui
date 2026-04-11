@@ -10,6 +10,7 @@ impl Display for ComponentType {
             ComponentType::Activity => "activity",
             ComponentType::WebhookEndpoint => "webhook_endpoint",
             ComponentType::ActivityStub => "activity_stub",
+            ComponentType::Cron => "cron",
         };
         f.write_str(str)
     }
@@ -25,6 +26,7 @@ impl FromStr for ComponentType {
             "activity" => Ok(ComponentType::Activity),
             "webhook_endpoint" => Ok(ComponentType::WebhookEndpoint),
             "activity_stub" => Ok(ComponentType::ActivityStub),
+            "cron" => Ok(ComponentType::Cron),
             _ => Err(format!("invalid ComponentType: {}", s)),
         }
     }
