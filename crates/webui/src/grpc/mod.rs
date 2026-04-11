@@ -37,6 +37,7 @@ impl yew::ToHtml for ComponentType {
             ComponentType::Activity => "Activity",
             ComponentType::ActivityStub => "Activity Stub",
             ComponentType::WebhookEndpoint => "Webhook Endpoint",
+            ComponentType::Cron => "Cron",
         }
         .to_html()
     }
@@ -50,6 +51,7 @@ impl ComponentType {
             ComponentType::Activity => Icon::CodeBlock,
             ComponentType::ActivityStub => Icon::Import,
             ComponentType::WebhookEndpoint => Icon::GlobeNetwork,
+            ComponentType::Cron => Icon::Calendar,
         }
     }
 
@@ -60,6 +62,7 @@ impl ComponentType {
             ComponentType::Activity => "Activities",
             ComponentType::WebhookEndpoint => "Webhooks",
             ComponentType::ActivityStub => "Stub Activities",
+            ComponentType::Cron => "Crons",
         }
         .to_html()
     }
