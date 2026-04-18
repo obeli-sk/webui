@@ -1,9 +1,9 @@
 cargo-edit-upgrade 0.13.9
 cargo-expand 1.0.121
 just 1.49.0
-obelisk 0.37.6
+obelisk 0.37.7
 libprotoc 34.0
-rustc 1.94.0 (4a4ef493e 2026-03-02)
+rustc 1.95.0 (59807616e 2026-04-14)
 sass 1.99.0
 wasm-opt version 126
 trunk wasm_opt = "version_126"
