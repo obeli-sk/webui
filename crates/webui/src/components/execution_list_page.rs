@@ -145,7 +145,7 @@ pub enum CursorType {
     ExecutionId,
 }
 
-#[function_component(ExecutionListPage)]
+#[component(ExecutionListPage)]
 pub fn execution_list_page() -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
@@ -350,11 +350,11 @@ pub fn execution_list_page() -> Html {
             let play = if app_state.ffqns_to_details.contains_key(&ffqn) {
                 html!{
                     <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
-                        { Icon::Play.to_html() }
+                        { Html::from(Icon::Play) }
                     </Link<Route>>
                 }
             } else {
-                ".".to_html()
+                Html::from(".")
             };
 
             let created_at: DateTime<Utc> = execution.created_at.expect("`created_at` is sent").into();
@@ -372,7 +372,7 @@ pub fn execution_list_page() -> Html {
                     <td>
                         // Execution id column
                         <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
-                            {&execution_id}
+                            {execution_id.to_string()}
                         </Link<Route>>
                         if query.show_details {
                             <div title="Deployment ID">

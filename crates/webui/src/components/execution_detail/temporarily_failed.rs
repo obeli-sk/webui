@@ -24,7 +24,7 @@ impl TemporarilyFailedEventProps {
             .insert(
                 Node::new(NodeData {
                     icon: Icon::Error,
-                    label: format!("{}. Temporarily Failed", self.version).into_html(),
+                    label: format!("{}. Temporarily Failed", self.version).into(),
                     has_caret: true,
                     is_selected: self.is_selected,
                     ..Default::default()
@@ -37,7 +37,7 @@ impl TemporarilyFailedEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Error,
-                label: self.event.reason.as_str().into_html(),
+                label: self.event.reason.as_str().into(),
                 ..Default::default()
             }),
             InsertBehavior::UnderNode(&failed_node),
@@ -49,7 +49,7 @@ impl TemporarilyFailedEventProps {
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::List,
-                    label: format!("detail: {detail}").into_html(),
+                    label: format!("detail: {detail}").into(),
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&failed_node),
@@ -66,7 +66,7 @@ impl TemporarilyFailedEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Time,
-                label: format!("Backoff Expires At: {backoff_expires_at}").into_html(),
+                label: format!("Backoff Expires At: {backoff_expires_at}").into(),
                 has_caret: false,
                 ..Default::default()
             }),
@@ -81,7 +81,7 @@ impl TemporarilyFailedEventProps {
     }
 }
 
-#[function_component(TemporarilyFailedEvent)]
+#[component(TemporarilyFailedEvent)]
 pub fn temporarily_failed_event(props: &TemporarilyFailedEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

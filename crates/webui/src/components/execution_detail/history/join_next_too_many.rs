@@ -72,7 +72,7 @@ impl HistoryJoinNextTooManyEventProps {
     }
 }
 
-#[function_component(HistoryJoinNextTooManyEvent)]
+#[component(HistoryJoinNextTooManyEvent)]
 pub fn history_join_next_too_many_event(props: &HistoryJoinNextTooManyEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

@@ -23,7 +23,7 @@ impl HistoryPersistEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::History,
-                label: format!("{}. Persist Event", self.version).into_html(),
+                label: format!("{}. Persist Event", self.version).into(),
                 is_selected: self.is_selected,
                 ..Default::default()
             }),
@@ -35,7 +35,7 @@ impl HistoryPersistEventProps {
     }
 }
 
-#[function_component(HistoryPersistEvent)]
+#[component(HistoryPersistEvent)]
 pub fn history_persist_event(props: &HistoryPersistEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

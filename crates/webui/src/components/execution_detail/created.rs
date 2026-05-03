@@ -101,7 +101,11 @@ impl ProcessedProps {
             .insert(
                 Node::new(NodeData {
                     icon: Icon::NewObject,
-                    label: format!("{}. Submitted `{}`", self.version, self.ffqn.short()).to_html(),
+                    label: Html::from(format!(
+                        "{}. Submitted `{}`",
+                        self.version,
+                        self.ffqn.short()
+                    )),
                     has_caret: true,
                     ..Default::default()
                 }),
@@ -136,7 +140,7 @@ impl ProcessedProps {
             .insert(
                 Node::new(NodeData {
                     icon: Icon::FolderClose,
-                    label: "Parameters".into_html(),
+                    label: "Parameters".into(),
                     has_caret: true,
                     ..Default::default()
                 }),
@@ -148,7 +152,7 @@ impl ProcessedProps {
                 .insert(
                     Node::new(NodeData {
                         icon: Icon::Function,
-                        label: format!("{param_name}: {param_value}").into_html(),
+                        label: format!("{param_name}: {param_value}").into(),
                         has_caret: true,
                         ..Default::default()
                     }),
@@ -233,7 +237,7 @@ impl ProcessedProps {
     }
 }
 
-#[function_component(CreatedEvent)]
+#[component(CreatedEvent)]
 pub fn created_event(props: &CreatedEventProps) -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");

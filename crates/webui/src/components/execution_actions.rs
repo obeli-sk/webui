@@ -48,7 +48,7 @@ pub struct ReplayButtonProps {
     pub execution_id: ExecutionId,
 }
 
-#[function_component(ReplayButton)]
+#[component(ReplayButton)]
 pub fn replay_button(props: &ReplayButtonProps) -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
@@ -120,7 +120,7 @@ pub struct UpgradeFormProps {
     pub current_digest: ContentDigest,
 }
 
-#[function_component(UpgradeForm)]
+#[component(UpgradeForm)]
 pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
@@ -376,7 +376,7 @@ pub struct CancelActivityButtonProps {
     pub execution_id: ExecutionId,
 }
 
-#[function_component(CancelActivityButton)]
+#[component(CancelActivityButton)]
 pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
@@ -468,7 +468,7 @@ pub struct PauseButtonProps {
     pub is_paused: bool,
 }
 
-#[function_component(PauseButton)]
+#[component(PauseButton)]
 pub fn pause_button(props: &PauseButtonProps) -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
@@ -542,7 +542,7 @@ pub struct UnpauseButtonProps {
     pub is_paused: bool,
 }
 
-#[function_component(UnpauseButton)]
+#[component(UnpauseButton)]
 pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
@@ -614,7 +614,7 @@ pub struct CancelDelayButtonProps {
     pub delay_id: grpc_client::DelayId,
 }
 
-#[function_component(CancelDelayButton)]
+#[component(CancelDelayButton)]
 pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
@@ -704,7 +704,7 @@ pub struct SubmitStubButtonProps {
 
 /// Renders a "Submit stub response" button for ActivityStub executions.
 /// Should only be rendered when the execution is an unfinished ActivityStub.
-#[function_component(SubmitStubButton)]
+#[component(SubmitStubButton)]
 pub fn submit_stub_button(props: &SubmitStubButtonProps) -> Html {
     html! {
         <div class="action-container submit-stub-action">

@@ -20,9 +20,9 @@ pub struct FinishedEventProps {
 
 fn with_version(version: Option<VersionType>, label: &'static str) -> Html {
     if let Some(version) = version {
-        format!("{version}. {label}").to_html()
+        Html::from(format!("{version}. {label}"))
     } else {
-        label.to_html()
+        Html::from(label)
     }
 }
 
@@ -103,7 +103,7 @@ pub fn attach_result_detail(
             tree.insert(
                 Node::new(NodeData {
                     icon,
-                    label: failure_kind.into_html(),
+                    label: failure_kind.into(),
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&failure_node),
@@ -114,7 +114,7 @@ pub fn attach_result_detail(
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::Error,
-                        label: reason.as_str().into_html(),
+                        label: reason.as_str().into(),
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&failure_node),
@@ -156,7 +156,7 @@ impl FinishedEventProps {
     }
 }
 
-#[function_component(FinishedEvent)]
+#[component(FinishedEvent)]
 pub fn finished_event(props: &FinishedEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

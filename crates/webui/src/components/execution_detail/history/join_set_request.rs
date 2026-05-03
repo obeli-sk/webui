@@ -194,7 +194,7 @@ impl HistoryJoinSetRequestEventProps {
                         .insert(
                             Node::new(NodeData {
                                 icon: Icon::FolderClose,
-                                label: "Parameters".into_html(),
+                                label: "Parameters".into(),
                                 has_caret: true,
                                 ..Default::default()
                             }),
@@ -206,7 +206,7 @@ impl HistoryJoinSetRequestEventProps {
                             .insert(
                                 Node::new(NodeData {
                                     icon: Icon::Function,
-                                    label: format!("{param_name}: {param_value}").into_html(),
+                                    label: format!("{param_name}: {param_value}").into(),
                                     has_caret: true,
                                     ..Default::default()
                                 }),
@@ -241,7 +241,7 @@ impl HistoryJoinSetRequestEventProps {
     }
 }
 
-#[function_component(HistoryJoinSetRequestEvent)]
+#[component(HistoryJoinSetRequestEvent)]
 pub fn history_join_set_request_event(props: &HistoryJoinSetRequestEventProps) -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");

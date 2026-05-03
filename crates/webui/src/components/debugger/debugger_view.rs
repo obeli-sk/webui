@@ -223,7 +223,7 @@ impl Reducible for BacktracesState {
     }
 }
 
-#[function_component(DebuggerView)]
+#[component(DebuggerView)]
 pub fn debugger_view(
     DebuggerViewProps {
         execution_id,
@@ -798,7 +798,7 @@ pub fn debugger_view(
         if htmls.is_empty() {
             html! { <p>{"Loading trace..."}</p> }
         } else {
-            htmls.to_html()
+            htmls.into_iter().collect::<Html>()
         }
     };
 

@@ -87,7 +87,7 @@ impl DeploymentCursor {
     }
 }
 
-#[function_component(DeploymentListPage)]
+#[component(DeploymentListPage)]
 pub fn deployment_list_page() -> Html {
     let location = use_location().expect("should be called inside a router");
     let navigator = use_navigator().expect("should be called inside a router");

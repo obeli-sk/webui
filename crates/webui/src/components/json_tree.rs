@@ -41,7 +41,7 @@ fn render_json_value(
         .insert(
             Node::new(NodeData {
                 icon,
-                label: display_label.into_html(),
+                label: display_label.into(),
                 has_caret,
                 ..Default::default()
             }),
@@ -96,7 +96,7 @@ pub fn insert_json_into_tree(
         .insert(
             Node::new(NodeData {
                 icon: Icon::Database,
-                label: "Value".into_html(),
+                label: "Value".into(),
                 has_caret: true,
                 ..Default::default()
             }),

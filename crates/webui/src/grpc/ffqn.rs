@@ -1,7 +1,5 @@
-use anyhow::bail;
-use yew::ToHtml;
-
 use crate::grpc::grpc_client;
+use anyhow::bail;
 use std::{fmt::Display, str::FromStr};
 
 use super::{grpc_client::execution_event::Created, ifc_fqn::IfcFqn};
@@ -78,11 +76,5 @@ impl From<&Created> for FunctionFqn {
                 .clone()
                 .expect("`function_name` is sent"),
         )
-    }
-}
-
-impl ToHtml for FunctionFqn {
-    fn to_html(&self) -> yew::Html {
-        self.to_string().into_html()
     }
 }

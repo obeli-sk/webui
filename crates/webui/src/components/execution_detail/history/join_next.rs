@@ -132,7 +132,7 @@ impl HistoryJoinNextEventProps {
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::Time,
-                        label: format!("Finished At: {finished_at}").into_html(),
+                        label: format!("Finished At: {finished_at}").into(),
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&child_node),
@@ -179,7 +179,7 @@ impl HistoryJoinNextEventProps {
                         } else {
                             format!("Cancelled At: {finished_at}")
                         }
-                        .into_html(),
+                        .into(),
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&delay_node),
@@ -196,7 +196,7 @@ impl HistoryJoinNextEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Lock,
-                label: format!("Closing: {}", self.event.closing).into_html(),
+                label: format!("Closing: {}", self.event.closing).into(),
                 ..Default::default()
             }),
             InsertBehavior::UnderNode(&join_next_node),
@@ -221,7 +221,7 @@ impl HistoryJoinNextEventProps {
     }
 }
 
-#[function_component(HistoryJoinNextEvent)]
+#[component(HistoryJoinNextEvent)]
 pub fn history_join_next_event(props: &HistoryJoinNextEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

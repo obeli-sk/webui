@@ -6,7 +6,7 @@ pub struct FunctionSignatureProps {
     pub params: Vec<grpc_client::FunctionParameter>,
     pub return_type: Option<grpc_client::WitType>,
 }
-#[function_component(FunctionSignature)]
+#[component(FunctionSignature)]
 pub fn function_signature(
     FunctionSignatureProps {
         params,
@@ -28,7 +28,7 @@ pub fn function_signature(
 pub struct FunctionParameterListProps {
     pub params: Vec<grpc_client::FunctionParameter>,
 }
-#[function_component(FunctionParameterList)]
+#[component(FunctionParameterList)]
 pub fn function_parameter_list(
     FunctionParameterListProps { params }: &FunctionParameterListProps,
 ) -> Html {

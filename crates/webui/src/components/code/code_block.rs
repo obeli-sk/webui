@@ -5,7 +5,7 @@ pub struct CodeBlockProps {
     pub source: Html,
 }
 
-#[function_component(CodeBlock)]
+#[component(CodeBlock)]
 pub fn code_block(CodeBlockProps { source }: &CodeBlockProps) -> Html {
     html! {
         <div class="code-block">

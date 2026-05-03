@@ -19,7 +19,7 @@ impl UnpausedEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Play,
-                label: format!("{}. Unpaused", self.version).to_html(),
+                label: Html::from(format!("{}. Unpaused", self.version)),
                 has_caret: false,
                 is_selected: self.is_selected,
                 ..Default::default()
@@ -32,7 +32,7 @@ impl UnpausedEventProps {
     }
 }
 
-#[function_component(UnpausedEvent)]
+#[component(UnpausedEvent)]
 pub fn unpaused_event(props: &UnpausedEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

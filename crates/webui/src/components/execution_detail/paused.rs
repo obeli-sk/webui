@@ -19,7 +19,7 @@ impl PausedEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Pause,
-                label: format!("{}. Paused", self.version).to_html(),
+                label: Html::from(format!("{}. Paused", self.version)),
                 has_caret: false,
                 is_selected: self.is_selected,
                 ..Default::default()
@@ -32,7 +32,7 @@ impl PausedEventProps {
     }
 }
 
-#[function_component(PausedEvent)]
+#[component(PausedEvent)]
 pub fn paused_event(props: &PausedEventProps) -> Html {
     let tree = props.construct_tree();
     html! {
