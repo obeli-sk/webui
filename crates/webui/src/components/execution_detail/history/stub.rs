@@ -52,7 +52,7 @@ impl HistoryStubEventProps {
     }
 }
 
-#[function_component(HistoryStubEvent)]
+#[component(HistoryStubEvent)]
 pub fn history_stub_event(props: &HistoryStubEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

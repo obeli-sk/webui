@@ -181,7 +181,7 @@ impl Reducible for TraceViewState {
     }
 }
 
-#[function_component(TraceView)]
+#[component(TraceView)]
 pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     let trace_view_state = use_reducer_eq(TraceViewState::default);
     let notifications =
@@ -525,7 +525,7 @@ fn compute_root_trace(
                                         None => BusyIntervalStatus::HttpTraceNotResponded,
                                     };
                                     TraceData::Child(TraceDataChild {
-                                        name: name.to_html(),
+                                        name: Html::from(name.clone()),
                                         title: name,
                                         busy: vec![BusyInterval {
                                             started_at: DateTime::from(trace.sent_at.expect("sent_at is sent")),
@@ -538,7 +538,7 @@ fn compute_root_trace(
                                                 let name = format!("Status code: {status_code}");
                                                 vec![
                                                     TraceData::Child(TraceDataChild {
-                                                        name: name.to_html(),
+                                                        name: Html::from(name.clone()),
                                                         title: name,
                                                         busy: vec![],
                                                         children: vec![],
@@ -550,7 +550,7 @@ fn compute_root_trace(
                                                 let name = format!("Failed: `{error}`");
                                                 vec![
                                                     TraceData::Child(TraceDataChild {
-                                                        name: name.to_html(),
+                                                        name: Html::from(name.clone()),
                                                         title: name,
                                                         busy: vec![],
                                                         children: vec![],

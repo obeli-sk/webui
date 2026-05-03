@@ -72,7 +72,7 @@ impl Reducible for LogsState {
     }
 }
 
-#[function_component(LogsPage)]
+#[component(LogsPage)]
 pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Html {
     let logs_state = use_reducer_eq(LogsState::default);
 
@@ -193,7 +193,7 @@ fn render_log_entry(entry: &grpc_client::list_logs_response::LogEntry, show_run_
                     <span class="time">{ format!("[{}]", time_str) }</span>
                     { run_id_html }
                     <span class={classes!("kind", log_row_class)}>{ format!("[{}]", level_str) }</span>
-                    <span class="payload">{ &log_variant.message }</span>
+                    <span class="payload">{ log_variant.message.clone() }</span>
                 </div>
             }
         }
@@ -205,7 +205,7 @@ fn render_log_entry(entry: &grpc_client::list_logs_response::LogEntry, show_run_
             };
 
             // Convert bytes to UTF-8 string (lossy to prevent crashes on binary data)
-            let payload_str = String::from_utf8_lossy(&stream_variant.payload);
+            let payload_str = String::from_utf8_lossy(&stream_variant.payload).into_owned();
 
             html! {
                 <div class="log-row">

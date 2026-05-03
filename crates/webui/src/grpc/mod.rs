@@ -1,6 +1,6 @@
 use crate::tree::Icon;
 use grpc_client::ComponentType;
-use yew::{Html, ToHtml as _};
+use yew::Html;
 
 mod component_id;
 pub mod component_type;
@@ -29,8 +29,8 @@ impl grpc_client::Component {
     }
 }
 
-impl yew::ToHtml for ComponentType {
-    fn to_html(&self) -> yew::Html {
+impl ComponentType {
+    pub fn as_label(&self) -> &'static str {
         match self {
             ComponentType::Unspecified => "Unspecified",
             ComponentType::Workflow => "Workflow",
@@ -39,11 +39,12 @@ impl yew::ToHtml for ComponentType {
             ComponentType::WebhookEndpoint => "Webhook Endpoint",
             ComponentType::Cron => "Cron",
         }
-        .to_html()
     }
-}
 
-impl ComponentType {
+    pub fn as_icon_html(&self) -> Html {
+        Html::from(self.as_icon())
+    }
+
     pub fn as_icon(&self) -> Icon {
         match self {
             ComponentType::Unspecified => Icon::Cog,
@@ -56,14 +57,13 @@ impl ComponentType {
     }
 
     pub fn as_root_label(&self) -> Html {
-        match self {
+        Html::from(match self {
             ComponentType::Unspecified => "Unspecified",
             ComponentType::Workflow => "Workflows",
             ComponentType::Activity => "Activities",
             ComponentType::WebhookEndpoint => "Webhooks",
             ComponentType::ActivityStub => "Stub Activities",
             ComponentType::Cron => "Crons",
-        }
-        .to_html()
+        })
     }
 }

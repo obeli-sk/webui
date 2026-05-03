@@ -160,7 +160,7 @@ pub struct NotificationProviderProps {
 }
 
 /// Provider component that wraps the application and provides notification context
-#[function_component(NotificationProvider)]
+#[component(NotificationProvider)]
 pub fn notification_provider(props: &NotificationProviderProps) -> Html {
     let notifications_state = use_state(Vec::<Notification>::new);
     let next_id = use_mut_ref(|| 0u32);
@@ -238,7 +238,7 @@ struct NotificationToastProps {
 }
 
 /// Component that renders the notification toasts
-#[function_component(NotificationToast)]
+#[component(NotificationToast)]
 fn notification_toast(props: &NotificationToastProps) -> Html {
     if props.notifications.is_empty() {
         return html! {};

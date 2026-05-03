@@ -30,7 +30,7 @@ pub struct ComponentListPageProps {
 
 type EffectsCallback = Box<dyn FnOnce(&Option<ComponentId>)>;
 
-#[function_component(ComponentListPage)]
+#[component(ComponentListPage)]
 pub fn component_list_page(
     ComponentListPageProps { maybe_component_id }: &ComponentListPageProps,
 ) -> Html {
@@ -164,7 +164,7 @@ pub fn component_list_page(
                 if let Some(found) = components_by_exported_ifc.get(ifc) {
                     {" "}
                     <Link<Route> to={Route::Component { component_id: found.component_id.clone().expect("`component_id` is sent") } }>
-                        { found.as_type().as_icon().to_html() }
+                        { found.as_type().as_icon_html() }
                         {" "}
                         {&found.component_id.as_ref().expect("`component_id` is sent").name}
                     </Link<Route>>
@@ -176,8 +176,8 @@ pub fn component_list_page(
                 <h2>
                     {&component.component_id.as_ref().expect("`component_id` is sent").name}
                     <span class="component-type-label">
-                        { component.as_type().as_icon().to_html() }
-                        {component.as_type().to_html()}
+                        { component.as_type().as_icon_html() }
+                        {component.as_type().as_label()}
                     </span>
                 </h2>
                 <h3>{"Exported interfaces"}</h3>

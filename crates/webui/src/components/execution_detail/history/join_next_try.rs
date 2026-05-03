@@ -79,7 +79,7 @@ impl HistoryJoinNextTryEventProps {
     }
 }
 
-#[function_component(HistoryJoinNextTryEvent)]
+#[component(HistoryJoinNextTryEvent)]
 pub fn history_join_next_try_event(props: &HistoryJoinNextTryEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

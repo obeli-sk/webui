@@ -7,7 +7,7 @@ use hashbrown::HashSet;
 use std::path::PathBuf;
 use wit_component::{Output, TypeKind, WitPrinter};
 use wit_parser::{Resolve, Type, TypeDefKind, TypeOwner, UnresolvedPackageGroup};
-use yew::{Html, ToHtml, html};
+use yew::{Html, html};
 
 pub fn print_all(
     wit: &str,
@@ -189,7 +189,7 @@ impl OutputToHtml {
 impl Output for OutputToHtml {
     fn push_str(&mut self, src: &str) {
         if self.ignore_until_end_of_line == 0 {
-            self.output.push(src.to_html());
+            self.output.push(Html::from(src));
         }
     }
 

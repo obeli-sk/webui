@@ -84,7 +84,7 @@ impl FormData {
 pub struct ExecutionSubmitFormProps {
     pub function_detail: grpc_client::FunctionDetail,
 }
-#[function_component(ExecutionSubmitForm)]
+#[component(ExecutionSubmitForm)]
 pub fn execution_submit_form(
     ExecutionSubmitFormProps {
         function_detail: fn_detail,
@@ -181,6 +181,7 @@ pub fn execution_submit_form(
                                 value: serde_json::Value::Array(params).to_string().into_bytes(),
                             }),
                             function_name: Some(grpc_client::FunctionName::from(ffqn)),
+                            paused: false,
                         })
                         .await;
                     request_processing_state.set(false); // reenable the submit button
@@ -244,10 +245,10 @@ pub fn execution_submit_form(
             html! {<div class="form-field">
                 <div class="form-field-row">
                     <label for={id.clone()}>{ format!("{}:", &param.name) }</label>
-                    <textarea id={id} rows="1" placeholder={ty.wit_type.clone()} ref={&form_data_state.param_refs[idx]} oninput={Callback::from(move |_| { on_param_change()})}></textarea>
+                    <textarea id={id} rows="1" placeholder={ty.wit_type.clone()} ref={&form_data_state.param_refs[idx]} oninput={Callback::from(move |_| { on_param_change()})} />
                     <span class="wit-type-toggle" onclick={on_toggle_type} title="Show full type">{ "ℹ" }</span>
-                    if let Some(err) = form_data_state.param_errs.get(idx) {
-                        <span class="validation-error">{err}</span>
+                    if let Some(Some(err)) = form_data_state.param_errs.get(idx) {
+                        <span class="validation-error">{err.clone()}</span>
                     }
                 </div>
                 if is_expanded {

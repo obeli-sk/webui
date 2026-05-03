@@ -1,7 +1,7 @@
 use super::grpc_client::{self, ExecutionId};
 use crate::{components::execution_header::ExecutionLink, util::color::generate_color_from_hash};
 use std::{fmt::Display, str::FromStr};
-use yew::{Html, ToHtml, html};
+use yew::{Html, html};
 
 pub const EXECUTION_ID_INFIX: &str = ".";
 
@@ -62,8 +62,7 @@ impl ExecutionId {
 
                 </>}
             })
-            .collect::<Vec<_>>()
-            .to_html()
+            .collect::<Html>()
     }
 
     pub fn color(&self) -> String {
@@ -80,12 +79,6 @@ impl ExecutionId {
 impl Display for grpc_client::ExecutionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.id)
-    }
-}
-
-impl ToHtml for grpc_client::ExecutionId {
-    fn to_html(&self) -> yew::Html {
-        html! { &self.id }
     }
 }
 

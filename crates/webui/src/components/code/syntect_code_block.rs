@@ -29,7 +29,7 @@ pub fn highlight_code_line_by_line(
             ClassedHTMLGenerator::new_with_class_style(syntax, &SYNTAX_SET, ClassStyle::Spaced);
         if let Err(_err) = highlighter.parse_html_for_line_which_includes_newline(line) {
             // Display as plain text
-            let line = line.to_html();
+            let line = Html::from(line);
             output_lines.push((line, line_num));
         } else {
             // Note: The generated HTML usually doesn't include the outer <span> or <pre> tags per line.
@@ -62,7 +62,7 @@ enum ExpandDirection {
     All,
 }
 
-#[function_component(SyntectCodeBlock)]
+#[component(SyntectCodeBlock)]
 pub fn code_block(props: &CodeBlockProps) -> Html {
     let total_lines = props.source.len();
     let lines_above = props.lines_above;

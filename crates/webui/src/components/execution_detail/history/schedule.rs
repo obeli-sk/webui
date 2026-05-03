@@ -54,7 +54,7 @@ impl HistoryScheduleEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Time,
-                label: format!("At: {scheduled_at:?}").into_html(),
+                label: format!("At: {scheduled_at:?}").into(),
                 ..Default::default()
             }),
             InsertBehavior::UnderNode(&event_type),
@@ -64,7 +64,7 @@ impl HistoryScheduleEventProps {
     }
 }
 
-#[function_component(HistoryScheduleEvent)]
+#[component(HistoryScheduleEvent)]
 pub fn history_schedule_event(props: &HistoryScheduleEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

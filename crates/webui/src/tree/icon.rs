@@ -90,7 +90,7 @@ pub struct IconProps {
     pub class: Classes,
 }
 
-#[function_component(IconView)]
+#[component(IconView)]
 pub fn icon_view(props: &IconProps) -> Html {
     let mut classes = props.class.clone();
     classes.push("tree-icon");
@@ -101,8 +101,8 @@ pub fn icon_view(props: &IconProps) -> Html {
     }
 }
 
-impl yew::ToHtml for Icon {
-    fn to_html(&self) -> Html {
-        html! { <IconView icon={*self} /> }
+impl From<Icon> for Html {
+    fn from(icon: Icon) -> Html {
+        html! { <IconView icon={icon} /> }
     }
 }

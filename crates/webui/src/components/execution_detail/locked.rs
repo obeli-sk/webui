@@ -24,7 +24,7 @@ impl LockedEventProps {
             .insert(
                 Node::new(NodeData {
                     icon: Icon::Lock,
-                    label: format!("{}. Locked", self.version).to_html(),
+                    label: Html::from(format!("{}. Locked", self.version)),
                     has_caret: true,
                     is_selected: self.is_selected,
                     ..Default::default()
@@ -125,7 +125,7 @@ impl LockedEventProps {
     }
 }
 
-#[function_component(LockedEvent)]
+#[component(LockedEvent)]
 pub fn locked_event(props: &LockedEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

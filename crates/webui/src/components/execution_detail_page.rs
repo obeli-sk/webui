@@ -145,7 +145,7 @@ struct IdMetadata {
     is_completed: bool,
 }
 
-#[function_component(ExecutionLogPage)]
+#[component(ExecutionLogPage)]
 pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogPageProps) -> Html {
     let log_state = use_reducer_eq(ExecutionLogState::default);
     let notifications =

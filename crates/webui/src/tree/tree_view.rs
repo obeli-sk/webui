@@ -22,7 +22,7 @@ pub struct TreeProps<T: Clone + PartialEq + 'static> {
 }
 
 /// A tree view component.
-#[function_component(Tree)]
+#[component(Tree)]
 pub fn tree<T: Clone + PartialEq + 'static>(props: &TreeProps<T>) -> Html {
     let tree = props.tree.borrow();
 

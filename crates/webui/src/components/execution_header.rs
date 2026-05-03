@@ -24,7 +24,7 @@ pub struct ExecutionHeaderProps {
     pub link: ExecutionLink,
 }
 
-#[function_component(ExecutionHeader)]
+#[component(ExecutionHeader)]
 pub fn execution_header(
     ExecutionHeaderProps { execution_id, link }: &ExecutionHeaderProps,
 ) -> Html {

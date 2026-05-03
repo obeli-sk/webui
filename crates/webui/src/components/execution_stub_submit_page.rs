@@ -26,7 +26,7 @@ pub struct ExecutionStubResultPageProps {
     pub ffqn: FunctionFqn,
     pub execution_id: ExecutionId,
 }
-#[function_component(ExecutionStubResultPage)]
+#[component(ExecutionStubResultPage)]
 pub fn execution_stub_result_page(
     ExecutionStubResultPageProps { ffqn, execution_id }: &ExecutionStubResultPageProps,
 ) -> Html {
@@ -197,7 +197,7 @@ pub fn execution_stub_result_page(
             <h3>
                 {"Provided by "}
                 <Link<Route> to={Route::Component { component_id: component_id.clone() } }>
-                    { component.as_type().as_icon().to_html() }
+                    { component.as_type().as_icon_html() }
                     {" "}
                     {&component.component_id.as_ref().expect("`component_id` is sent").name}
                 </Link<Route>>
@@ -207,7 +207,7 @@ pub fn execution_stub_result_page(
             <div class="form-field">
                 <div class="form-field-row">
                     <label for="input">{"result:"}</label>
-                    <textarea id="input" rows="1" placeholder={return_type.wit_type.clone()} ref={input_ref.clone()} {oninput}></textarea>
+                    <textarea id="input" rows="1" placeholder={return_type.wit_type.clone()} ref={input_ref.clone()} {oninput} />
                     <span class="wit-type-toggle" onclick={{
                         let type_hint_expanded = type_hint_expanded.clone();
                         Callback::from(move |_: MouseEvent| {

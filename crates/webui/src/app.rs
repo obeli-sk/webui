@@ -213,7 +213,7 @@ pub struct AppProps {
     pub initial_deployment_id: Option<grpc_client::DeploymentId>,
 }
 
-#[function_component(App)]
+#[component(App)]
 pub fn app(
     AppProps {
         initial_components,
@@ -231,7 +231,7 @@ pub fn app(
 }
 
 /// Inner app component that has access to NotificationContext
-#[function_component(AppInner)]
+#[component(AppInner)]
 fn app_inner(
     AppProps {
         initial_components,

@@ -1,6 +1,6 @@
 use yew::prelude::*;
 
-#[function_component(NotFound)]
+#[component(NotFound)]
 pub fn not_found() -> Html {
     html! {
         <div>

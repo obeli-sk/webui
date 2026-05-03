@@ -9,7 +9,7 @@ pub struct ExecutionStepProps {
     pub root_last_event_at: DateTime<Utc>,
 }
 
-#[function_component(ExecutionTrace)]
+#[component(ExecutionTrace)]
 pub fn execution_trace(props: &ExecutionStepProps) -> Html {
     let intervals: Vec<_> = props
         .data

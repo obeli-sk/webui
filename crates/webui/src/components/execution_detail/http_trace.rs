@@ -2,7 +2,6 @@ use crate::grpc::grpc_client;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, NodeId};
 use chrono::DateTime;
 use id_tree::Tree;
-use yew::prelude::*;
 
 pub fn attach_http_traces(
     tree: &mut Tree<NodeData<u32>>,
@@ -17,7 +16,7 @@ pub fn attach_http_traces(
         .insert(
             Node::new(NodeData {
                 icon: Icon::Exchange,
-                label: "HTTP Traces".into_html(),
+                label: "HTTP Traces".into(),
                 has_caret: true,
                 ..Default::default()
             }),
@@ -53,7 +52,7 @@ pub fn attach_http_traces(
             .insert(
                 Node::new(NodeData {
                     icon: Icon::Exchange,
-                    label: trace_node_label.into_html(),
+                    label: trace_node_label.into(),
                     has_caret: true,
                     ..Default::default()
                 }),
@@ -64,7 +63,7 @@ pub fn attach_http_traces(
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Time,
-                label: format!("Sent at: {sent_at}").into_html(),
+                label: format!("Sent at: {sent_at}").into(),
                 ..Default::default()
             }),
             InsertBehavior::UnderNode(&trace_node),
@@ -74,7 +73,7 @@ pub fn attach_http_traces(
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::Time,
-                    label: format!("Finished at: {finished_at}").into_html(),
+                    label: format!("Finished at: {finished_at}").into(),
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&trace_node),
@@ -87,7 +86,7 @@ pub fn attach_http_traces(
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::Tag,
-                        label: format!("Status: {status}").into_html(),
+                        label: format!("Status: {status}").into(),
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&trace_node),
@@ -98,7 +97,7 @@ pub fn attach_http_traces(
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::Error,
-                        label: format!("Error: {error}").into_html(),
+                        label: format!("Error: {error}").into(),
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&trace_node),

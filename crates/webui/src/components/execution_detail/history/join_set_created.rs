@@ -72,7 +72,7 @@ impl HistoryJoinSetCreatedEventProps {
     }
 }
 
-#[function_component(HistoryJoinSetCreatedEvent)]
+#[component(HistoryJoinSetCreatedEvent)]
 pub fn history_join_set_created_event(props: &HistoryJoinSetCreatedEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

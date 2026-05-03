@@ -13,7 +13,7 @@ pub struct FfqnWithLinksProps {
     #[prop_or_default]
     pub hide_find: bool,
 }
-#[function_component(FfqnWithLinks)]
+#[component(FfqnWithLinks)]
 pub fn ffqn_with_links(
     FfqnWithLinksProps {
         ffqn,
@@ -38,7 +38,7 @@ pub fn ffqn_with_links(
             }
             if !hide_submit {
                 <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
-                    { Icon::Play.to_html() }
+                    { Html::from(Icon::Play) }
                 </Link<Route>>
             } else if *fully_qualified {
                 {"."}

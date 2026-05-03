@@ -30,7 +30,7 @@ impl TemporarilyTimedOutEventProps {
             .insert(
                 Node::new(NodeData {
                     icon: Icon::Time,
-                    label: format!("{}. Temporarily Timed Out", self.version).into_html(),
+                    label: format!("{}. Temporarily Timed Out", self.version).into(),
                     has_caret: self.event.backoff_expires_at.is_some(),
                     is_selected: self.is_selected,
                     ..Default::default()
@@ -48,7 +48,7 @@ impl TemporarilyTimedOutEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Calendar,
-                label: format!("Backoff Expires At: {backoff_expires_at}").into_html(),
+                label: format!("Backoff Expires At: {backoff_expires_at}").into(),
                 has_caret: false,
                 ..Default::default()
             }),
@@ -63,7 +63,7 @@ impl TemporarilyTimedOutEventProps {
     }
 }
 
-#[function_component(TemporarilyTimedOutEvent)]
+#[component(TemporarilyTimedOutEvent)]
 pub fn temporarily_timed_out_event(props: &TemporarilyTimedOutEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

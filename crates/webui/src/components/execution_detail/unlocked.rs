@@ -23,7 +23,7 @@ impl UnlockedEventProps {
             .insert(
                 Node::new(NodeData {
                     icon: Icon::Unlock,
-                    label: format!("{}. Execution Unlocked", self.version).into_html(),
+                    label: format!("{}. Execution Unlocked", self.version).into(),
                     is_selected: self.is_selected,
                     ..Default::default()
                 }),
@@ -35,7 +35,7 @@ impl UnlockedEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Error,
-                label: self.event.reason.as_str().into_html(),
+                label: self.event.reason.as_str().into(),
                 ..Default::default()
             }),
             InsertBehavior::UnderNode(&unlocked_node_id),
@@ -46,7 +46,7 @@ impl UnlockedEventProps {
     }
 }
 
-#[function_component(UnlockedEvent)]
+#[component(UnlockedEvent)]
 pub fn unlocked_event(props: &UnlockedEventProps) -> Html {
     let tree = props.construct_tree();
     html! {

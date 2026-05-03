@@ -1,7 +1,7 @@
 use crate::{components::execution_status::status_to_string, grpc::grpc_client};
 use chrono::{DateTime, TimeDelta, Utc};
 use std::time::Duration;
-use yew::{Html, ToHtml};
+use yew::Html;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TraceData {
@@ -70,7 +70,7 @@ impl TraceData {
         } else {
             self.busy()
                 .last()
-                .map(|interval| interval.status.to_string().to_html())
+                .map(|interval| Html::from(interval.status.to_string()))
         }
     }
 }

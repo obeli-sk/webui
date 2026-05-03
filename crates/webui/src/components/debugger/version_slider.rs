@@ -14,7 +14,7 @@ pub struct VersionSliderProps {
 
 /// A horizontal slider component for selecting backtrace versions.
 /// Displays tick marks for each available version and allows drag-and-drop selection.
-#[function_component(VersionSlider)]
+#[component(VersionSlider)]
 pub fn version_slider(
     VersionSliderProps {
         backtrace_versions,

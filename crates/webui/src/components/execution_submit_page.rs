@@ -16,7 +16,7 @@ use yew_router::prelude::Link;
 pub struct ExecutionSubmitPageProps {
     pub ffqn: FunctionFqn,
 }
-#[function_component(ExecutionSubmitPage)]
+#[component(ExecutionSubmitPage)]
 pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmitPageProps) -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
@@ -73,7 +73,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                 <h3>
                     {"Provided by "}
                     <Link<Route> to={Route::Component { component_id: found.component_id.clone().expect("`component_id` is sent") } }>
-                        { found.as_type().as_icon().to_html() }
+                        { found.as_type().as_icon_html() }
                         {" "}
                         {&found.component_id.as_ref().expect("`component_id` is sent").name}
                     </Link<Route>>
