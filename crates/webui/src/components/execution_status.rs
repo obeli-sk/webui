@@ -144,15 +144,20 @@ async fn run_status_subscription(
         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
             tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
         );
-    let mut response_stream = execution_client
+    let mut response_stream = match execution_client
         .get_status(grpc_client::GetStatusRequest {
             execution_id: Some(execution_id.clone()),
             follow: true,
             send_finished_status,
         })
         .await
-        .unwrap()
-        .into_inner();
+    {
+        Ok(response) => response.into_inner(),
+        Err(err) => {
+            error!("[{connection_id}] Failed to get status for {execution_id:?}: {err:?}");
+            return;
+        }
+    };
     let mut cancel_rx = cancel_rx.fuse();
     loop {
         let next_message = futures::select! {
