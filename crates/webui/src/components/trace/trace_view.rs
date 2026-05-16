@@ -706,6 +706,7 @@ fn compute_root_trace(
                         value:
                             Some(SupportedFunctionResult {
                                 value: Some(result_detail_value),
+                                ..
                             }),
                         ..
                     }) => BusyIntervalStatus::from(result_detail_value),
@@ -830,6 +831,7 @@ fn compute_child_execution_id_to_child_execution_finished(
                                 value:
                                     Some(SupportedFunctionResult {
                                         value: Some(result_detail_value),
+                                        ..
                                     }),
                             },
                         )),

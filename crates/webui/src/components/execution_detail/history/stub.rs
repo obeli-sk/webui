@@ -31,7 +31,7 @@ impl HistoryStubEventProps {
         // Add node for Stub event
         tree.insert(
             Node::new(NodeData {
-                icon: if self.event.success {
+                icon: if matches!(self.event.result, Some(grpc_client::execution_event::history_event::stub::Result::Ok(_))) {
                     Icon::Tick
                 } else {
                     Icon::Error

@@ -29,7 +29,7 @@ impl HistoryScheduleEventProps {
         let event_type = tree
             .insert(
                 Node::new(NodeData {
-                    icon: if self.event.success {
+                    icon: if matches!(self.event.result, Some(grpc_client::execution_event::history_event::schedule::Result::Ok(_))) {
                         Icon::History
                     } else {
                         Icon::Error
