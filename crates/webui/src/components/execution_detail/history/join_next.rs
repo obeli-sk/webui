@@ -50,6 +50,7 @@ impl HistoryJoinNextEventProps {
                                 Some(SupportedFunctionResult {
                                     value:
                                         Some(grpc_client::supported_function_result::Value::Ok(_)),
+                                    ..
                                 }),
                             ..
                         },

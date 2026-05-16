@@ -34,6 +34,7 @@ impl CreatedEventProps {
             component_id: Some(component_id),
             scheduled_by,
             deployment_id: Some(deployment_id),
+            ..
         } = &self.created
         else {
             panic!("created must contain required fields - {:?}", self.created)
