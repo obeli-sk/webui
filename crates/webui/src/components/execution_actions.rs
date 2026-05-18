@@ -526,12 +526,8 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
 
                 let result = client
-                    .cancel(grpc_client::CancelRequest {
-                        request: Some(grpc_client::cancel_request::Request::Activity(
-                            grpc_client::cancel_request::CancelRequestActivity {
-                                execution_id: Some(execution_id.clone()),
-                            },
-                        )),
+                    .cancel_activity(grpc_client::CancelActivityRequest {
+                        execution_id: Some(execution_id.clone()),
                     })
                     .await;
 
@@ -545,13 +541,13 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
                             execution_id, outcome
                         );
                         let message = match outcome {
-                            grpc_client::cancel_response::CancelOutcome::Cancelled => {
+                            grpc_client::cancel_activity_response::CancelActivityOutcome::Cancelled => {
                                 "Cancel requested successfully"
                             }
-                            grpc_client::cancel_response::CancelOutcome::AlreadyFinished => {
+                            grpc_client::cancel_activity_response::CancelActivityOutcome::AlreadyFinished => {
                                 "Activity already finished"
                             }
-                            grpc_client::cancel_response::CancelOutcome::Unspecified => {
+                            grpc_client::cancel_activity_response::CancelActivityOutcome::Unspecified => {
                                 "Unknown cancel outcome"
                             }
                         };
@@ -764,12 +760,8 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
 
                 let result = client
-                    .cancel(grpc_client::CancelRequest {
-                        request: Some(grpc_client::cancel_request::Request::Delay(
-                            grpc_client::cancel_request::CancelRequestDelay {
-                                delay_id: Some(delay_id.clone()),
-                            },
-                        )),
+                    .cancel_delay(grpc_client::CancelDelayRequest {
+                        delay_id: Some(delay_id.clone()),
                     })
                     .await;
 
@@ -780,13 +772,13 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
                         let outcome = response.into_inner().outcome();
                         debug!("Cancel requested for delay {}: {:?}", delay_id, outcome);
                         let message = match outcome {
-                            grpc_client::cancel_response::CancelOutcome::Cancelled => {
+                            grpc_client::cancel_delay_response::CancelDelayOutcome::Cancelled => {
                                 "Delay cancelled successfully"
                             }
-                            grpc_client::cancel_response::CancelOutcome::AlreadyFinished => {
+                            grpc_client::cancel_delay_response::CancelDelayOutcome::AlreadyFinished => {
                                 "Delay already finished"
                             }
-                            grpc_client::cancel_response::CancelOutcome::Unspecified => {
+                            grpc_client::cancel_delay_response::CancelDelayOutcome::Unspecified => {
                                 "Unknown cancel outcome"
                             }
                         };
