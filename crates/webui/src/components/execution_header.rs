@@ -390,6 +390,14 @@ pub fn execution_header(
 
             if is_activity && !*is_finished {
                 <div class="execution-actions">
+                    <PauseButton
+                        execution_id={execution_id.clone()}
+                        is_paused={*is_paused}
+                    />
+                    <UnpauseButton
+                        execution_id={execution_id.clone()}
+                        is_paused={*is_paused}
+                    />
                     <CancelActivityButton
                         execution_id={execution_id.clone()}
                     />
