@@ -13,6 +13,7 @@ use crate::grpc::grpc_client::{
     self, CapturedWrite, ComponentType, ContentDigest, ExecutionId, ExecutionSummary,
     execution_repository_client::ExecutionRepositoryClient, execution_status,
 };
+use gloo::timers::callback::Interval;
 use log::{debug, error};
 use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
@@ -44,6 +45,10 @@ pub fn execution_header(
     let cached_replay = use_state(|| None::<grpc_client::ReplayExecutionResponse>);
     // Captured writes to show in the modal (None = modal closed)
     let modal_writes = use_state(|| None::<Vec<CapturedWrite>>);
+    // Whether replay returned Blocked — triggers polling
+    let is_blocked = use_state(|| false);
+    // Guard against overlapping poll requests
+    let poll_in_flight = use_mut_ref(|| false);
 
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
@@ -55,12 +60,14 @@ pub fn execution_header(
         let is_paused = is_paused.clone();
         let cached_replay = cached_replay.clone();
         let modal_writes = modal_writes.clone();
+        let is_blocked = is_blocked.clone();
         use_effect_with(execution_id.clone(), move |_| {
             exec_info.set(None);
             is_finished.set(false);
             is_paused.set(false);
             cached_replay.set(None);
             modal_writes.set(None);
+            is_blocked.set(false);
         });
     }
 
@@ -114,6 +121,72 @@ pub fn execution_header(
             None
         }
     });
+
+    // Poll replay every 1s while execution is blocked
+    {
+        let is_blocked = is_blocked.clone();
+        let poll_in_flight = poll_in_flight.clone();
+        let execution_id = execution_id.clone();
+        let modal_writes = modal_writes.clone();
+        let cached_replay = cached_replay.clone();
+        let notifications = notifications.clone();
+        use_effect_with(*is_blocked, move |blocked| {
+            let interval = if !blocked {
+                None
+            } else {
+                Some(Interval::new(1_000, move || {
+                    if *poll_in_flight.borrow() {
+                        return;
+                    }
+                    *poll_in_flight.borrow_mut() = true;
+
+                    let execution_id = execution_id.clone();
+                    let modal_writes = modal_writes.clone();
+                    let cached_replay = cached_replay.clone();
+                    let notifications = notifications.clone();
+                    let is_blocked = is_blocked.clone();
+                    let poll_in_flight = poll_in_flight.clone();
+
+                    spawn_local(async move {
+                        if let Some(response) = call_replay(&execution_id, &notifications).await {
+                            use grpc_client::replay_execution_response::Outcome;
+                            cached_replay.set(Some(response.clone()));
+                            match &response.outcome {
+                                Some(Outcome::Advanceable(adv))
+                                    if !adv.captured_writes.is_empty() =>
+                                {
+                                    modal_writes.set(Some(adv.captured_writes.clone()));
+                                    is_blocked.set(false);
+                                }
+                                Some(Outcome::Finished(_)) => {
+                                    notifications.push(Notification::info("Execution finished"));
+                                    modal_writes.set(None);
+                                    is_blocked.set(false);
+                                }
+                                Some(Outcome::Blocked(_)) => {
+                                    // Still blocked, continue polling
+                                }
+                                Some(Outcome::ReplayFailed(f)) => {
+                                    notifications.push(Notification::error(format!(
+                                        "Replay failed: {}",
+                                        f.error
+                                    )));
+                                    modal_writes.set(None);
+                                    is_blocked.set(false);
+                                }
+                                _ => {
+                                    // Empty advanceable or unknown — keep polling
+                                }
+                            }
+                        }
+                        *poll_in_flight.borrow_mut() = false;
+                    });
+                }))
+            };
+
+            move || drop(interval)
+        });
+    }
 
     html! {
         <div class="execution-header">
@@ -181,16 +254,19 @@ pub fn execution_header(
                 <AdvanceModal
                     execution_id={execution_id.clone()}
                     captured_writes={writes}
+                    is_blocked={*is_blocked}
                     on_advance={
                         let execution_id = execution_id.clone();
                         let modal_writes = modal_writes.clone();
                         let cached_replay = cached_replay.clone();
                         let notifications = notifications.clone();
+                        let is_blocked = is_blocked.clone();
                         Callback::from(move |writes: Vec<CapturedWrite>| {
                             let execution_id = execution_id.clone();
                             let modal_writes = modal_writes.clone();
                             let cached_replay = cached_replay.clone();
                             let notifications = notifications.clone();
+                            let is_blocked = is_blocked.clone();
                             spawn_local(async move {
                                 let mut client = ExecutionRepositoryClient::new(
                                     Client::new(BASE_URL.to_string()),
@@ -216,19 +292,31 @@ pub fn execution_header(
                                                 notifications.push(Notification::success(
                                                     "Advance succeeded",
                                                 ));
-                                                // Replay again to show next writes in the modal
+                                                // Replay again to check next state
                                                 if let Some(response) =
                                                     call_replay(&execution_id, &notifications).await
                                                 {
+                                                    use grpc_client::replay_execution_response::Outcome;
                                                     cached_replay.set(Some(response.clone()));
-                                                    if let Some(writes) =
-                                                        process_replay_response(
-                                                            &response,
-                                                            &notifications,
-                                                        )
-                                                    {
-                                                        modal_writes.set(Some(writes));
-                                                        return;
+                                                    match &response.outcome {
+                                                        Some(Outcome::Advanceable(adv))
+                                                            if !adv.captured_writes.is_empty() =>
+                                                        {
+                                                            modal_writes.set(Some(
+                                                                adv.captured_writes.clone(),
+                                                            ));
+                                                            return;
+                                                        }
+                                                        Some(Outcome::Blocked(_)) => {
+                                                            is_blocked.set(true);
+                                                            return;
+                                                        }
+                                                        _ => {
+                                                            process_replay_response(
+                                                                &response,
+                                                                &notifications,
+                                                            );
+                                                        }
                                                     }
                                                 }
                                             }
@@ -291,8 +379,10 @@ pub fn execution_header(
                     }
                     on_close={
                         let modal_writes = modal_writes.clone();
+                        let is_blocked = is_blocked.clone();
                         Callback::from(move |()| {
                             modal_writes.set(None);
+                            is_blocked.set(false);
                         })
                     }
                 />

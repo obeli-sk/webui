@@ -83,6 +83,35 @@
   flex-shrink: 0;
 }
 
+.modal-footer-left {
+  display: flex;
+  align-items: center;
+  gap: $spacing-lg;
+  margin-right: auto;
+}
+
+.modal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  font-size: $font-size-sm;
+  color: $color-text-primary;
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    cursor: pointer;
+  }
+
+  &.disabled {
+    color: $color-text-muted;
+    cursor: default;
+
+    input[type="checkbox"] {
+      cursor: default;
+    }
+  }
+}
+
 // Split panes
 .modal-pane-left {
   width: 40%;
@@ -132,6 +161,20 @@
 .captured-write-detail {
   color: $color-text-muted;
   margin-left: $spacing-sm;
+}
+
+// Blocked status (shown when execution is blocked during polling)
+.modal-blocked-status {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  p {
+    color: $color-text-secondary;
+    font-style: italic;
+    font-size: 1rem;
+  }
 }
 
 // Right pane: backtrace

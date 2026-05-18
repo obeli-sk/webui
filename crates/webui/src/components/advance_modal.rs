@@ -104,6 +104,90 @@ fn summarise_write(cw: &CapturedWrite) -> WriteSummary {
     }
 }
 
+/// Iterate all execution events within a captured write.
+fn iter_events(cw: &CapturedWrite) -> Box<dyn Iterator<Item = &grpc_client::ExecutionEvent> + '_> {
+    match &cw.write {
+        Some(captured_write::Write::Append(a)) => Box::new(a.event.iter()),
+        Some(captured_write::Write::AppendBatch(b)) => Box::new(b.events.iter()),
+        Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => Box::new(b.events.iter()),
+        _ => Box::new(std::iter::empty()),
+    }
+}
+
+/// Check whether an event is a DelayRequest.
+fn is_delay_request_event(event: &grpc_client::ExecutionEvent) -> bool {
+    matches!(
+        &event.event,
+        Some(execution_event::Event::HistoryVariant(h))
+            if matches!(&h.event, Some(history_event::Event::JoinSetRequest(jsr))
+                if matches!(&jsr.join_set_request, Some(history_event::join_set_request::JoinSetRequest::DelayRequest(_))))
+    )
+}
+
+fn has_delay_requests(writes: &[CapturedWrite]) -> bool {
+    writes
+        .iter()
+        .flat_map(iter_events)
+        .any(is_delay_request_event)
+}
+
+fn has_child_execution_requests(writes: &[CapturedWrite]) -> bool {
+    writes.iter().any(|cw| {
+        matches!(
+            &cw.write,
+            Some(captured_write::Write::AppendBatchCreateNewExecution(b)) if !b.child_requests.is_empty()
+        )
+    })
+}
+
+/// Set `paused = true` on a DelayRequest event if it is one.
+fn set_delay_paused(event: &mut grpc_client::ExecutionEvent) {
+    if let Some(execution_event::Event::HistoryVariant(h)) = &mut event.event
+        && let Some(history_event::Event::JoinSetRequest(jsr)) = &mut h.event
+        && let Some(history_event::join_set_request::JoinSetRequest::DelayRequest(dr)) =
+            &mut jsr.join_set_request
+    {
+        dr.paused = true;
+    }
+}
+
+/// Clone captured writes with pause flags applied.
+fn apply_pause_flags(
+    writes: &[CapturedWrite],
+    pause_delays: bool,
+    pause_executions: bool,
+) -> Vec<CapturedWrite> {
+    let mut writes = writes.to_vec();
+    for cw in &mut writes {
+        match &mut cw.write {
+            Some(captured_write::Write::Append(a)) => {
+                if pause_delays && let Some(event) = &mut a.event {
+                    set_delay_paused(event);
+                }
+            }
+            Some(captured_write::Write::AppendBatch(b)) if pause_delays => {
+                for event in &mut b.events {
+                    set_delay_paused(event);
+                }
+            }
+            Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => {
+                if pause_delays {
+                    for event in &mut b.events {
+                        set_delay_paused(event);
+                    }
+                }
+                if pause_executions {
+                    for req in &mut b.child_requests {
+                        req.paused = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    writes
+}
+
 /// Extract backtraces from a captured write.
 fn backtraces_of(cw: &CapturedWrite) -> &[CapturedBacktrace] {
     match &cw.write {
@@ -137,6 +221,7 @@ enum SourceState {
 pub struct AdvanceModalProps {
     pub execution_id: ExecutionId,
     pub captured_writes: Vec<CapturedWrite>,
+    pub is_blocked: bool,
     pub on_advance: Callback<Vec<CapturedWrite>>,
     pub on_close: Callback<()>,
 }
@@ -145,6 +230,11 @@ pub struct AdvanceModalProps {
 pub fn advance_modal(props: &AdvanceModalProps) -> Html {
     let selected_idx = use_state(|| 0usize);
     let advancing = use_state(|| false);
+    let pause_delays = use_state(|| false);
+    let pause_executions = use_state(|| false);
+
+    let has_delays = has_delay_requests(&props.captured_writes);
+    let has_child_execs = has_child_execution_requests(&props.captured_writes);
 
     // Reset selection and advancing state when captured_writes change (e.g. after re-replay)
     {
@@ -373,21 +463,16 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
         }
     };
 
-    // Footer: Advance + Cancel
     let on_advance = {
         let captured_writes = props.captured_writes.clone();
         let on_advance = props.on_advance.clone();
         let advancing = advancing.clone();
+        let pause_delays = pause_delays.clone();
+        let pause_executions = pause_executions.clone();
         Callback::from(move |_: MouseEvent| {
             advancing.set(true);
-            on_advance.emit(captured_writes.clone());
-        })
-    };
-
-    let on_cancel = {
-        let on_close = props.on_close.clone();
-        Callback::from(move |_: MouseEvent| {
-            on_close.emit(());
+            let writes = apply_pause_flags(&captured_writes, *pause_delays, *pause_executions);
+            on_advance.emit(writes);
         })
     };
 
@@ -409,35 +494,89 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
 
     let is_advancing = *advancing;
 
+    let on_dismiss = {
+        let on_close = props.on_close.clone();
+        Callback::from(move |_: MouseEvent| {
+            on_close.emit(());
+        })
+    };
+
     html! {
         <div class="modal-overlay" onclick={on_overlay_click}>
             <div class="modal-window">
                 <div class="modal-header">
-                    <h3>{format!("Advance Execution — {} writes", props.captured_writes.len())}</h3>
-                    <button class="modal-dismiss" onclick={on_cancel.clone()}>{"×"}</button>
-                </div>
-                <div class="modal-body">
-                    <div class="modal-pane-left">
-                        {write_list}
-                    </div>
-                    <div class="modal-pane-right">
-                        {backtrace_view}
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="action-button" onclick={on_cancel}>{"Cancel"}</button>
-                    <button
-                        class="action-button advance-button"
-                        onclick={on_advance}
-                        disabled={is_advancing}
-                    >
-                        if is_advancing {
-                            {"Advancing..."}
+                    <h3>
+                        if props.is_blocked {
+                            {"Advance Execution — Blocked"}
                         } else {
-                            {"Advance"}
+                            {format!("Advance Execution — {} writes", props.captured_writes.len())}
                         }
-                    </button>
+                    </h3>
+                    <button class="modal-dismiss" onclick={on_dismiss}>{"×"}</button>
                 </div>
+                if props.is_blocked {
+                    <div class="modal-body">
+                        <div class="modal-blocked-status">
+                            <p>{"Execution is blocked. Polling for updates..."}</p>
+                        </div>
+                    </div>
+                } else {
+                    <div class="modal-body">
+                        <div class="modal-pane-left">
+                            {write_list}
+                        </div>
+                        <div class="modal-pane-right">
+                            {backtrace_view}
+                        </div>
+                    </div>
+                }
+                if !props.is_blocked {
+                    <div class="modal-footer">
+                        <div class="modal-footer-left">
+                            <label class={classes!("modal-checkbox", (!has_delays).then_some("disabled"))}>
+                                <input
+                                    type="checkbox"
+                                    checked={*pause_delays}
+                                    disabled={!has_delays}
+                                    onchange={
+                                        let pause_delays = pause_delays.clone();
+                                        Callback::from(move |e: Event| {
+                                            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+                                            pause_delays.set(input.checked());
+                                        })
+                                    }
+                                />
+                                {" Pause delays"}
+                            </label>
+                            <label class={classes!("modal-checkbox", (!has_child_execs).then_some("disabled"))}>
+                                <input
+                                    type="checkbox"
+                                    checked={*pause_executions}
+                                    disabled={!has_child_execs}
+                                    onchange={
+                                        let pause_executions = pause_executions.clone();
+                                        Callback::from(move |e: Event| {
+                                            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+                                            pause_executions.set(input.checked());
+                                        })
+                                    }
+                                />
+                                {" Pause executions"}
+                            </label>
+                        </div>
+                        <button
+                            class="action-button advance-button"
+                            onclick={on_advance}
+                            disabled={is_advancing}
+                        >
+                            if is_advancing {
+                                {"Advancing..."}
+                            } else {
+                                {"Advance"}
+                            }
+                        </button>
+                    </div>
+                }
             </div>
         </div>
     }
