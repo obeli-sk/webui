@@ -183,17 +183,18 @@ pub fn notification_provider(props: &NotificationProviderProps) -> Html {
                 }
                 notifications_state.set(notifications);
 
-                // Second timeout: remove after animation
+                // Second timeout: remove after animation.
+                // `Timeout::forget()` so it is not cancelled when dropped.
                 let notifications_state = notifications_state.clone();
-                let _remove_timeout = Timeout::new(300, move || {
+                Timeout::new(300, move || {
                     let notifications: Vec<_> = (*notifications_state)
                         .iter()
                         .filter(|n| n.id != id)
                         .cloned()
                         .collect();
                     notifications_state.set(notifications);
-                });
-                // Note: remove_timeout is leaked intentionally - it will fire and be dropped
+                })
+                .forget();
             });
 
             timeouts_for_store.borrow_mut().push((id, timeout));
