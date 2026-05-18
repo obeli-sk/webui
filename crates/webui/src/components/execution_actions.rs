@@ -622,9 +622,9 @@ pub fn pause_button(props: &PauseButtonProps) -> Html {
                 loading_state.set(false);
 
                 match result {
-                    Ok(_) => {
-                        debug!("Pause requested for execution {}", execution_id);
-                        notifications.push(Notification::success("Pause requested successfully"));
+                    Ok(_response) => {
+                        debug!("Pause requested for execution {execution_id}");
+                        notifications.push(Notification::success("Execution paused successfully"));
                     }
                     Err(e) => {
                         error!("Failed to pause execution {}: {:?}", execution_id, e);
@@ -696,9 +696,10 @@ pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
                 loading_state.set(false);
 
                 match result {
-                    Ok(_) => {
-                        debug!("Unpause requested for execution {}", execution_id);
-                        notifications.push(Notification::success("Unpause requested successfully"));
+                    Ok(_response) => {
+                        debug!("Unpause requested for execution {execution_id}",);
+                        notifications
+                            .push(Notification::success("Execution unpaused successfully"));
                     }
                     Err(e) => {
                         error!("Failed to unpause execution {}: {:?}", execution_id, e);
@@ -806,6 +807,172 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
                     {"Cancelling..."}
                 } else {
                     {"Cancel Delay"}
+                }
+            </button>
+        </div>
+    }
+}
+
+// ============================================================================
+// Pause Delay Button
+// ============================================================================
+
+#[derive(Properties, PartialEq)]
+pub struct PauseDelayButtonProps {
+    pub delay_id: grpc_client::DelayId,
+}
+
+#[component(PauseDelayButton)]
+pub fn pause_delay_button(props: &PauseDelayButtonProps) -> Html {
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
+    let loading_state = use_state(|| false);
+
+    let onclick = {
+        let delay_id = props.delay_id.clone();
+        let notifications = notifications.clone();
+        let loading_state = loading_state.clone();
+
+        Callback::from(move |_| {
+            let delay_id = delay_id.clone();
+            let notifications = notifications.clone();
+            let loading_state = loading_state.clone();
+
+            loading_state.set(true);
+
+            spawn_local(async move {
+                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+
+                let result = client
+                    .pause_delay(grpc_client::PauseDelayRequest {
+                        delay_id: Some(delay_id.clone()),
+                    })
+                    .await;
+
+                loading_state.set(false);
+
+                match result {
+                    Ok(response) => {
+                        let outcome = response.into_inner().outcome();
+                        debug!("Pause requested for delay {}: {:?}", delay_id, outcome);
+                        let message = match outcome {
+                            grpc_client::pause_delay_response::PauseDelayOutcome::Paused => {
+                                "Delay paused successfully"
+                            }
+                            grpc_client::pause_delay_response::PauseDelayOutcome::AlreadyFinished => {
+                                "Delay already finished"
+                            }
+                            grpc_client::pause_delay_response::PauseDelayOutcome::Unspecified => {
+                                "Unknown pause outcome"
+                            }
+                        };
+                        notifications.push(Notification::success(message));
+                    }
+                    Err(e) => {
+                        error!("Failed to pause delay {}: {:?}", delay_id, e);
+                        notifications.push(Notification::error(e.message().to_string()));
+                    }
+                }
+            });
+        })
+    };
+
+    let is_loading = *loading_state;
+
+    html! {
+        <div class="action-container pause-delay-action">
+            <button
+                class="action-button pause-delay-button"
+                onclick={onclick}
+                disabled={is_loading}
+            >
+                if is_loading {
+                    {"Pausing..."}
+                } else {
+                    {"Pause Delay"}
+                }
+            </button>
+        </div>
+    }
+}
+
+// ============================================================================
+// Unpause Delay Button
+// ============================================================================
+
+#[derive(Properties, PartialEq)]
+pub struct UnpauseDelayButtonProps {
+    pub delay_id: grpc_client::DelayId,
+}
+
+#[component(UnpauseDelayButton)]
+pub fn unpause_delay_button(props: &UnpauseDelayButtonProps) -> Html {
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
+    let loading_state = use_state(|| false);
+
+    let onclick = {
+        let delay_id = props.delay_id.clone();
+        let notifications = notifications.clone();
+        let loading_state = loading_state.clone();
+
+        Callback::from(move |_| {
+            let delay_id = delay_id.clone();
+            let notifications = notifications.clone();
+            let loading_state = loading_state.clone();
+
+            loading_state.set(true);
+
+            spawn_local(async move {
+                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+
+                let result = client
+                    .unpause_delay(grpc_client::UnpauseDelayRequest {
+                        delay_id: Some(delay_id.clone()),
+                    })
+                    .await;
+
+                loading_state.set(false);
+
+                match result {
+                    Ok(response) => {
+                        let outcome = response.into_inner().outcome();
+                        debug!("Unpause requested for delay {}: {:?}", delay_id, outcome);
+                        let message = match outcome {
+                            grpc_client::unpause_delay_response::UnpauseDelayOutcome::Unpaused => {
+                                "Delay unpaused successfully"
+                            }
+                            grpc_client::unpause_delay_response::UnpauseDelayOutcome::AlreadyFinished => {
+                                "Delay already finished"
+                            }
+                            grpc_client::unpause_delay_response::UnpauseDelayOutcome::Unspecified => {
+                                "Unknown unpause outcome"
+                            }
+                        };
+                        notifications.push(Notification::success(message));
+                    }
+                    Err(e) => {
+                        error!("Failed to unpause delay {}: {:?}", delay_id, e);
+                        notifications.push(Notification::error(e.message().to_string()));
+                    }
+                }
+            });
+        })
+    };
+
+    let is_loading = *loading_state;
+
+    html! {
+        <div class="action-container unpause-delay-action">
+            <button
+                class="action-button unpause-delay-button"
+                onclick={onclick}
+                disabled={is_loading}
+            >
+                if is_loading {
+                    {"Unpausing..."}
+                } else {
+                    {"Unpause Delay"}
                 }
             </button>
         </div>

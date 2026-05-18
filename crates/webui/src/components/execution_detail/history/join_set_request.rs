@@ -1,6 +1,8 @@
 use crate::app::AppState;
 use crate::app::{Route, query::BacktraceVersionsPath};
-use crate::components::execution_actions::CancelDelayButton;
+use crate::components::execution_actions::{
+    CancelDelayButton, PauseDelayButton, UnpauseDelayButton,
+};
 use crate::components::execution_detail::tree_component::TreeComponent;
 use crate::components::execution_header::ExecutionLink;
 use crate::components::ffqn_with_links::FfqnWithLinks;
@@ -150,6 +152,28 @@ impl HistoryJoinSetRequestEventProps {
                         icon: Icon::Cross,
                         label: html! {
                             <CancelDelayButton delay_id={delay_id.clone()} />
+                        },
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&join_set_node),
+                )
+                .unwrap();
+                tree.insert(
+                    Node::new(NodeData {
+                        icon: Icon::Lock,
+                        label: html! {
+                            <PauseDelayButton delay_id={delay_id.clone()} />
+                        },
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&join_set_node),
+                )
+                .unwrap();
+                tree.insert(
+                    Node::new(NodeData {
+                        icon: Icon::Unlock,
+                        label: html! {
+                            <UnpauseDelayButton delay_id={delay_id.clone()} />
                         },
                         ..Default::default()
                     }),
