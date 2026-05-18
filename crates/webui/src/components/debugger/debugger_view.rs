@@ -236,7 +236,7 @@ pub fn debugger_view(
 
     // 1. Toggle for hiding frame locations
     let hide_frames = use_state(|| true);
-    // Expansion state for SyntectCodeBlock instances, keyed by "{exec_id}:{file}".
+    // Expansion state for SyntectCodeBlock instances, keyed by "{exec_id}:{file}:{line}".
     // Persists across backtrace loading (which remounts the child component).
     let expansion_map = use_state(HashMap::<String, (usize, usize)>::new);
     let on_toggle_frames = {
@@ -493,7 +493,6 @@ pub fn debugger_view(
     // 5. Render Backtrace Stack (Iterate ancestry from Specific -> Parent -> Grandparent)
     let backtrace_view = {
         let mut htmls = Vec::new();
-        let mut seen_positions = hashbrown::HashSet::new();
 
         for (index, (curr_exec_id, curr_path)) in ancestry.iter().enumerate() {
             let is_leaf = index == 0;
@@ -687,8 +686,12 @@ pub fn debugger_view(
                         curr_version = wasm_backtrace.version_min_including;
                     }
 
+                    let frame_count = wasm_backtrace.frames.len();
                     html! {
                         wasm_backtrace.frames.iter().enumerate().map(|(i, frame)| {
+                            // Index from the outermost (last) frame so that
+                            // the index is stable when new inner frames are added (recursion).
+                            let frame_idx = frame_count - 1 - i;
                             let mut frame_html = Vec::new();
                             if !*hide_frames {
                                     frame_html.push(html! {
@@ -716,15 +719,13 @@ pub fn debugger_view(
                                     frame_html.push(html! {<div class="symbol-info">{line}</div>});
                                 }
 
-                                if let (Some(file), Some(line)) = (&symbol.file, symbol.line) {
-                                    let new_position = seen_positions.insert((file.clone(), line));
-                                    if new_position
-                                        && let Some(SourceCodeState::Found(source)) = sources_state
+                                if let (Some(file), Some(line)) = (&symbol.file, symbol.line)
+                                    && let Some(SourceCodeState::Found(source)) = sources_state
                                             .deref()
                                             .0
                                             .get(&(component_id.clone(), file.clone()))
                                     {
-                                        let map_key = format!("{curr_exec_id}:{file}");
+                                        let map_key = format!("{curr_exec_id}:{file}:{line}:{frame_idx}");
                                         let (cb_lines_above, cb_lines_below) = expansion_map
                                             .get(&map_key)
                                             .copied()
@@ -752,7 +753,6 @@ pub fn debugger_view(
                                             />
                                         });
                                     }
-                                }
                             }
                             html! { <div class="frame-container">{frame_html}</div> }
                         }).collect::<Html>()
