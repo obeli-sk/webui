@@ -377,6 +377,49 @@ pub fn execution_header(
                             });
                         })
                     }
+                    on_unpause={
+                        let execution_id = execution_id.clone();
+                        let modal_writes = modal_writes.clone();
+                        let cached_replay = cached_replay.clone();
+                        let is_blocked = is_blocked.clone();
+                        let notifications = notifications.clone();
+                        Callback::from(move |()| {
+                            let execution_id = execution_id.clone();
+                            let modal_writes = modal_writes.clone();
+                            let cached_replay = cached_replay.clone();
+                            let is_blocked = is_blocked.clone();
+                            let notifications = notifications.clone();
+                            spawn_local(async move {
+                                let mut client = ExecutionRepositoryClient::new(
+                                    Client::new(BASE_URL.to_string()),
+                                );
+                                match client
+                                    .unpause_execution(grpc_client::UnpauseExecutionRequest {
+                                        execution_id: Some(execution_id.clone()),
+                                    })
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        debug!("Unpause requested for execution {}", execution_id);
+                                        notifications.push(Notification::success(
+                                            "Execution unpaused successfully",
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "Failed to unpause execution {}: {:?}",
+                                            execution_id, e
+                                        );
+                                        notifications
+                                            .push(Notification::error(e.message().to_string()));
+                                    }
+                                }
+                                modal_writes.set(None);
+                                cached_replay.set(None);
+                                is_blocked.set(false);
+                            });
+                        })
+                    }
                     on_close={
                         let modal_writes = modal_writes.clone();
                         let is_blocked = is_blocked.clone();

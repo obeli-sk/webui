@@ -223,6 +223,7 @@ pub struct AdvanceModalProps {
     pub captured_writes: Vec<CapturedWrite>,
     pub is_blocked: bool,
     pub on_advance: Callback<Vec<CapturedWrite>>,
+    pub on_unpause: Callback<()>,
     pub on_close: Callback<()>,
 }
 
@@ -564,6 +565,18 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                                 {" Pause executions"}
                             </label>
                         </div>
+                        <button
+                            class="action-button unpause-button"
+                            onclick={
+                                let on_unpause = props.on_unpause.clone();
+                                Callback::from(move |_: MouseEvent| {
+                                    on_unpause.emit(());
+                                })
+                            }
+                            disabled={is_advancing}
+                        >
+                            {"Unpause"}
+                        </button>
                         <button
                             class="action-button advance-button"
                             onclick={on_advance}
