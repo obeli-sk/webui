@@ -105,6 +105,8 @@ pub fn execution_submit_form(
     });
     // Tracks validation errors (shown inline)
     let validation_err_state = use_state(|| None::<String>);
+    // Tracks whether to create the execution in paused state
+    let paused_state = use_state(|| false);
     // Tracks which parameter type hints are expanded
     let expanded_type_hints = use_state(HashSet::<usize>::new);
 
@@ -132,6 +134,7 @@ pub fn execution_submit_form(
         let validation_err_state = validation_err_state.clone();
         let notifications = notifications.clone();
         let ffqn = ffqn.clone();
+        let paused_state = paused_state.clone();
         let navigator = use_navigator().unwrap();
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default(); // prevent form submission
@@ -167,6 +170,7 @@ pub fn execution_submit_form(
                 let notifications = notifications.clone();
                 let navigator = navigator.clone();
                 let request_processing_state = request_processing_state.clone();
+                let paused = *paused_state;
                 async move {
                     let mut client =
                         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
@@ -181,7 +185,7 @@ pub fn execution_submit_form(
                                 value: serde_json::Value::Array(params).to_string().into_bytes(),
                             }),
                             function_name: Some(grpc_client::FunctionName::from(ffqn)),
-                            paused: false,
+                            paused,
                         })
                         .await;
                     request_processing_state.set(false); // reenable the submit button
@@ -258,12 +262,30 @@ pub fn execution_submit_form(
         })
         .collect();
 
+    let on_paused_change = {
+        let paused_state = paused_state.clone();
+        Callback::from(move |e: Event| {
+            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+            paused_state.set(input.checked());
+        })
+    };
+
     html! {<>
         <form id="execution-submit-form" onsubmit = {on_submit }>
             {for params_html}
             if let Some(err) = validation_err_state.deref() {
                 <div class="validation-error">{err}</div>
             }
+            <div class="form-field">
+                <label>
+                    <input
+                        type="checkbox"
+                        checked={*paused_state}
+                        onchange={on_paused_change}
+                    />
+                    {" Create paused"}
+                </label>
+            </div>
             <button type="submit" disabled={*request_processing_state || validation_err_state.is_some()}>
                 {"Submit"}
             </button>
