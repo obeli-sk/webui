@@ -121,6 +121,56 @@ impl LockedEventProps {
             InsertBehavior::UnderNode(&event_type),
         )
         .unwrap();
+
+        // executor id
+        if !locked.executor_id.is_empty() {
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::IdNumber,
+                    label: html! { {format!("Executor ID: {}", locked.executor_id)} },
+                    has_caret: false,
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&event_type),
+            )
+            .unwrap();
+        }
+
+        // retry config
+        if let Some(retry_config) = &locked.retry_config {
+            let retry_node = tree
+                .insert(
+                    Node::new(NodeData {
+                        icon: Icon::History,
+                        label: "Retry Config".into(),
+                        has_caret: true,
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&event_type),
+                )
+                .unwrap();
+            if let Some(max_retries) = retry_config.max_retries {
+                tree.insert(
+                    Node::new(NodeData {
+                        label: format!("Max Retries: {max_retries}").into(),
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&retry_node),
+                )
+                .unwrap();
+            }
+            if let Some(backoff) = &retry_config.retry_exp_backoff {
+                tree.insert(
+                    Node::new(NodeData {
+                        label: format!("Exp Backoff: {}s", backoff.seconds).into(),
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&retry_node),
+                )
+                .unwrap();
+            }
+        }
+
         TreeData::from(tree)
     }
 }

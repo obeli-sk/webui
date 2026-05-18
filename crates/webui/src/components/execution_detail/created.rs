@@ -65,6 +65,9 @@ impl CreatedEventProps {
             scheduled_at,
             ffqn,
             scheduled_by,
+            parent_execution_id: self.created.parent_execution_id.clone(),
+            parent_join_set_id: self.created.parent_join_set_id.clone(),
+            metadata: self.created.metadata.clone(),
             component_id: component_id.clone(),
             deployment_id: deployment_id.clone(),
             version: self.version,
@@ -80,6 +83,9 @@ struct ProcessedProps {
     scheduled_at: DateTime<Utc>,
     ffqn: FunctionFqn,
     scheduled_by: Option<ExecutionId>,
+    parent_execution_id: Option<ExecutionId>,
+    parent_join_set_id: Option<grpc_client::JoinSetId>,
+    metadata: std::collections::HashMap<String, String>,
     component_id: ComponentId,
     deployment_id: DeploymentId,
     version: VersionType,
@@ -233,6 +239,59 @@ impl ProcessedProps {
                 InsertBehavior::UnderNode(&event_type),
             )
             .unwrap();
+        }
+        // parent execution
+        if let Some(parent_id) = self.parent_execution_id {
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::Flows,
+                    label: html! { <>
+                        {"Parent: "}
+                        { self.link.link(parent_id.clone(), &parent_id.to_string()) }
+                    </>},
+                    has_caret: false,
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&event_type),
+            )
+            .unwrap();
+        }
+        // parent join set
+        if let Some(parent_js_id) = self.parent_join_set_id {
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::Flows,
+                    label: html! { { format!("Parent Join Set: {parent_js_id}") } },
+                    has_caret: false,
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&event_type),
+            )
+            .unwrap();
+        }
+        // metadata
+        if !self.metadata.is_empty() {
+            let meta_node = tree
+                .insert(
+                    Node::new(NodeData {
+                        icon: Icon::FolderClose,
+                        label: "Metadata".into(),
+                        has_caret: true,
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&event_type),
+                )
+                .unwrap();
+            for (key, value) in &self.metadata {
+                tree.insert(
+                    Node::new(NodeData {
+                        label: format!("{key}: {value}").into(),
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&meta_node),
+                )
+                .unwrap();
+            }
         }
         TreeData::from(tree)
     }

@@ -60,6 +60,30 @@ impl HistoryScheduleEventProps {
             InsertBehavior::UnderNode(&event_type),
         )
         .unwrap();
+
+        // Error detail
+        if let Some(grpc_client::execution_event::history_event::schedule::Result::Error(err)) =
+            &self.event.result
+        {
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::Error,
+                    label: format!(
+                        "Error: {:?}{}",
+                        err.kind(),
+                        err.detail
+                            .as_deref()
+                            .map(|d| format!(" - {d}"))
+                            .unwrap_or_default()
+                    )
+                    .into(),
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&event_type),
+            )
+            .unwrap();
+        }
+
         TreeData::from(tree)
     }
 }

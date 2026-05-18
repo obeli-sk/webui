@@ -28,29 +28,64 @@ impl HistoryStubEventProps {
             .clone()
             .expect("`execution_id` is sent by the server");
 
-        // Add node for Stub event
-        tree.insert(
-            Node::new(NodeData {
-                icon: if matches!(
-                    self.event.result,
-                    Some(grpc_client::execution_event::history_event::stub::Result::Ok(_))
-                ) {
-                    Icon::Tick
-                } else {
-                    Icon::Error
-                },
-                label: html! {<>
-                    { self.version }
-                    {". Stubbed execution "}
-                    { self.link.link(stubbed_execution_id.clone(), &stubbed_execution_id.id) }
-                </>},
-                is_selected: self.is_selected,
-                ..Default::default()
-            }),
-            InsertBehavior::UnderNode(&root_id),
-        )
-        .unwrap();
-        // Not showing the data
+        let is_ok = matches!(
+            self.event.result,
+            Some(grpc_client::execution_event::history_event::stub::Result::Ok(_))
+        );
+
+        let stub_node = tree
+            .insert(
+                Node::new(NodeData {
+                    icon: if is_ok { Icon::Tick } else { Icon::Error },
+                    label: html! {<>
+                        { self.version }
+                        {". Stubbed execution "}
+                        { self.link.link(stubbed_execution_id.clone(), &stubbed_execution_id.id) }
+                    </>},
+                    has_caret: true,
+                    is_selected: self.is_selected,
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&root_id),
+            )
+            .unwrap();
+
+        // retval_hash
+        if !self.event.retval_hash.is_empty() {
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::IdNumber,
+                    label: format!("Return Value Hash: {}", self.event.retval_hash).into(),
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&stub_node),
+            )
+            .unwrap();
+        }
+
+        // Error detail
+        if let Some(grpc_client::execution_event::history_event::stub::Result::Error(err)) =
+            &self.event.result
+        {
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::Error,
+                    label: format!(
+                        "Error: {:?}{}",
+                        err.kind(),
+                        err.detail
+                            .as_deref()
+                            .map(|d| format!(" - {d}"))
+                            .unwrap_or_default()
+                    )
+                    .into(),
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&stub_node),
+            )
+            .unwrap();
+        }
+
         TreeData::from(tree)
     }
 }

@@ -193,6 +193,20 @@ impl HistoryJoinNextEventProps {
             }
         }
 
+        // Function name
+        if let Some(function) = &self.event.function {
+            let ffqn = crate::grpc::ffqn::FunctionFqn::from(function.clone());
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::Function,
+                    label: format!("Function: {}", ffqn.short()).into(),
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&join_next_node),
+            )
+            .unwrap();
+        }
+
         // Add closing status
         tree.insert(
             Node::new(NodeData {

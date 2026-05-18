@@ -102,6 +102,49 @@ impl HistoryJoinSetRequestEventProps {
                     InsertBehavior::UnderNode(&join_set_node),
                 )
                 .unwrap();
+                // Paused flag
+                if delay_req.paused {
+                    tree.insert(
+                        Node::new(NodeData {
+                            icon: Icon::Lock,
+                            label: "Paused".into(),
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&join_set_node),
+                    )
+                    .unwrap();
+                }
+                // Scheduled at variant
+                if let Some(scheduled_at) = &delay_req.scheduled_at {
+                    use grpc_client::execution_event::history_event::join_set_request::delay_request::scheduled_at::Variant;
+                    let label = match &scheduled_at.variant {
+                        Some(Variant::Now(_)) => "Scheduled At: Now".to_string(),
+                        Some(Variant::At(at)) => {
+                            let ts = at.at.map(DateTime::from);
+                            format!(
+                                "Scheduled At: {}",
+                                ts.map(|t| t.to_string()).unwrap_or_default()
+                            )
+                        }
+                        Some(Variant::In(dur)) => {
+                            let d = dur.r#in.as_ref();
+                            format!(
+                                "Scheduled In: {}s",
+                                d.map(|d| d.seconds).unwrap_or_default()
+                            )
+                        }
+                        None => "Scheduled At: (unknown)".to_string(),
+                    };
+                    tree.insert(
+                        Node::new(NodeData {
+                            icon: Icon::Time,
+                            label: label.into(),
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&join_set_node),
+                    )
+                    .unwrap();
+                }
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::Cross,
@@ -177,6 +220,29 @@ impl HistoryJoinSetRequestEventProps {
                         InsertBehavior::UnderNode(&join_set_node),
                     )
                     .unwrap();
+
+                // Error detail
+                if let Some(join_set_request::child_execution_request::Result::Error(err)) =
+                    &child_req.result
+                {
+                    tree.insert(
+                        Node::new(NodeData {
+                            icon: Icon::Error,
+                            label: format!(
+                                "Error: {:?}{}",
+                                err.kind(),
+                                err.detail
+                                    .as_deref()
+                                    .map(|d| format!(" - {d}"))
+                                    .unwrap_or_default()
+                            )
+                            .into(),
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&child_node),
+                    )
+                    .unwrap();
+                }
 
                 if let Some((ffqn, params)) = &child_info {
                     tree.insert(
