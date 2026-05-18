@@ -1,13 +1,21 @@
+use crate::BASE_URL;
 use crate::app::Route;
+use crate::components::advance_modal::AdvanceModal;
 use crate::components::execution_actions::{
-    CancelActivityButton, PauseButton, ReplayButton, SubmitStubButton, UnpauseButton, UpgradeForm,
+    AdvanceButton, CancelActivityButton, PauseButton, ReplayButton, SubmitStubButton,
+    UnpauseButton, UpgradeForm, call_replay, process_replay_response,
 };
 use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::{ExecutionStatus, FinishedStatusMode};
+use crate::components::notification::{Notification, NotificationContext};
 use crate::grpc::ffqn::FunctionFqn;
 use crate::grpc::grpc_client::{
-    ComponentType, ContentDigest, ExecutionId, ExecutionSummary, execution_status,
+    self, CapturedWrite, ComponentType, ContentDigest, ExecutionId, ExecutionSummary,
+    execution_repository_client::ExecutionRepositoryClient, execution_status,
 };
+use log::{debug, error};
+use tonic_web_wasm_client::Client;
+use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
@@ -32,15 +40,27 @@ pub fn execution_header(
     let is_finished = use_state(|| false);
     let is_paused = use_state(|| false);
 
+    // Cached replay response for the Advance button
+    let cached_replay = use_state(|| None::<grpc_client::ReplayExecutionResponse>);
+    // Captured writes to show in the modal (None = modal closed)
+    let modal_writes = use_state(|| None::<Vec<CapturedWrite>>);
+
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
+
     // Reset state when execution_id changes to prevent stale buttons
     {
         let exec_info = exec_info.clone();
         let is_finished = is_finished.clone();
         let is_paused = is_paused.clone();
+        let cached_replay = cached_replay.clone();
+        let modal_writes = modal_writes.clone();
         use_effect_with(execution_id.clone(), move |_| {
             exec_info.set(None);
             is_finished.set(false);
             is_paused.set(false);
+            cached_replay.set(None);
+            modal_writes.set(None);
         });
     }
 
@@ -104,7 +124,7 @@ pub fn execution_header(
                     { ExecutionLink::Trace.link(execution_id.clone(), "Trace") }
                     { ExecutionLink::ExecutionLog.link(execution_id.clone(), "Execution Log") }
                     { ExecutionLink::Debug.link(execution_id.clone(), "Debugger") }
-                    { ExecutionLink::Logs.link(execution_id.clone(), "Logs") }
+                    { ExecutionLink::Logs.link(execution_id.clone(), "App Logs") }
                     <Link<Route, ExecutionQuery>
                         to={Route::ExecutionList}
                         query={ExecutionQuery { execution_id_prefix: Some(execution_id.to_string()), show_derived: true, ..Default::default() }}
@@ -134,8 +154,148 @@ pub fn execution_header(
                     }
                     <ReplayButton
                         execution_id={execution_id.clone()}
+                        on_replay_response={
+                            let cached_replay = cached_replay.clone();
+                            Callback::from(move |resp: grpc_client::ReplayExecutionResponse| {
+                                cached_replay.set(Some(resp));
+                            })
+                        }
                     />
+                    if !*is_finished && *is_paused {
+                        <AdvanceButton
+                            execution_id={execution_id.clone()}
+                            cached_replay_response={(*cached_replay).clone()}
+                            on_open_modal={
+                                let modal_writes = modal_writes.clone();
+                                Callback::from(move |writes: Vec<CapturedWrite>| {
+                                    modal_writes.set(Some(writes));
+                                })
+                            }
+                        />
+                    }
                 </div>
+            }
+
+            // Advance modal
+            if let Some(writes) = (*modal_writes).clone() {
+                <AdvanceModal
+                    execution_id={execution_id.clone()}
+                    captured_writes={writes}
+                    on_advance={
+                        let execution_id = execution_id.clone();
+                        let modal_writes = modal_writes.clone();
+                        let cached_replay = cached_replay.clone();
+                        let notifications = notifications.clone();
+                        Callback::from(move |writes: Vec<CapturedWrite>| {
+                            let execution_id = execution_id.clone();
+                            let modal_writes = modal_writes.clone();
+                            let cached_replay = cached_replay.clone();
+                            let notifications = notifications.clone();
+                            spawn_local(async move {
+                                let mut client = ExecutionRepositoryClient::new(
+                                    Client::new(BASE_URL.to_string()),
+                                );
+                                let result = client
+                                    .advance_execution(grpc_client::AdvanceExecutionRequest {
+                                        execution_id: Some(execution_id.clone()),
+                                        captured_writes: writes,
+                                    })
+                                    .await;
+                                match result {
+                                    Ok(resp) => {
+                                        use grpc_client::advance_execution_response;
+                                        let inner = resp.into_inner();
+                                        match inner.result {
+                                            Some(advance_execution_response::Result::Success(
+                                                _,
+                                            )) => {
+                                                debug!(
+                                                    "Advance succeeded for {}",
+                                                    execution_id
+                                                );
+                                                notifications.push(Notification::success(
+                                                    "Advance succeeded",
+                                                ));
+                                                // Replay again to show next writes in the modal
+                                                if let Some(response) =
+                                                    call_replay(&execution_id, &notifications).await
+                                                {
+                                                    cached_replay.set(Some(response.clone()));
+                                                    if let Some(writes) =
+                                                        process_replay_response(
+                                                            &response,
+                                                            &notifications,
+                                                        )
+                                                    {
+                                                        modal_writes.set(Some(writes));
+                                                        return;
+                                                    }
+                                                }
+                                            }
+                                            Some(advance_execution_response::Result::Error(
+                                                e,
+                                            )) => {
+                                                let msg = match e.error {
+                                                    Some(
+                                                        advance_execution_response::error::Error::NoWrites(
+                                                            _,
+                                                        ),
+                                                    ) => "No writes to advance".to_string(),
+                                                    Some(
+                                                        advance_execution_response::error::Error::ReplayError(
+                                                            re,
+                                                        ),
+                                                    ) => {
+                                                        format!("Replay error: {}", re.message)
+                                                    }
+                                                    Some(
+                                                        advance_execution_response::error::Error::VersionMismatch(
+                                                            vm,
+                                                        ),
+                                                    ) => format!(
+                                                        "Version mismatch (expected {})",
+                                                        vm.expected
+                                                    ),
+                                                    Some(
+                                                        advance_execution_response::error::Error::ReplayMismatch(
+                                                            _,
+                                                        ),
+                                                    ) => "Replay mismatch".to_string(),
+                                                    None => "Unknown advance error".to_string(),
+                                                };
+                                                notifications
+                                                    .push(Notification::error(msg));
+                                            }
+                                            None => {
+                                                notifications.push(Notification::error(
+                                                    "Empty advance response",
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "Advance RPC failed for {}: {:?}",
+                                            execution_id, e
+                                        );
+                                        notifications.push(Notification::error(
+                                            e.message().to_string(),
+                                        ));
+                                    }
+                                }
+                                // Close modal and invalidate cache
+                                modal_writes.set(None);
+                                cached_replay.set(None);
+                            });
+                        })
+                    }
+                    on_close={
+                        let modal_writes = modal_writes.clone();
+                        Callback::from(move |()| {
+                            modal_writes.set(None);
+                        })
+                    }
+                />
             }
 
             if is_activity && !*is_finished {

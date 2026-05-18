@@ -1,3 +1,4 @@
+pub mod advance_modal;
 pub mod code;
 pub mod component_list_page;
 pub mod component_tree;

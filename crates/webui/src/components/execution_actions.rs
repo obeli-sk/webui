@@ -46,6 +46,68 @@ fn validate_digest(input: &str) -> Result<(), String> {
 #[derive(Properties, PartialEq)]
 pub struct ReplayButtonProps {
     pub execution_id: ExecutionId,
+    /// Called with the captured writes when replay returns Advanceable with non-empty writes.
+    #[prop_or_default]
+    pub on_replay_response: Option<Callback<grpc_client::ReplayExecutionResponse>>,
+}
+
+/// Calls ReplayExecution and returns the response, or None on RPC error.
+pub async fn call_replay(
+    execution_id: &ExecutionId,
+    notifications: &NotificationContext,
+) -> Option<grpc_client::ReplayExecutionResponse> {
+    let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+    match client
+        .replay_execution(grpc_client::ReplayExecutionRequest {
+            execution_id: Some(execution_id.clone()),
+        })
+        .await
+    {
+        Ok(resp) => Some(resp.into_inner()),
+        Err(e) => {
+            error!("Failed to replay execution {}: {:?}", execution_id, e);
+            notifications.push(Notification::error(e.message().to_string()));
+            None
+        }
+    }
+}
+
+/// Processes a ReplayExecutionResponse: shows notifications for non-advanceable outcomes,
+/// returns the captured_writes for Advanceable, or None.
+pub fn process_replay_response(
+    response: &grpc_client::ReplayExecutionResponse,
+    notifications: &NotificationContext,
+) -> Option<Vec<grpc_client::CapturedWrite>> {
+    use grpc_client::replay_execution_response::Outcome;
+    match &response.outcome {
+        Some(Outcome::Advanceable(adv)) => {
+            if adv.captured_writes.is_empty() {
+                notifications.push(Notification::info("Replay OK, no pending writes"));
+                None
+            } else {
+                Some(adv.captured_writes.clone())
+            }
+        }
+        Some(Outcome::Finished(_)) => {
+            notifications.push(Notification::info("Replay OK, finished execution"));
+            None
+        }
+        Some(Outcome::Blocked(_)) => {
+            notifications.push(Notification::info("Replay OK, execution is blocked"));
+            None
+        }
+        Some(Outcome::ReplayFailed(failed)) => {
+            notifications.push(Notification::error(format!(
+                "Replay failed: {}",
+                failed.error
+            )));
+            None
+        }
+        None => {
+            notifications.push(Notification::error("Empty replay response"));
+            None
+        }
+    }
 }
 
 #[component(ReplayButton)]
@@ -58,35 +120,28 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
         let execution_id = props.execution_id.clone();
         let notifications = notifications.clone();
         let loading_state = loading_state.clone();
+        let on_replay_response = props.on_replay_response.clone();
 
         Callback::from(move |_| {
             let execution_id = execution_id.clone();
             let notifications = notifications.clone();
             let loading_state = loading_state.clone();
+            let on_replay_response = on_replay_response.clone();
 
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
-
-                let result = client
-                    .replay_execution(grpc_client::ReplayExecutionRequest {
-                        execution_id: Some(execution_id.clone()),
-                    })
-                    .await;
-
-                loading_state.set(false);
-
-                match result {
-                    Ok(_) => {
-                        debug!("Replay requested for execution {}", execution_id);
-                        notifications.push(Notification::success("Replay finished successfully"));
+                if let Some(response) = call_replay(&execution_id, &notifications).await {
+                    if let Some(cb) = &on_replay_response {
+                        cb.emit(response.clone());
                     }
-                    Err(e) => {
-                        error!("Failed to replay execution {}: {:?}", execution_id, e);
-                        notifications.push(Notification::error(e.message().to_string()));
+                    let writes = process_replay_response(&response, &notifications);
+                    if writes.is_some() {
+                        notifications
+                            .push(Notification::success("Replay: advanceable writes ready"));
                     }
                 }
+                loading_state.set(false);
             });
         })
     };
@@ -104,6 +159,79 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
                     {"Replaying..."}
                 } else {
                     {"Replay"}
+                }
+            </button>
+        </div>
+    }
+}
+
+// ============================================================================
+// Advance Execution Button
+// ============================================================================
+
+#[derive(Properties, PartialEq)]
+pub struct AdvanceButtonProps {
+    pub execution_id: ExecutionId,
+    /// Cached replay response from a previous Replay click.
+    pub cached_replay_response: Option<grpc_client::ReplayExecutionResponse>,
+    /// Called to open the advance modal with captured writes.
+    pub on_open_modal: Callback<Vec<grpc_client::CapturedWrite>>,
+}
+
+#[component(AdvanceButton)]
+pub fn advance_button(props: &AdvanceButtonProps) -> Html {
+    let notifications =
+        use_context::<NotificationContext>().expect("NotificationContext should be provided");
+    let loading_state = use_state(|| false);
+
+    let onclick = {
+        let execution_id = props.execution_id.clone();
+        let cached = props.cached_replay_response.clone();
+        let on_open_modal = props.on_open_modal.clone();
+        let notifications = notifications.clone();
+        let loading_state = loading_state.clone();
+
+        Callback::from(move |_| {
+            let execution_id = execution_id.clone();
+            let cached = cached.clone();
+            let on_open_modal = on_open_modal.clone();
+            let notifications = notifications.clone();
+            let loading_state = loading_state.clone();
+
+            // Try cached response first
+            if let Some(ref response) = cached
+                && let Some(writes) = process_replay_response(response, &notifications)
+            {
+                on_open_modal.emit(writes);
+                return;
+            }
+
+            // No cache or cache was not advanceable — call replay
+            loading_state.set(true);
+            spawn_local(async move {
+                if let Some(response) = call_replay(&execution_id, &notifications).await
+                    && let Some(writes) = process_replay_response(&response, &notifications)
+                {
+                    on_open_modal.emit(writes);
+                }
+                loading_state.set(false);
+            });
+        })
+    };
+
+    let is_loading = *loading_state;
+
+    html! {
+        <div class="action-container advance-action">
+            <button
+                class="action-button advance-button"
+                onclick={onclick}
+                disabled={is_loading}
+            >
+                if is_loading {
+                    {"Loading..."}
+                } else {
+                    {"Advance"}
                 }
             </button>
         </div>
