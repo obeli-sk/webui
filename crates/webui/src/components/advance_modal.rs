@@ -5,19 +5,25 @@
 
 use crate::{
     BASE_URL,
-    components::code::syntect_code_block::{
-        DEFAULT_CONTEXT_LINES, SyntectCodeBlock, highlight_code_line_by_line,
+    components::{
+        code::syntect_code_block::{
+            DEFAULT_CONTEXT_LINES, SyntectCodeBlock, highlight_code_line_by_line,
+        },
+        execution_detail::{
+            finished::attach_result_detail, tree_component::TreeComponent, utils::event_to_detail,
+        },
+        execution_header::ExecutionLink,
+        ffqn_with_links::FfqnWithLinks,
+        json_tree::{JsonValue, insert_json_into_tree},
     },
-    components::execution_detail::tree_component::TreeComponent,
-    components::execution_detail::utils::event_to_detail,
-    components::execution_header::ExecutionLink,
-    components::ffqn_with_links::FfqnWithLinks,
-    components::json_tree::{JsonValue, insert_json_into_tree},
-    grpc::ffqn::FunctionFqn,
-    grpc::grpc_client::{
-        self, CapturedBacktrace, CapturedWrite, ComponentId, CreateExecutionRequest, ExecutionId,
-        GetBacktraceSourceRequest, JoinSetResponseEvent, captured_write, execution_event,
-        execution_event::history_event, execution_repository_client::ExecutionRepositoryClient,
+    grpc::{
+        ffqn::FunctionFqn,
+        grpc_client::{
+            self, CapturedBacktrace, CapturedWrite, ComponentId, CreateExecutionRequest,
+            ExecutionId, GetBacktraceSourceRequest, JoinSetResponseEvent, captured_write,
+            execution_event::{self, history_event},
+            execution_repository_client::ExecutionRepositoryClient,
+        },
     },
     tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData},
 };
@@ -100,9 +106,28 @@ fn summarise_write(
                 detail: fn_name.map(|n| format!("`{n}`")).unwrap_or_default(),
             }
         }
-        Some(captured_write::Write::AppendFinished(_)) => WriteSummary {
-            kind: "Finished",
-            detail: String::new(),
+        Some(captured_write::Write::AppendFinished(captured_write::AppendFinished {
+            event,
+            ..
+        })) => WriteSummary {
+            kind: "AppendFinished",
+            detail: match event
+                .as_ref()
+                .unwrap()
+                .value
+                .as_ref()
+                .unwrap()
+                .value
+                .as_ref()
+                .expect("`value` is sent in `execution_event::Finished` message")
+            {
+                grpc_client::supported_function_result::Value::Ok(_) => "OK",
+                grpc_client::supported_function_result::Value::Error(_) => "Error",
+                grpc_client::supported_function_result::Value::ExecutionFailure(_) => {
+                    "Execution Failure"
+                }
+            }
+            .to_string(),
         },
         None => unreachable!("write is always sent for CapturedWrite"),
     }
@@ -329,6 +354,18 @@ fn stub_response_tree(
     TreeData::from(tree)
 }
 
+/// Build a tree displaying the finished result value.
+fn finished_tree(finished: &execution_event::Finished) -> TreeData<u32> {
+    let mut tree = TreeBuilder::new().build();
+    let root_id = tree
+        .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
+        .unwrap();
+    if let Some(result) = &finished.value {
+        attach_result_detail(&mut tree, &root_id, result, None, false);
+    }
+    TreeData::from(tree)
+}
+
 /// Extract backtraces from a captured write.
 fn backtraces_of(cw: &CapturedWrite) -> &[CapturedBacktrace] {
     match &cw.write {
@@ -508,11 +545,14 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                 })
             };
             let events: Vec<_> = iter_events(cw).cloned().collect();
-            let is_stub_response = matches!(
+            let has_write_metadata = matches!(
                 &cw.write,
-                Some(captured_write::Write::AppendStubResponse(_))
+                Some(
+                    captured_write::Write::AppendStubResponse(_)
+                        | captured_write::Write::AppendFinished(_)
+                )
             );
-            let is_expandable = !events.is_empty() || is_stub_response;
+            let is_expandable = !events.is_empty() || has_write_metadata;
             let on_toggle_expand = {
                 let expanded_writes = expanded_writes.clone();
                 Callback::from(move |e: MouseEvent| {
@@ -528,8 +568,8 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
             };
             let event_details = if is_expanded {
                 let execution_id = &props.execution_id;
-                let stub_tree =
-                    if let Some(captured_write::Write::AppendStubResponse(stub)) = &cw.write {
+                let write_tree = match &cw.write {
+                    Some(captured_write::Write::AppendStubResponse(stub)) => {
                         let tree = stub_response_tree(
                             stub,
                             &child_created,
@@ -537,12 +577,20 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                             ExecutionLink::ExecutionLog,
                         );
                         html! { <TreeComponent {tree} /> }
-                    } else {
-                        html! {}
-                    };
+                    }
+                    Some(captured_write::Write::AppendFinished(f)) => {
+                        if let Some(finished) = &f.event {
+                            let tree = finished_tree(finished);
+                            html! { <TreeComponent {tree} /> }
+                        } else {
+                            html! {}
+                        }
+                    }
+                    _ => html! {},
+                };
                 html! {
                     <div class="captured-write-events">
-                        {stub_tree}
+                        {write_tree}
                         { for events.iter().map(|event| {
                             event_to_detail(
                                 execution_id,
