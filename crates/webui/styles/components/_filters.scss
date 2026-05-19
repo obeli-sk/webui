@@ -5,6 +5,7 @@
 //   - src/components/execution_list_page.rs   (.executions-filter)
 //   - src/components/deployment_list_page.rs  (.deployments-filter)
 // ============================================
+@use '../base/variables' as *;
 
 .executions-filter,
 .deployments-filter {
@@ -25,8 +26,118 @@
   .inputs > * {
     margin-right: 1em;
   }
+
+  .function-prefix-trigger {
+    min-width: 22rem;
+    cursor: pointer;
+  }
 }
 
 .deployments-filter > * {
   margin-right: 1em;
+}
+
+.function-prefix-modal-window {
+  width: min(92vw, 1100px);
+  height: min(78vh, 760px);
+}
+
+.function-prefix-modal-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: $spacing-lg;
+  min-height: 0;
+  padding: $spacing-lg;
+}
+
+.function-prefix-modal-manual {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+
+  label {
+    color: $color-accent-cyan;
+    font-size: $font-size-sm;
+    font-weight: 600;
+  }
+
+  input {
+    width: 100%;
+    padding: 0.7rem 0.85rem;
+    background-color: $color-bg-primary;
+    border: 1px solid $color-border-primary;
+    border-radius: $border-radius-md;
+    color: $color-text-light;
+    font-family: $font-family-mono;
+    font-size: $font-size-sm;
+
+    &:focus {
+      outline: none;
+      border-color: $color-accent-cyan;
+    }
+  }
+}
+
+.function-prefix-modal-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: $spacing-md;
+  min-height: 0;
+}
+
+.function-prefix-modal-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: $color-bg-tertiary;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  overflow: hidden;
+}
+
+.function-prefix-modal-column-title {
+  padding: $spacing-md;
+  border-bottom: 1px solid $color-border-primary;
+  color: $color-accent-cyan;
+  font-size: $font-size-sm;
+  font-weight: 600;
+}
+
+.function-prefix-modal-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  padding: $spacing-xs;
+}
+
+.function-prefix-option {
+  width: 100%;
+  padding: $spacing-sm $spacing-md;
+  background-color: transparent;
+  border: 0;
+  border-radius: $border-radius-sm;
+  color: $color-text-primary;
+  cursor: pointer;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  text-align: left;
+  transition: background-color $transition-fast, color $transition-fast;
+
+  &:hover {
+    background-color: $color-bg-hover;
+  }
+
+  &.selected {
+    background-color: rgba($color-accent-cyan, 0.16);
+    color: $color-accent-cyan;
+  }
+}
+
+@media (max-width: 900px) {
+  .function-prefix-modal-columns {
+    grid-template-columns: 1fr;
+  }
 }

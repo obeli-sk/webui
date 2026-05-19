@@ -18,6 +18,7 @@ pub mod version;
 
 pub const NAMESPACE_OBELISK: &str = "obelisk"; // TODO: unify with concepts
 pub const SUFFIX_PKG_EXT: &str = "-obelisk-ext"; // TODO: unify with concepts
+pub const SUFFIX_PKG_SCHEDULE: &str = "-obelisk-schedule"; // TODO: unify with concepts
 pub const SUFFIX_PKG_STUB: &str = "-obelisk-stub"; // TODO: unify with concepts
 
 impl grpc_client::Component {

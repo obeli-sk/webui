@@ -3,7 +3,6 @@ use crate::{
     BASE_URL,
     app::{AppState, Route},
     components::{
-        component_tree::{ComponentTree, ComponentTreeConfig},
         execution_status::{ExecutionStatus, StatusCacheContext, StatusState},
         notification::{Notification, NotificationContext},
     },
@@ -18,10 +17,12 @@ use crate::{
     util::time::{TimeGranularity, human_formatted_timedelta, relative_time},
 };
 use chrono::{DateTime, Utc};
+use hashbrown::{HashMap, HashSet};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::{ops::Deref, str::FromStr};
+use std::{collections::BTreeMap, ops::Deref, str::FromStr};
 use tonic_web_wasm_client::Client;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
@@ -145,6 +146,389 @@ pub enum CursorType {
     ExecutionId,
 }
 
+fn grpc_execution_function_filter(
+    value: String,
+) -> grpc_client::list_executions_request::ExecutionFunctionFilter {
+    let scope = if value
+        .rsplit_once('.')
+        .is_some_and(|(left, _)| left.contains('/'))
+    {
+        grpc_client::list_executions_request::execution_function_filter::Scope::FunctionName(value)
+    } else if value.contains('/') {
+        grpc_client::list_executions_request::execution_function_filter::Scope::InterfaceName(value)
+    } else {
+        grpc_client::list_executions_request::execution_function_filter::Scope::PackageName(value)
+    };
+
+    grpc_client::list_executions_request::ExecutionFunctionFilter { scope: Some(scope) }
+}
+
+#[derive(Clone, PartialEq)]
+struct FunctionPrefixPickerData {
+    packages: Vec<String>,
+    interfaces_by_package: BTreeMap<String, Vec<String>>,
+    functions_by_interface: BTreeMap<String, Vec<String>>,
+}
+
+fn build_function_prefix_picker_data(app_state: &AppState) -> FunctionPrefixPickerData {
+    let mut packages = HashSet::new();
+    let mut interfaces_by_package: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut functions_by_interface: HashMap<String, HashSet<String>> = HashMap::new();
+
+    for ffqn in app_state.ffqns_to_details.keys() {
+        if ffqn.ifc_fqn.pkg_fqn.is_extension() {
+            continue;
+        }
+
+        let package = ffqn.ifc_fqn.pkg_fqn.to_string();
+        let interface = ffqn.ifc_fqn.to_string();
+        let function = ffqn.to_string();
+
+        packages.insert(package.clone());
+        interfaces_by_package
+            .entry(package)
+            .or_default()
+            .insert(interface.clone());
+        functions_by_interface
+            .entry(interface)
+            .or_default()
+            .insert(function);
+    }
+
+    let mut packages = packages.into_iter().collect::<Vec<_>>();
+    packages.sort();
+
+    let interfaces_by_package = interfaces_by_package
+        .into_iter()
+        .map(|(package, interfaces)| {
+            let mut interfaces = interfaces.into_iter().collect::<Vec<_>>();
+            interfaces.sort();
+            (package, interfaces)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let functions_by_interface = functions_by_interface
+        .into_iter()
+        .map(|(interface, functions)| {
+            let mut functions = functions.into_iter().collect::<Vec<_>>();
+            functions.sort();
+            (interface, functions)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    FunctionPrefixPickerData {
+        packages,
+        interfaces_by_package,
+        functions_by_interface,
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct FunctionPrefixInputProps {
+    pub value: String,
+    pub on_apply: Callback<Option<String>>,
+}
+
+#[function_component(FunctionPrefixInput)]
+fn function_prefix_input(props: &FunctionPrefixInputProps) -> Html {
+    let app_state =
+        use_context::<AppState>().expect("AppState context is set when starting the App");
+    let picker_data = build_function_prefix_picker_data(&app_state);
+
+    let is_modal_open = use_state(|| false);
+    let draft_value = use_state(|| props.value.clone());
+    let selected_package = use_state(|| None::<String>);
+    let selected_interface = use_state(|| None::<String>);
+
+    {
+        let draft_value = draft_value.clone();
+        let selected_package = selected_package.clone();
+        let selected_interface = selected_interface.clone();
+        let value = props.value.clone();
+        let picker_data = picker_data.clone();
+        use_effect_with(props.value.clone(), move |_| {
+            draft_value.set(value.clone());
+
+            let package_match = picker_data
+                .packages
+                .iter()
+                .find(|package| *package == &value)
+                .cloned();
+            let interface_match =
+                picker_data
+                    .interfaces_by_package
+                    .iter()
+                    .find_map(|(package, interfaces)| {
+                        interfaces
+                            .iter()
+                            .find(|interface| *interface == &value)
+                            .map(|interface| (package.clone(), interface.clone()))
+                    });
+            let function_match =
+                picker_data
+                    .functions_by_interface
+                    .iter()
+                    .find_map(|(interface, functions)| {
+                        functions
+                            .iter()
+                            .find(|function| *function == &value)
+                            .map(|_| interface.clone())
+                    });
+
+            if let Some(package) = package_match {
+                selected_package.set(Some(package));
+                selected_interface.set(None);
+            } else if let Some((package, interface)) = interface_match {
+                selected_package.set(Some(package));
+                selected_interface.set(Some(interface));
+            } else if let Some(interface) = function_match {
+                let package =
+                    picker_data
+                        .interfaces_by_package
+                        .iter()
+                        .find_map(|(package, interfaces)| {
+                            interfaces
+                                .iter()
+                                .find(|candidate| *candidate == &interface)
+                                .map(|_| package.clone())
+                        });
+                selected_package.set(package);
+                selected_interface.set(Some(interface));
+            } else {
+                selected_package.set(None);
+                selected_interface.set(None);
+            }
+
+            || ()
+        });
+    }
+
+    let open_modal_on_focus = {
+        let is_modal_open = is_modal_open.clone();
+        Callback::from(move |_: FocusEvent| is_modal_open.set(true))
+    };
+    let open_modal_on_click = {
+        let is_modal_open = is_modal_open.clone();
+        Callback::from(move |_: MouseEvent| is_modal_open.set(true))
+    };
+    let close_modal = {
+        let is_modal_open = is_modal_open.clone();
+        Callback::from(move |_| is_modal_open.set(false))
+    };
+    let close_modal_on_click = {
+        let close_modal = close_modal.clone();
+        Callback::from(move |_: MouseEvent| close_modal.emit(()))
+    };
+    let on_draft_input = {
+        let draft_value = draft_value.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            draft_value.set(input.value());
+        })
+    };
+    let on_clear = {
+        let draft_value = draft_value.clone();
+        let selected_package = selected_package.clone();
+        let selected_interface = selected_interface.clone();
+        let on_apply = props.on_apply.clone();
+        let is_modal_open = is_modal_open.clone();
+        Callback::from(move |_| {
+            draft_value.set(String::new());
+            selected_package.set(None);
+            selected_interface.set(None);
+            on_apply.emit(None);
+            is_modal_open.set(false);
+        })
+    };
+    let on_apply = {
+        let draft_value = draft_value.clone();
+        let on_apply = props.on_apply.clone();
+        let is_modal_open = is_modal_open.clone();
+        Callback::from(move |_| {
+            let value = (*draft_value).clone();
+            on_apply.emit((!value.is_empty()).then_some(value));
+            is_modal_open.set(false);
+        })
+    };
+
+    {
+        let close_modal = close_modal.clone();
+        let is_modal_open = *is_modal_open;
+        use_effect_with(is_modal_open, move |is_open| {
+            let listener = if *is_open {
+                let closure = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(
+                    move |e: web_sys::KeyboardEvent| {
+                        if e.key() == "Escape" {
+                            close_modal.emit(());
+                        }
+                    },
+                );
+                let window = web_sys::window().expect("window should exist");
+                window
+                    .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
+                    .expect("failed to add keydown listener");
+                Some((window, closure))
+            } else {
+                None
+            };
+
+            move || {
+                if let Some((window, closure)) = listener {
+                    window
+                        .remove_event_listener_with_callback(
+                            "keydown",
+                            closure.as_ref().unchecked_ref(),
+                        )
+                        .expect("failed to remove keydown listener");
+                }
+            }
+        });
+    }
+    let selected_package_value = (*selected_package).clone();
+    let selected_interface_value = (*selected_interface).clone();
+    let interfaces = selected_package_value
+        .as_ref()
+        .and_then(|package| picker_data.interfaces_by_package.get(package))
+        .cloned()
+        .unwrap_or_default();
+    let functions = selected_interface_value
+        .as_ref()
+        .and_then(|interface| picker_data.functions_by_interface.get(interface))
+        .cloned()
+        .unwrap_or_default();
+
+    html! {
+        <>
+            <input
+                type="text"
+                class="function-prefix-trigger"
+                placeholder="Package, Interface, or Function..."
+                readonly=true
+                value={props.value.clone()}
+                onfocus={open_modal_on_focus}
+                onclick={open_modal_on_click}
+            />
+
+            if *is_modal_open {
+                <div class="modal-overlay" onclick={close_modal_on_click.clone()}>
+                    <div
+                        class="modal-window function-prefix-modal-window"
+                        onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}
+                    >
+                        <div class="modal-header">
+                            <h3>{"Function Filter"}</h3>
+                            <button class="modal-dismiss" type="button" onclick={close_modal_on_click}>
+                                {"×"}
+                            </button>
+                        </div>
+
+                        <div class="function-prefix-modal-body">
+                            <div class="function-prefix-modal-manual">
+                                <label for="function-prefix-manual">{"Manual filter"}</label>
+                                <input
+                                    id="function-prefix-manual"
+                                    type="text"
+                                    value={(*draft_value).clone()}
+                                    oninput={on_draft_input}
+                                    placeholder="namespace:package[@version], namespace:package/interface[@version], or namespace:package/interface[@version].function"
+                                />
+                            </div>
+
+                            <div class="function-prefix-modal-columns">
+                                <div class="function-prefix-modal-column">
+                                    <div class="function-prefix-modal-column-title">{"Packages"}</div>
+                                    <div class="function-prefix-modal-list">
+                                        {for picker_data.packages.iter().map(|package| {
+                                            let package_value = package.clone();
+                                            let selected_package = selected_package.clone();
+                                            let selected_interface = selected_interface.clone();
+                                            let draft_value = draft_value.clone();
+                                            let is_selected = selected_package_value.as_ref() == Some(package)
+                                                && selected_interface_value.is_none()
+                                                && *draft_value == *package;
+                                            let onclick = Callback::from(move |_| {
+                                                selected_package.set(Some(package_value.clone()));
+                                                selected_interface.set(None);
+                                                draft_value.set(package_value.clone());
+                                            });
+                                            html! {
+                                                <button
+                                                    type="button"
+                                                    class={classes!("function-prefix-option", is_selected.then_some("selected"))}
+                                                    {onclick}
+                                                >
+                                                    {package}
+                                                </button>
+                                            }
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div class="function-prefix-modal-column">
+                                    <div class="function-prefix-modal-column-title">{"Interfaces"}</div>
+                                    <div class="function-prefix-modal-list">
+                                        {for interfaces.iter().map(|interface| {
+                                            let interface_value = interface.clone();
+                                            let selected_interface = selected_interface.clone();
+                                            let draft_value = draft_value.clone();
+                                            let is_selected = selected_interface_value.as_ref() == Some(interface)
+                                                && *draft_value == *interface;
+                                            let onclick = Callback::from(move |_| {
+                                                selected_interface.set(Some(interface_value.clone()));
+                                                draft_value.set(interface_value.clone());
+                                            });
+                                            html! {
+                                                <button
+                                                    type="button"
+                                                    class={classes!("function-prefix-option", is_selected.then_some("selected"))}
+                                                    {onclick}
+                                                >
+                                                    {interface}
+                                                </button>
+                                            }
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div class="function-prefix-modal-column">
+                                    <div class="function-prefix-modal-column-title">{"Functions"}</div>
+                                    <div class="function-prefix-modal-list">
+                                        {for functions.iter().map(|function| {
+                                            let function_value = function.clone();
+                                            let draft_value = draft_value.clone();
+                                            let function_name = FunctionFqn::from_str(function)
+                                                .map(|ffqn| ffqn.function_name)
+                                                .unwrap_or_else(|_| function.clone());
+                                            let is_selected = *draft_value == *function;
+                                            let onclick = Callback::from(move |_| {
+                                                draft_value.set(function_value.clone());
+                                            });
+                                            html! {
+                                                <button
+                                                    type="button"
+                                                    class={classes!("function-prefix-option", is_selected.then_some("selected"))}
+                                                    {onclick}
+                                                >
+                                                    {function_name}
+                                                </button>
+                                            }
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" onclick={on_clear}>{"Clear"}</button>
+                            <button type="button" onclick={on_apply}>{"Apply Filter"}</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </>
+    }
+}
+
 #[component(ExecutionListPage)]
 pub fn execution_list_page() -> Html {
     let app_state =
@@ -167,29 +551,26 @@ pub fn execution_list_page() -> Html {
     let status_cache = use_reducer_eq(StatusState::default);
 
     let prefix_ref = use_node_ref();
-    let ffqn_ref = use_node_ref();
     let deployment_id_ref = use_node_ref();
     let component_digest_ref = use_node_ref();
+    let ffqn_prefix_state = use_state(|| query.ffqn_prefix.clone().unwrap_or_default());
 
     // Effect: Fetch data when the URL query changes
     {
         let query = query.clone();
         let response_state = response_state.clone();
         let prefix_ref = prefix_ref.clone();
-        let ffqn_ref = ffqn_ref.clone();
         let deployment_id_ref = deployment_id_ref.clone();
         let component_digest_ref = component_digest_ref.clone();
         let refresh_counter_state = refresh_counter_state.clone();
         let notifications = notifications.clone();
+        let ffqn_prefix_state = ffqn_prefix_state.clone();
 
         use_effect_with((query, *refresh_counter_state), move |(query_params, _)| {
             let query_params = query_params.clone();
 
             spawn_local(async move {
                 // Attempt to sync text values from the actual filter into text boxes.
-                if let Some(input) = ffqn_ref.cast::<HtmlInputElement>() {
-                    input.set_value(query_params.ffqn_prefix.as_deref().unwrap_or_default())
-                }
                 if let Some(input) = prefix_ref.cast::<HtmlInputElement>() {
                     input.set_value(
                         query_params
@@ -204,6 +585,7 @@ pub fn execution_list_page() -> Html {
                 if let Some(input) = component_digest_ref.cast::<HtmlInputElement>() {
                     input.set_value(query_params.component_digest.as_deref().unwrap_or_default())
                 }
+                ffqn_prefix_state.set(query_params.ffqn_prefix.clone().unwrap_or_default());
 
                 let mut execution_client =
                     ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
@@ -230,11 +612,13 @@ pub fn execution_list_page() -> Html {
                 };
 
                 // Send request
+                #[allow(deprecated)]
                 let req = grpc_client::ListExecutionsRequest {
-                    function_name_prefix: query_params.ffqn_prefix,
+                    function_name_prefix: None,
                     top_level_only: !query_params.show_derived,
                     pagination,
                     hide_finished: query_params.hide_finished,
+                    function_filter: query_params.ffqn_prefix.map(grpc_execution_function_filter),
                     execution_id_prefix: query_params.execution_id_prefix.filter(|s| !s.is_empty()),
                     component_digest: query_params
                         .component_digest
@@ -267,10 +651,10 @@ pub fn execution_list_page() -> Html {
         let navigator = navigator.clone();
         let query = query.clone();
         let prefix_ref = prefix_ref.clone();
-        let ffqn_ref = ffqn_ref.clone();
         let deployment_id_ref = deployment_id_ref.clone();
         let component_digest_ref = component_digest_ref.clone();
         let refresh_counter_state = refresh_counter_state.clone();
+        let ffqn_prefix_state = ffqn_prefix_state.clone();
         Callback::from(move |_| {
             let mut new_query = query.clone();
             // Reset cursor when changing filters to start from top
@@ -278,7 +662,7 @@ pub fn execution_list_page() -> Html {
             new_query.direction = None;
             new_query.include_cursor = false;
 
-            let ffqn = ffqn_ref.cast::<HtmlInputElement>().unwrap().value();
+            let ffqn = (*ffqn_prefix_state).clone();
             new_query.ffqn_prefix = (!ffqn.is_empty()).then_some(ffqn);
 
             let prefix = prefix_ref.cast::<HtmlInputElement>().unwrap().value();
@@ -329,6 +713,42 @@ pub fn execution_list_page() -> Html {
             let input: web_sys::HtmlInputElement = e.target_unchecked_into();
             let mut new_query = query.clone();
             new_query.show_details = input.checked();
+            let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
+        })
+    };
+    let on_apply_ffqn_prefix = {
+        let navigator = navigator.clone();
+        let query = query.clone();
+        let prefix_ref = prefix_ref.clone();
+        let deployment_id_ref = deployment_id_ref.clone();
+        let component_digest_ref = component_digest_ref.clone();
+        let refresh_counter_state = refresh_counter_state.clone();
+        let ffqn_prefix_state = ffqn_prefix_state.clone();
+        Callback::from(move |ffqn_prefix: Option<String>| {
+            ffqn_prefix_state.set(ffqn_prefix.clone().unwrap_or_default());
+
+            let mut new_query = query.clone();
+            new_query.cursor = None;
+            new_query.direction = None;
+            new_query.include_cursor = false;
+            new_query.ffqn_prefix = ffqn_prefix;
+
+            let prefix = prefix_ref.cast::<HtmlInputElement>().unwrap().value();
+            new_query.execution_id_prefix = (!prefix.is_empty()).then_some(prefix);
+
+            let deployment_id = deployment_id_ref
+                .cast::<HtmlInputElement>()
+                .unwrap()
+                .value();
+            new_query.deployment_id = (!deployment_id.is_empty()).then_some(deployment_id);
+
+            let component_digest = component_digest_ref
+                .cast::<HtmlInputElement>()
+                .unwrap()
+                .value();
+            new_query.component_digest = (!component_digest.is_empty()).then_some(component_digest);
+
+            refresh_counter_state.set(*refresh_counter_state + 1);
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
@@ -512,11 +932,9 @@ pub fn execution_list_page() -> Html {
                             placeholder="Execution ID Prefix..."
                             value={(query.execution_id_prefix).clone()}
                         />
-                        <input
-                            type="text"
-                            ref={ffqn_ref.clone()}
-                            placeholder="Function Name Prefix..."
-                            value={query.ffqn_prefix.as_ref().map(|ffqn| ffqn.to_string())}
+                        <FunctionPrefixInput
+                            value={(*ffqn_prefix_state).clone()}
+                            on_apply={on_apply_ffqn_prefix}
                         />
                         <input
                             type="text"
@@ -540,8 +958,6 @@ pub fn execution_list_page() -> Html {
                         }
                     </div>
                 </div>
-
-                <ComponentTree config={ComponentTreeConfig::ExecutionListFiltering} />
 
                 <table class="execution_list">
                     <tr>
