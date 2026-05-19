@@ -32,6 +32,7 @@ use log::trace;
 use std::path::PathBuf;
 use std::rc::Rc;
 use tonic_web_wasm_client::Client;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
@@ -521,6 +522,31 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                         sources.set(next);
                     });
                 }
+            }
+        });
+    }
+
+    // Dismiss modal on Escape key
+    {
+        let on_close = props.on_close.clone();
+        use_effect(move || {
+            let closure =
+                Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+                    if e.key() == "Escape" {
+                        on_close.emit(());
+                    }
+                });
+            let window = web_sys::window().expect("window should exist");
+            window
+                .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
+                .expect("failed to add keydown listener");
+            move || {
+                window
+                    .remove_event_listener_with_callback(
+                        "keydown",
+                        closure.as_ref().unchecked_ref(),
+                    )
+                    .expect("failed to remove keydown listener");
             }
         });
     }
