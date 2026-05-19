@@ -3,6 +3,7 @@
 // ============================================
 // Used by:
 //   - src/components/advance_modal.rs
+//   - src/components/execution_actions.rs
 // ============================================
 @use '../base/variables' as *;
 
@@ -71,6 +72,62 @@
   display: flex;
   overflow: hidden;
   min-height: 0;
+}
+
+.upgrade-modal-window {
+  width: min(90vw, 640px);
+  height: auto;
+  max-height: none;
+}
+
+.upgrade-modal-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.upgrade-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+  padding: $spacing-lg;
+}
+
+.upgrade-modal-copy {
+  color: $color-text-secondary;
+  line-height: 1.5;
+}
+
+.upgrade-modal-digests {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  padding: $spacing-md;
+  background-color: $color-bg-tertiary;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+}
+
+.upgrade-modal-digest-row {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.upgrade-modal-digest-label {
+  color: $color-accent-cyan;
+  font-size: $font-size-sm;
+  font-weight: 600;
+}
+
+.upgrade-modal-digest-value {
+  color: $color-text-primary;
+  font-family: $font-family-mono;
+  font-size: $font-size-xs;
+  overflow-wrap: anywhere;
+}
+
+.upgrade-modal-checkbox {
+  align-self: flex-start;
 }
 
 .modal-footer {

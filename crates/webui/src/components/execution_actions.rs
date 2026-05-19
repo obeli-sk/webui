@@ -14,6 +14,7 @@ use crate::{
 };
 use log::{debug, error};
 use tonic_web_wasm_client::Client;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
@@ -254,7 +255,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
 
     let loading_state = use_state(|| false);
     let skip_determinism_state = use_state(|| false);
-    let show_form_state = use_state(|| false);
+    let show_modal_state = use_state(|| false);
     // Tracks the digest after a successful upgrade, so we can disable the button
     // immediately without waiting for the parent to propagate the new digest.
     let upgraded_digest = use_state(|| None::<ContentDigest>);
@@ -293,10 +294,24 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
         )
     };
 
-    let on_toggle_form = {
-        let show_form_state = show_form_state.clone();
+    let on_open_modal = {
+        let show_modal_state = show_modal_state.clone();
         Callback::from(move |_| {
-            show_form_state.set(!*show_form_state);
+            show_modal_state.set(true);
+        })
+    };
+
+    let on_close_modal = {
+        let show_modal_state = show_modal_state.clone();
+        Callback::from(move |_| {
+            show_modal_state.set(false);
+        })
+    };
+
+    let on_close_modal_click = {
+        let on_close_modal = on_close_modal.clone();
+        Callback::from(move |_: MouseEvent| {
+            on_close_modal.emit(());
         })
     };
 
@@ -315,7 +330,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
         let skip_determinism_state = skip_determinism_state.clone();
         let notifications = notifications.clone();
         let loading_state = loading_state.clone();
-        let show_form_state = show_form_state.clone();
+        let show_modal_state = show_modal_state.clone();
         let upgraded_digest = upgraded_digest.clone();
 
         Callback::from(move |e: SubmitEvent| {
@@ -334,7 +349,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                 let notifications = notifications.clone();
                 let loading_state = loading_state.clone();
                 let effective_digest = effective_digest.clone();
-                let show_form_state = show_form_state.clone();
+                let show_modal_state = show_modal_state.clone();
                 let upgraded_digest = upgraded_digest.clone();
 
                 async move {
@@ -366,7 +381,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                                 &digest_str[..20.min(digest_str.len())]
                             )));
                             upgraded_digest.set(Some(new_digest));
-                            show_form_state.set(false);
+                            show_modal_state.set(false);
                         }
                         Err(e) => {
                             error!("Failed to upgrade execution {}: {:?}", execution_id, e);
@@ -379,50 +394,128 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
     };
 
     let is_loading = *loading_state;
-    let show_form = *show_form_state;
+    let show_modal = *show_modal_state;
+
+    {
+        let on_close_modal = on_close_modal.clone();
+        use_effect_with(show_modal, move |is_open| {
+            let listener = if *is_open {
+                let closure = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(
+                    move |e: web_sys::KeyboardEvent| {
+                        if e.key() == "Escape" {
+                            on_close_modal.emit(());
+                        }
+                    },
+                );
+                let window = web_sys::window().expect("window should exist");
+                window
+                    .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
+                    .expect("failed to add keydown listener");
+                Some((window, closure))
+            } else {
+                None
+            };
+
+            move || {
+                if let Some((window, closure)) = listener {
+                    window
+                        .remove_event_listener_with_callback(
+                            "keydown",
+                            closure.as_ref().unchecked_ref(),
+                        )
+                        .expect("failed to remove keydown listener");
+                }
+            }
+        });
+    }
+
+    let on_overlay_click = {
+        let on_close_modal = on_close_modal.clone();
+        Callback::from(move |e: MouseEvent| {
+            if let Some(target) = e.target_dyn_into::<web_sys::Element>()
+                && target
+                    .get_attribute("class")
+                    .unwrap_or_default()
+                    .contains("modal-overlay")
+            {
+                on_close_modal.emit(());
+            }
+        })
+    };
+
+    let target_digest = upgrade_digest.as_ref().map(|digest| digest.digest.clone());
+    let current_digest = effective_digest.digest.clone();
 
     html! {
         <div class="action-container upgrade-action">
             <button
                 class="action-button toggle-upgrade-button"
-                onclick={on_toggle_form}
+                onclick={on_open_modal}
                 disabled={button_disabled}
                 title={button_title}
             >
-                if show_form {
-                    {"Hide Upgrade Form"}
-                } else {
-                    {"Upgrade Component"}
-                }
+                {"Upgrade Component"}
             </button>
 
-            if show_form {
-                <form class="upgrade-form" onsubmit={on_submit}>
-                    <div class="form-row checkbox-row">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={*skip_determinism_state}
-                                onchange={on_skip_determinism_change}
-                            />
-                            {" Skip determinism check"}
-                        </label>
-                    </div>
+            if show_modal {
+                <div class="modal-overlay" onclick={on_overlay_click}>
+                    <div class="modal-window upgrade-modal-window">
+                        <form class="upgrade-modal-form" onsubmit={on_submit}>
+                            <div class="modal-header">
+                                <h3>{"Upgrade Component"}</h3>
+                                <button
+                                    type="button"
+                                    class="modal-dismiss"
+                                    onclick={on_close_modal_click.clone()}
+                                >
+                                    {"×"}
+                                </button>
+                            </div>
 
-                    <div class="form-row">
-                        <button
-                            type="submit"
-                            class="action-button submit-upgrade-button"
-                            disabled={is_loading}
-                        >
-                            if is_loading {
-                                {"Upgrading..."}
-                            } else {
-                                {"Upgrade"}
-                            }
-                        </button>
+                            <div class="upgrade-modal-body">
+                                <div class="upgrade-modal-copy">
+                                    {"Switch this execution to the component version from the current deployment."}
+                                </div>
+                                <div class="upgrade-modal-digests">
+                                    <div class="upgrade-modal-digest-row">
+                                        <span class="upgrade-modal-digest-label">{"Current"}</span>
+                                        <code class="upgrade-modal-digest-value">{current_digest}</code>
+                                    </div>
+                                    if let Some(target_digest) = target_digest {
+                                        <div class="upgrade-modal-digest-row">
+                                            <span class="upgrade-modal-digest-label">{"Target"}</span>
+                                            <code class="upgrade-modal-digest-value">{target_digest}</code>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="modal-footer">
+                                <div class="modal-footer-left">
+                                    <label class="modal-checkbox upgrade-modal-checkbox">
+                                        <input
+                                            type="checkbox"
+                                            checked={*skip_determinism_state}
+                                            onchange={on_skip_determinism_change}
+                                        />
+                                        {"Skip determinism check"}
+                                    </label>
+                                </div>
+                                <button
+                                    type="submit"
+                                    class="action-button submit-upgrade-button"
+                                    disabled={is_loading}
+                                >
+                                    if is_loading {
+                                        {"Upgrading..."}
+                                    } else {
+                                        {"Upgrade"}
+                                    }
+                                </button>
+                            </div>
+                        </form>
                     </div>
-                </form>
+                </div>
             }
         </div>
     }
