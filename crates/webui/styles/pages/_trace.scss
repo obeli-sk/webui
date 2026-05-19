@@ -108,12 +108,21 @@
 .step-row {
   display: flex;
   align-items: center;
-  padding: 5px;
-  border-bottom: 1px solid #eee;
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $border-radius-md;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
 }
 
 .step-icon {
-  margin-right: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  margin-right: $spacing-xs;
+  flex-shrink: 0;
 }
 
 .step-name {
@@ -122,6 +131,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+
+  a {
+    color: $color-accent-cyan;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 }
 
 .step-status {

@@ -58,10 +58,7 @@ enum ExecutionFetchState {
 
 enum TraceviewStateAction {
     AddExecutionId(ExecutionId),
-    HttpTracesSwitch {
-        execution_id: ExecutionId,
-        show: bool,
-    },
+    ToggleExpanded(String),
     // About to fetch the data.
     SetPending(ExecutionId),
     // Got data
@@ -86,7 +83,7 @@ struct TraceViewState {
     events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
     responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
     statuses: HashMap<ExecutionId, grpc_client::execution_status::Status>,
-    execution_ids_to_show_http_traces: HashMap<ExecutionId, bool>,
+    expanded_nodes: HashMap<String, bool>,
     autoload: bool,
     hide_finished: bool,
 }
@@ -161,10 +158,10 @@ impl Reducible for TraceViewState {
                     .insert(execution_id, new_fetch_state);
                 Rc::from(this)
             }
-            TraceviewStateAction::HttpTracesSwitch { execution_id, show } => {
+            TraceviewStateAction::ToggleExpanded(node_key) => {
                 let mut this = self.as_ref().clone();
-                this.execution_ids_to_show_http_traces
-                    .insert(execution_id, show);
+                let is_expanded = this.expanded_nodes.get(&node_key).copied().unwrap_or(true);
+                this.expanded_nodes.insert(node_key, !is_expanded);
                 Rc::from(this)
             }
             TraceviewStateAction::SetAutoload(autoload) => {
@@ -300,6 +297,13 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         })
     };
 
+    let on_toggle_trace_node = {
+        let trace_view_state = trace_view_state.clone();
+        Callback::from(move |node_key: String| {
+            trace_view_state.dispatch(TraceviewStateAction::ToggleExpanded(node_key));
+        })
+    };
+
     html! {<>
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
 
@@ -330,6 +334,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                         root_scheduled_at={root_trace.scheduled_at}
                         root_last_event_at={root_trace.last_event_at}
                         data={TraceData::Root(root_trace)}
+                        on_toggle={on_toggle_trace_node}
                     />
                 } else {
                     {"Loading..."}
@@ -475,16 +480,11 @@ fn compute_root_trace(
         .map(|component_id| component_id.component_type());
     let is_stub = component_type == Some(ComponentType::ActivityStub);
 
+    let node_key = execution_id.to_string();
     let child_ids_to_results = compute_child_execution_id_to_child_execution_finished(responses);
 
     let mut loadable_child_ids = vec![];
-
-    let http_traces_enabled = trace_view_state
-        .deref()
-        .execution_ids_to_show_http_traces
-        .get(execution_id)
-        .cloned()
-        .unwrap_or_default();
+    let is_expanded = is_trace_node_expanded(trace_view_state, &node_key, true);
 
     let children = events
             .iter()
@@ -504,66 +504,70 @@ fn compute_root_trace(
                     | execution_event::Event::Finished(Finished {
                         http_client_traces, ..
                     }) => {
-                        if http_traces_enabled {
-                            let children: Vec<_> = http_client_traces
-                                .iter()
-                                .map(|trace| {
-                                    let name = format!(
-                                        "{method} {uri}",
-                                        method = trace.method,
-                                        uri = trace.uri,
-                                    );
-                                    let status = match trace.result {
-                                        Some(http_client_trace::Result::Status(status_code)) => BusyIntervalStatus::HttpTraceFinished(status_code),
-                                        Some(http_client_trace::Result::Error(_)) => BusyIntervalStatus::HttpTraceError,
-                                        None => BusyIntervalStatus::HttpTraceNotResponded,
-                                    };
-                                    TraceData::Child(TraceDataChild {
-                                        name: Html::from(name.clone()),
-                                        title: name,
-                                        busy: vec![BusyInterval {
-                                            started_at: DateTime::from(trace.sent_at.expect("sent_at is sent")),
-                                            finished_at: Some(trace.finished_at.map(DateTime::from).unwrap_or(event_created_at)),
-                                            title: None,
-                                            status,
-                                        }],
-                                        children: match &trace.result {
-                                            Some(http_client_trace::Result::Status(status_code)) => {
-                                                let name = format!("Status code: {status_code}");
-                                                vec![
-                                                    TraceData::Child(TraceDataChild {
-                                                        name: Html::from(name.clone()),
-                                                        title: name,
-                                                        busy: vec![],
-                                                        children: vec![],
-                                                        load_button: None,
-                                                    })
-                                                ]
-                                            },
-                                            Some(http_client_trace::Result::Error(error)) => {
-                                                let name = format!("Failed: `{error}`");
-                                                vec![
-                                                    TraceData::Child(TraceDataChild {
-                                                        name: Html::from(name.clone()),
-                                                        title: name,
-                                                        busy: vec![],
-                                                        children: vec![],
-                                                        load_button: None,
-                                                    })
-                                                ]
-                                            },
-                                            None => {
-                                                vec![]
-                                            }
+                        let children: Vec<_> = http_client_traces
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, trace)| {
+                                let name = format!(
+                                    "{method} {uri}",
+                                    method = trace.method,
+                                    uri = trace.uri,
+                                );
+                                let status = match trace.result {
+                                    Some(http_client_trace::Result::Status(status_code)) => BusyIntervalStatus::HttpTraceFinished(status_code),
+                                    Some(http_client_trace::Result::Error(_)) => BusyIntervalStatus::HttpTraceError,
+                                    None => BusyIntervalStatus::HttpTraceNotResponded,
+                                };
+                                let node_key = format!("{execution_id}:event:{}:http:{idx}", event.version);
+                                TraceData::Child(TraceDataChild {
+                                    node_key: node_key.clone(),
+                                    is_expanded: is_trace_node_expanded(trace_view_state, &node_key, true),
+                                    name: Html::from(name.clone()),
+                                    title: name,
+                                    busy: vec![BusyInterval {
+                                        started_at: DateTime::from(trace.sent_at.expect("sent_at is sent")),
+                                        finished_at: Some(trace.finished_at.map(DateTime::from).unwrap_or(event_created_at)),
+                                        title: None,
+                                        status,
+                                    }],
+                                    children: match &trace.result {
+                                        Some(http_client_trace::Result::Status(status_code)) => {
+                                            let name = format!("Status code: {status_code}");
+                                            vec![
+                                                TraceData::Child(TraceDataChild {
+                                                    node_key: format!("{node_key}:status"),
+                                                    is_expanded: false,
+                                                    name: Html::from(name.clone()),
+                                                    title: name,
+                                                    busy: vec![],
+                                                    children: vec![],
+                                                    load_button: None,
+                                                })
+                                            ]
                                         },
-                                        load_button: None,
-                                    })
+                                        Some(http_client_trace::Result::Error(error)) => {
+                                            let name = format!("Failed: `{error}`");
+                                            vec![
+                                                TraceData::Child(TraceDataChild {
+                                                    node_key: format!("{node_key}:error"),
+                                                    is_expanded: false,
+                                                    name: Html::from(name.clone()),
+                                                    title: name,
+                                                    busy: vec![],
+                                                    children: vec![],
+                                                    load_button: None,
+                                                })
+                                            ]
+                                        },
+                                        None => {
+                                            vec![]
+                                        }
+                                    },
+                                    load_button: None,
                                 })
-                                .collect();
-                            Some(children)
-                        } else {
-                            None
-                        }
+                            })
+                            .collect();
+                        Some(children)
                     }
                     // Add child executions
                     execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
@@ -617,6 +621,8 @@ fn compute_root_trace(
                                 };
                             Some(vec![
                                 TraceData::Child(TraceDataChild {
+                                    node_key: child_execution_id.to_string(),
+                                    is_expanded: false,
                                     name: html!{<>
                                         <Link<Route> to={Route::ExecutionTrace { execution_id: child_execution_id.clone() }}>
                                             {name}
@@ -740,34 +746,6 @@ fn compute_root_trace(
         FunctionFqn::from(fn_name.clone())
     };
 
-    let http_traces_button = if matches!(
-        component_type,
-        Some(ComponentType::Activity | ComponentType::WebhookEndpoint)
-    ) {
-        let show = !http_traces_enabled;
-        let onclick = Callback::from({
-            let trace_view_state = trace_view_state.clone();
-            let execution_id = execution_id.clone();
-            move |_| {
-                trace_view_state.dispatch(TraceviewStateAction::HttpTracesSwitch {
-                    execution_id: execution_id.clone(),
-                    show,
-                });
-            }
-        });
-        Some(html! {
-            <a {onclick} style="cursor: pointer" >
-                if show {
-                    {"+"}
-                } else {
-                    {"-"}
-                }
-            </a>
-        })
-    } else {
-        None
-    };
-
     let load_button = if !loadable_child_ids.is_empty() {
         let onclick = Callback::from({
             let trace_view_state = trace_view_state.clone();
@@ -797,6 +775,8 @@ fn compute_root_trace(
         </>
     };
     Some(TraceDataRoot {
+        node_key,
+        is_expanded,
         name,
         title: format!("{execution_id} {ffqn}"),
         scheduled_at: execution_scheduled_at,
@@ -804,9 +784,20 @@ fn compute_root_trace(
         busy,
         children,
         load_button,
-        expand_collapse: http_traces_button,
         current_status: statuses_map.get(execution_id).cloned(),
     })
+}
+
+fn is_trace_node_expanded(
+    trace_view_state: &UseReducerHandle<TraceViewState>,
+    node_key: &str,
+    default: bool,
+) -> bool {
+    trace_view_state
+        .expanded_nodes
+        .get(node_key)
+        .copied()
+        .unwrap_or(default)
 }
 
 fn compute_child_execution_id_to_child_execution_finished(

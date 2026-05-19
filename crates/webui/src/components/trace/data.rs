@@ -53,10 +53,17 @@ impl TraceData {
         }
     }
 
-    pub fn expand_colapse(&self) -> Option<Html> {
+    pub fn node_key(&self) -> &str {
         match self {
-            TraceData::Root(root) => root.expand_collapse.clone(),
-            TraceData::Child(_) => None,
+            TraceData::Root(root) => &root.node_key,
+            TraceData::Child(child) => &child.node_key,
+        }
+    }
+
+    pub fn is_expanded(&self) -> bool {
+        match self {
+            TraceData::Root(root) => root.is_expanded,
+            TraceData::Child(child) => child.is_expanded,
         }
     }
 
@@ -147,6 +154,8 @@ impl BusyInterval {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceDataRoot {
+    pub node_key: String,
+    pub is_expanded: bool,
     pub name: Html,
     pub title: String,
     pub scheduled_at: DateTime<Utc>,
@@ -154,7 +163,6 @@ pub struct TraceDataRoot {
     pub busy: Vec<BusyInterval>,
     pub children: Vec<TraceData>,
     pub load_button: Option<Html>,
-    pub expand_collapse: Option<Html>,
     pub current_status: Option<grpc_client::execution_status::Status>,
 }
 impl TraceDataRoot {
@@ -169,6 +177,8 @@ impl TraceDataRoot {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceDataChild {
+    pub node_key: String,
+    pub is_expanded: bool,
     pub name: Html,
     pub title: String,
     pub busy: Vec<BusyInterval>,
