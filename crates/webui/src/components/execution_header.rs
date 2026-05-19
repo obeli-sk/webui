@@ -11,8 +11,9 @@ use crate::components::notification::{Notification, NotificationContext};
 use crate::grpc::ffqn::FunctionFqn;
 use crate::grpc::grpc_client::{
     self, CapturedWrite, ComponentType, ContentDigest, ExecutionId, ExecutionSummary,
-    execution_repository_client::ExecutionRepositoryClient, execution_status,
+    captured_write, execution_repository_client::ExecutionRepositoryClient, execution_status,
 };
+use crate::grpc::version::VersionType;
 use gloo::timers::callback::Interval;
 use log::{debug, error};
 use tonic_web_wasm_client::Client;
@@ -27,15 +28,50 @@ struct ExecutionInfo {
     ffqn: Option<FunctionFqn>,
 }
 
+/// Compute the version of the last event written by the captured writes for the given execution.
+fn last_version_of(execution_id: &ExecutionId, writes: &[CapturedWrite]) -> Option<VersionType> {
+    let eid = &execution_id.id;
+    writes.iter().rev().find_map(|cw| match &cw.write {
+        Some(captured_write::Write::Append(a))
+            if a.execution_id.as_ref().is_some_and(|id| id.id == *eid) =>
+        {
+            Some(a.version)
+        }
+        Some(captured_write::Write::AppendBatch(b))
+            if b.execution_id.as_ref().is_some_and(|id| id.id == *eid) =>
+        {
+            Some(b.version + b.events.len().saturating_sub(1) as u32)
+        }
+        Some(captured_write::Write::AppendBatchCreateNewExecution(b))
+            if b.execution_id.as_ref().is_some_and(|id| id.id == *eid) =>
+        {
+            Some(b.version + b.events.len().saturating_sub(1) as u32)
+        }
+        Some(captured_write::Write::AppendFinished(f))
+            if f.execution_id.as_ref().is_some_and(|id| id.id == *eid) =>
+        {
+            Some(f.version)
+        }
+        _ => None,
+    })
+}
+
 #[derive(Properties, PartialEq)]
 pub struct ExecutionHeaderProps {
     pub execution_id: ExecutionId,
     pub link: ExecutionLink,
+    /// Called after a successful advance with the version of the last written event.
+    #[prop_or_default]
+    pub on_advanced: Option<Callback<VersionType>>,
 }
 
 #[component(ExecutionHeader)]
 pub fn execution_header(
-    ExecutionHeaderProps { execution_id, link }: &ExecutionHeaderProps,
+    ExecutionHeaderProps {
+        execution_id,
+        link,
+        on_advanced,
+    }: &ExecutionHeaderProps,
 ) -> Html {
     let exec_info = use_state(|| None::<ExecutionInfo>);
     let is_finished = use_state(|| false);
@@ -261,12 +297,15 @@ pub fn execution_header(
                         let cached_replay = cached_replay.clone();
                         let notifications = notifications.clone();
                         let is_blocked = is_blocked.clone();
+                        let on_advanced = on_advanced.clone();
                         Callback::from(move |writes: Vec<CapturedWrite>| {
                             let execution_id = execution_id.clone();
                             let modal_writes = modal_writes.clone();
                             let cached_replay = cached_replay.clone();
                             let notifications = notifications.clone();
                             let is_blocked = is_blocked.clone();
+                            let on_advanced = on_advanced.clone();
+                            let advanced_version = last_version_of(&execution_id, &writes);
                             spawn_local(async move {
                                 let mut client = ExecutionRepositoryClient::new(
                                     Client::new(BASE_URL.to_string()),
@@ -292,6 +331,11 @@ pub fn execution_header(
                                                 notifications.push(Notification::success(
                                                     "Advance succeeded",
                                                 ));
+                                                if let Some(version) = advanced_version
+                                                    && let Some(cb) = &on_advanced
+                                                {
+                                                    cb.emit(version);
+                                                }
                                                 // Replay again to check next state
                                                 if let Some(response) =
                                                     call_replay(&execution_id, &notifications).await

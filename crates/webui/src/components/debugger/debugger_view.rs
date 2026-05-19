@@ -802,8 +802,19 @@ pub fn debugger_view(
         }
     };
 
+    let on_advanced = {
+        let navigator = navigator.clone();
+        let execution_id = execution_id.clone();
+        Callback::from(move |version: VersionType| {
+            navigator.push(&Route::ExecutionDebuggerWithVersions {
+                execution_id: execution_id.clone(),
+                versions: BacktraceVersionsPath::from(version),
+            });
+        })
+    };
+
     html! {<>
-        <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Debug} />
+        <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Debug} on_advanced={on_advanced} />
 
         <VersionSlider
             backtrace_versions={leaf_backtrace_versions.clone()}
