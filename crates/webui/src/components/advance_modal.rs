@@ -335,7 +335,7 @@ fn backtraces_of(cw: &CapturedWrite) -> &[CapturedBacktrace] {
         Some(captured_write::Write::Append(a)) => &a.backtraces,
         Some(captured_write::Write::AppendBatch(b)) => &b.backtraces,
         Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => &b.backtraces,
-        // StubResponse and AppendFinished don't carry backtraces
+        Some(captured_write::Write::AppendStubResponse(s)) => &s.backtraces,
         _ => &[],
     }
 }
