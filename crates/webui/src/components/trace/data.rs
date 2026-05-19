@@ -67,6 +67,13 @@ impl TraceData {
         }
     }
 
+    pub fn can_expand(&self) -> bool {
+        match self {
+            TraceData::Root(root) => root.can_expand,
+            TraceData::Child(child) => child.can_expand,
+        }
+    }
+
     pub fn current_status(&self) -> Option<Html> {
         if let TraceData::Root(TraceDataRoot {
             current_status: Some(status),
@@ -156,6 +163,7 @@ impl BusyInterval {
 pub struct TraceDataRoot {
     pub node_key: String,
     pub is_expanded: bool,
+    pub can_expand: bool,
     pub name: Html,
     pub title: String,
     pub scheduled_at: DateTime<Utc>,
@@ -179,6 +187,7 @@ impl TraceDataRoot {
 pub struct TraceDataChild {
     pub node_key: String,
     pub is_expanded: bool,
+    pub can_expand: bool,
     pub name: Html,
     pub title: String,
     pub busy: Vec<BusyInterval>,

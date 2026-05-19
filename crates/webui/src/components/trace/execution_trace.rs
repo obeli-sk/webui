@@ -32,9 +32,10 @@ pub fn execution_trace(props: &ExecutionStepProps) -> Html {
 
     let children_html = if props.data.is_expanded() && !props.data.children().is_empty() {
         html! {
-            <div class="indented-children"> // Wrap children in a container
-                { for props.data.children().iter().map(|child| html! {
-                    <ExecutionTrace
+                <div class="indented-children"> // Wrap children in a container
+                    { for props.data.children().iter().map(|child| html! {
+                        <ExecutionTrace
+                        key={format!("{}:{}", child.node_key(), child.title())}
                         data={child.clone()}
                         root_scheduled_at={props.root_scheduled_at}
                         root_last_event_at={props.root_last_event_at}
@@ -56,7 +57,7 @@ pub fn execution_trace(props: &ExecutionStepProps) -> Html {
         format!("{:?}", props.data.busy_duration(props.root_last_event_at))
     };
     let last_status = props.data.current_status();
-    let has_children = !props.data.children().is_empty();
+    let has_children = props.data.can_expand();
     let caret_class = if props.data.is_expanded() {
         "tree-caret tree-caret-open"
     } else {

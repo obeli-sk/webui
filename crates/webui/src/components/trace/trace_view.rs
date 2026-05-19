@@ -58,6 +58,10 @@ enum ExecutionFetchState {
 
 enum TraceviewStateAction {
     AddExecutionId(ExecutionId),
+    SetExpanded {
+        node_key: String,
+        expanded: bool,
+    },
     ToggleExpanded(String),
     // About to fetch the data.
     SetPending(ExecutionId),
@@ -73,7 +77,6 @@ enum TraceviewStateAction {
         execution_id: ExecutionId,
         cursors: Cursors,
     },
-    SetAutoload(bool),
     SetHideFinished(bool),
 }
 
@@ -84,7 +87,6 @@ struct TraceViewState {
     responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
     statuses: HashMap<ExecutionId, grpc_client::execution_status::Status>,
     expanded_nodes: HashMap<String, bool>,
-    autoload: bool,
     hide_finished: bool,
 }
 impl Reducible for TraceViewState {
@@ -106,6 +108,11 @@ impl Reducible for TraceViewState {
                 } else {
                     self
                 }
+            }
+            TraceviewStateAction::SetExpanded { node_key, expanded } => {
+                let mut this = self.as_ref().clone();
+                this.expanded_nodes.insert(node_key, expanded);
+                Rc::from(this)
             }
             TraceviewStateAction::SetPending(execution_id) => {
                 let mut this = self.as_ref().clone();
@@ -160,13 +167,8 @@ impl Reducible for TraceViewState {
             }
             TraceviewStateAction::ToggleExpanded(node_key) => {
                 let mut this = self.as_ref().clone();
-                let is_expanded = this.expanded_nodes.get(&node_key).copied().unwrap_or(true);
+                let is_expanded = this.expanded_nodes.get(&node_key).copied().unwrap_or(false);
                 this.expanded_nodes.insert(node_key, !is_expanded);
-                Rc::from(this)
-            }
-            TraceviewStateAction::SetAutoload(autoload) => {
-                let mut this = self.as_ref().clone();
-                this.autoload = autoload;
                 Rc::from(this)
             }
             TraceviewStateAction::SetHideFinished(hide) => {
@@ -188,6 +190,10 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         let trace_view_state = trace_view_state.clone();
         move |execution_id| {
             trace_view_state.dispatch(TraceviewStateAction::AddExecutionId(execution_id.clone()));
+            trace_view_state.dispatch(TraceviewStateAction::SetExpanded {
+                node_key: execution_id.to_string(),
+                expanded: true,
+            });
         }
     });
 
@@ -200,8 +206,10 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
 
     // Container to collect IDs that need loading during tree computation
     let missing_executions = use_mut_ref(Vec::new);
+    let expandable_missing_children = use_mut_ref(HashMap::<String, Vec<ExecutionId>>::new);
     // Clear previous render's collection
     missing_executions.borrow_mut().clear();
+    expandable_missing_children.borrow_mut().clear();
 
     let root_trace = {
         compute_root_trace(
@@ -211,25 +219,33 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             &trace_view.statuses,
             &trace_view_state,
             &mut missing_executions.borrow_mut(),
+            &mut expandable_missing_children.borrow_mut(),
         )
     };
 
-    // Effect to handle autoloading
-    use_effect({
-        let trace_view_state = trace_view_state.clone();
-        let missing_executions = missing_executions.clone();
-        move || {
-            if trace_view_state.autoload {
-                let missing = missing_executions.borrow();
-                if !missing.is_empty() {
-                    for id in missing.iter() {
-                        trace_view_state.dispatch(TraceviewStateAction::AddExecutionId(id.clone()));
+    let root_missing_children = expandable_missing_children
+        .borrow()
+        .get(&execution_id.to_string())
+        .cloned()
+        .unwrap_or_default();
+
+    use_effect_with(
+        (
+            is_trace_node_expanded(&trace_view_state, &execution_id.to_string(), false),
+            root_missing_children.clone(),
+        ),
+        {
+            let trace_view_state = trace_view_state.clone();
+            move |(is_root_expanded, root_missing_children)| {
+                if *is_root_expanded {
+                    for execution_id in root_missing_children {
+                        trace_view_state
+                            .dispatch(TraceviewStateAction::AddExecutionId(execution_id.clone()));
                     }
                 }
             }
-            || {}
-        }
-    });
+        },
+    );
 
     let execution_log = {
         let all_events = &trace_view.events;
@@ -281,14 +297,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             .collect::<Vec<_>>()
     };
 
-    let on_autoload_change = {
-        let trace_view_state = trace_view_state.clone();
-        Callback::from(move |e: Event| {
-            let target: HtmlInputElement = e.target_unchecked_into();
-            trace_view_state.dispatch(TraceviewStateAction::SetAutoload(target.checked()));
-        })
-    };
-
     let on_hide_finished_change = {
         let trace_view_state = trace_view_state.clone();
         Callback::from(move |e: Event| {
@@ -299,7 +307,18 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
 
     let on_toggle_trace_node = {
         let trace_view_state = trace_view_state.clone();
+        let expandable_missing_children = expandable_missing_children.clone();
         Callback::from(move |node_key: String| {
+            let should_expand = !is_trace_node_expanded(&trace_view_state, &node_key, false);
+            if should_expand {
+                let missing_children = expandable_missing_children.borrow();
+                if let Some(execution_ids) = missing_children.get(&node_key) {
+                    for execution_id in execution_ids {
+                        trace_view_state
+                            .dispatch(TraceviewStateAction::AddExecutionId(execution_id.clone()));
+                    }
+                }
+            }
             trace_view_state.dispatch(TraceviewStateAction::ToggleExpanded(node_key));
         })
     };
@@ -310,15 +329,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         <div class="trace-layout-container">
             <div class="trace-view">
                 <div class="trace-controls" style="margin-bottom: 10px; display: flex; gap: 15px;">
-                    <label style="cursor: pointer; user-select: none;">
-                        <input
-                            type="checkbox"
-                            checked={trace_view.autoload}
-                            onchange={on_autoload_change}
-                            style="margin-right: 5px;"
-                        />
-                        {"Autoload children"}
-                    </label>
                     <label style="cursor: pointer; user-select: none;">
                         <input
                             type="checkbox"
@@ -447,6 +457,7 @@ fn compute_root_trace(
     statuses_map: &HashMap<ExecutionId, grpc_client::execution_status::Status>,
     trace_view_state: &UseReducerHandle<TraceViewState>,
     missing_ids: &mut Vec<ExecutionId>,
+    expandable_missing_children: &mut HashMap<String, Vec<ExecutionId>>,
 ) -> Option<TraceDataRoot> {
     let events = match events_map.get(execution_id) {
         Some(events) if !events.is_empty() => events,
@@ -483,10 +494,9 @@ fn compute_root_trace(
     let node_key = execution_id.to_string();
     let child_ids_to_results = compute_child_execution_id_to_child_execution_finished(responses);
 
-    let mut loadable_child_ids = vec![];
-    let is_expanded = is_trace_node_expanded(trace_view_state, &node_key, true);
+    let is_expanded = is_trace_node_expanded(trace_view_state, &node_key, false);
 
-    let children = events
+    let children: Vec<TraceData> = events
             .iter()
             .filter_map(|event| {
                 let event_created_at = DateTime::from(event.created_at.expect("event.created_at is sent"));
@@ -521,7 +531,8 @@ fn compute_root_trace(
                                 let node_key = format!("{execution_id}:event:{}:http:{idx}", event.version);
                                 TraceData::Child(TraceDataChild {
                                     node_key: node_key.clone(),
-                                    is_expanded: is_trace_node_expanded(trace_view_state, &node_key, true),
+                                    is_expanded: is_trace_node_expanded(trace_view_state, &node_key, false),
+                                    can_expand: trace.result.is_some(),
                                     name: Html::from(name.clone()),
                                     title: name,
                                     busy: vec![BusyInterval {
@@ -537,6 +548,7 @@ fn compute_root_trace(
                                                 TraceData::Child(TraceDataChild {
                                                     node_key: format!("{node_key}:status"),
                                                     is_expanded: false,
+                                                    can_expand: false,
                                                     name: Html::from(name.clone()),
                                                     title: name,
                                                     busy: vec![],
@@ -551,6 +563,7 @@ fn compute_root_trace(
                                                 TraceData::Child(TraceDataChild {
                                                     node_key: format!("{node_key}:error"),
                                                     is_expanded: false,
+                                                    can_expand: false,
                                                     name: Html::from(name.clone()),
                                                     title: name,
                                                     busy: vec![],
@@ -593,8 +606,15 @@ fn compute_root_trace(
                         }
 
                         if !trace_view_state.deref().execution_ids_to_fetch_state.contains_key(child_execution_id) {
-                            loadable_child_ids.push(child_execution_id.clone());
                             missing_ids.push(child_execution_id.clone());
+                            expandable_missing_children
+                                .entry(node_key.clone())
+                                .or_default()
+                                .push(child_execution_id.clone());
+                            expandable_missing_children
+                                .entry(child_execution_id.to_string())
+                                .or_default()
+                                .push(child_execution_id.clone());
                         }
 
                         if let Some(child_root) = compute_root_trace(
@@ -604,6 +624,7 @@ fn compute_root_trace(
                             statuses_map,
                             trace_view_state,
                             missing_ids,
+                            expandable_missing_children,
                         ) {
                             last_event_at = last_event_at.max(child_root.last_event_at);
                             Some(vec![TraceData::Root(child_root)])
@@ -623,6 +644,7 @@ fn compute_root_trace(
                                 TraceData::Child(TraceDataChild {
                                     node_key: child_execution_id.to_string(),
                                     is_expanded: false,
+                                    can_expand: true,
                                     name: html!{<>
                                         <Link<Route> to={Route::ExecutionTrace { execution_id: child_execution_id.clone() }}>
                                             {name}
@@ -746,25 +768,6 @@ fn compute_root_trace(
         FunctionFqn::from(fn_name.clone())
     };
 
-    let load_button = if !loadable_child_ids.is_empty() {
-        let onclick = Callback::from({
-            let trace_view_state = trace_view_state.clone();
-            move |_| {
-                for child_execution_id in &loadable_child_ids {
-                    debug!("Adding {child_execution_id}");
-                    trace_view_state.dispatch(TraceviewStateAction::AddExecutionId(
-                        child_execution_id.clone(),
-                    ));
-                }
-            }
-        });
-        Some(html! {
-            <button {onclick} >{"Load"} </button>
-        })
-    } else {
-        None
-    };
-
     let name = html! {
         <>
             {execution_id.render_execution_parts(true, ExecutionLink::Trace)}
@@ -777,13 +780,14 @@ fn compute_root_trace(
     Some(TraceDataRoot {
         node_key,
         is_expanded,
+        can_expand: !children.is_empty(),
         name,
         title: format!("{execution_id} {ffqn}"),
         scheduled_at: execution_scheduled_at,
         last_event_at,
         busy,
         children,
-        load_button,
+        load_button: None,
         current_status: statuses_map.get(execution_id).cloned(),
     })
 }
