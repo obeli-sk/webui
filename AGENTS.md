@@ -61,7 +61,7 @@ webui/
 │   │   ├── build.rs        # Proto compilation, CSS generation
 │   │   └── Trunk.toml      # Trunk bundler configuration
 │   └── webui-proxy/        # Development proxy server
-├── obelisk/                # Git submodule with obelisk proto definitions
+├── obelisk/                # Git submodule with obelisk proto definitions - IMPORTANT: no changes to submodule
 │   └── proto/
 │       └── obelisk.proto   # gRPC service definitions
 └── flake.nix               # Nix development environment

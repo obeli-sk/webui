@@ -146,6 +146,23 @@ pub enum CursorType {
     ExecutionId,
 }
 
+fn grpc_execution_function_filter(
+    value: String,
+) -> grpc_client::list_executions_request::ExecutionFunctionFilter {
+    let scope = if value
+        .rsplit_once('.')
+        .is_some_and(|(left, _)| left.contains('/'))
+    {
+        grpc_client::list_executions_request::execution_function_filter::Scope::FunctionName(value)
+    } else if value.contains('/') {
+        grpc_client::list_executions_request::execution_function_filter::Scope::InterfaceName(value)
+    } else {
+        grpc_client::list_executions_request::execution_function_filter::Scope::PackageName(value)
+    };
+
+    grpc_client::list_executions_request::ExecutionFunctionFilter { scope: Some(scope) }
+}
+
 #[derive(Clone, PartialEq)]
 struct FunctionPrefixPickerData {
     packages: Vec<String>,
@@ -159,6 +176,10 @@ fn build_function_prefix_picker_data(app_state: &AppState) -> FunctionPrefixPick
     let mut functions_by_interface: HashMap<String, HashSet<String>> = HashMap::new();
 
     for ffqn in app_state.ffqns_to_details.keys() {
+        if ffqn.ifc_fqn.pkg_fqn.is_extension() {
+            continue;
+        }
+
         let package = ffqn.ifc_fqn.pkg_fqn.to_string();
         let interface = ffqn.ifc_fqn.to_string();
         let function = ffqn.to_string();
@@ -205,7 +226,7 @@ fn build_function_prefix_picker_data(app_state: &AppState) -> FunctionPrefixPick
 #[derive(Properties, PartialEq)]
 struct FunctionPrefixInputProps {
     pub value: String,
-    pub on_change: Callback<String>,
+    pub on_apply: Callback<Option<String>>,
 }
 
 #[function_component(FunctionPrefixInput)]
@@ -305,12 +326,27 @@ fn function_prefix_input(props: &FunctionPrefixInputProps) -> Html {
             draft_value.set(input.value());
         })
     };
-    let on_apply = {
+    let on_clear = {
         let draft_value = draft_value.clone();
-        let on_change = props.on_change.clone();
+        let selected_package = selected_package.clone();
+        let selected_interface = selected_interface.clone();
+        let on_apply = props.on_apply.clone();
         let is_modal_open = is_modal_open.clone();
         Callback::from(move |_| {
-            on_change.emit((*draft_value).clone());
+            draft_value.set(String::new());
+            selected_package.set(None);
+            selected_interface.set(None);
+            on_apply.emit(None);
+            is_modal_open.set(false);
+        })
+    };
+    let on_apply = {
+        let draft_value = draft_value.clone();
+        let on_apply = props.on_apply.clone();
+        let is_modal_open = is_modal_open.clone();
+        Callback::from(move |_| {
+            let value = (*draft_value).clone();
+            on_apply.emit((!value.is_empty()).then_some(value));
             is_modal_open.set(false);
         })
     };
@@ -348,7 +384,6 @@ fn function_prefix_input(props: &FunctionPrefixInputProps) -> Html {
             }
         });
     }
-
     let selected_package_value = (*selected_package).clone();
     let selected_interface_value = (*selected_interface).clone();
     let interfaces = selected_package_value
@@ -367,7 +402,7 @@ fn function_prefix_input(props: &FunctionPrefixInputProps) -> Html {
             <input
                 type="text"
                 class="function-prefix-trigger"
-                placeholder="Function Prefix..."
+                placeholder="Package, Interface, or Function..."
                 readonly=true
                 value={props.value.clone()}
                 onfocus={open_modal_on_focus}
@@ -381,7 +416,7 @@ fn function_prefix_input(props: &FunctionPrefixInputProps) -> Html {
                         onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}
                     >
                         <div class="modal-header">
-                            <h3>{"Function Prefix Filter"}</h3>
+                            <h3>{"Function Filter"}</h3>
                             <button class="modal-dismiss" type="button" onclick={close_modal_on_click}>
                                 {"×"}
                             </button>
@@ -389,13 +424,13 @@ fn function_prefix_input(props: &FunctionPrefixInputProps) -> Html {
 
                         <div class="function-prefix-modal-body">
                             <div class="function-prefix-modal-manual">
-                                <label for="function-prefix-manual">{"Manual prefix"}</label>
+                                <label for="function-prefix-manual">{"Manual filter"}</label>
                                 <input
                                     id="function-prefix-manual"
                                     type="text"
                                     value={(*draft_value).clone()}
                                     oninput={on_draft_input}
-                                    placeholder="namespace:package/interface.function"
+                                    placeholder="namespace:package[@version], namespace:package/interface[@version], or namespace:package/interface[@version].function"
                                 />
                             </div>
 
@@ -484,7 +519,8 @@ fn function_prefix_input(props: &FunctionPrefixInputProps) -> Html {
                         </div>
 
                         <div class="modal-footer">
-                            <button type="button" onclick={on_apply}>{"Use Prefix"}</button>
+                            <button type="button" onclick={on_clear}>{"Clear"}</button>
+                            <button type="button" onclick={on_apply}>{"Apply Filter"}</button>
                         </div>
                     </div>
                 </div>
@@ -576,11 +612,13 @@ pub fn execution_list_page() -> Html {
                 };
 
                 // Send request
+                #[allow(deprecated)]
                 let req = grpc_client::ListExecutionsRequest {
-                    function_name_prefix: query_params.ffqn_prefix,
+                    function_name_prefix: None,
                     top_level_only: !query_params.show_derived,
                     pagination,
                     hide_finished: query_params.hide_finished,
+                    function_filter: query_params.ffqn_prefix.map(grpc_execution_function_filter),
                     execution_id_prefix: query_params.execution_id_prefix.filter(|s| !s.is_empty()),
                     component_digest: query_params
                         .component_digest
@@ -675,6 +713,42 @@ pub fn execution_list_page() -> Html {
             let input: web_sys::HtmlInputElement = e.target_unchecked_into();
             let mut new_query = query.clone();
             new_query.show_details = input.checked();
+            let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
+        })
+    };
+    let on_apply_ffqn_prefix = {
+        let navigator = navigator.clone();
+        let query = query.clone();
+        let prefix_ref = prefix_ref.clone();
+        let deployment_id_ref = deployment_id_ref.clone();
+        let component_digest_ref = component_digest_ref.clone();
+        let refresh_counter_state = refresh_counter_state.clone();
+        let ffqn_prefix_state = ffqn_prefix_state.clone();
+        Callback::from(move |ffqn_prefix: Option<String>| {
+            ffqn_prefix_state.set(ffqn_prefix.clone().unwrap_or_default());
+
+            let mut new_query = query.clone();
+            new_query.cursor = None;
+            new_query.direction = None;
+            new_query.include_cursor = false;
+            new_query.ffqn_prefix = ffqn_prefix;
+
+            let prefix = prefix_ref.cast::<HtmlInputElement>().unwrap().value();
+            new_query.execution_id_prefix = (!prefix.is_empty()).then_some(prefix);
+
+            let deployment_id = deployment_id_ref
+                .cast::<HtmlInputElement>()
+                .unwrap()
+                .value();
+            new_query.deployment_id = (!deployment_id.is_empty()).then_some(deployment_id);
+
+            let component_digest = component_digest_ref
+                .cast::<HtmlInputElement>()
+                .unwrap()
+                .value();
+            new_query.component_digest = (!component_digest.is_empty()).then_some(component_digest);
+
+            refresh_counter_state.set(*refresh_counter_state + 1);
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
@@ -860,10 +934,7 @@ pub fn execution_list_page() -> Html {
                         />
                         <FunctionPrefixInput
                             value={(*ffqn_prefix_state).clone()}
-                            on_change={{
-                                let ffqn_prefix_state = ffqn_prefix_state.clone();
-                                Callback::from(move |value: String| ffqn_prefix_state.set(value))
-                            }}
+                            on_apply={on_apply_ffqn_prefix}
                         />
                         <input
                             type="text"
