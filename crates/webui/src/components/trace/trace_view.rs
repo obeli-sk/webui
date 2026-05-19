@@ -1,7 +1,7 @@
 use super::data::{BusyIntervalStatus, TraceData};
 use crate::{
     BASE_URL,
-    app::{AppState, Route},
+    app::Route,
     components::{
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
@@ -201,9 +201,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
 
     let trace_view = trace_view_state.deref();
 
-    let app_state =
-        use_context::<AppState>().expect("AppState context is set when starting the App");
-
     // Container to collect IDs that need loading during tree computation
     let missing_executions = use_mut_ref(Vec::new);
     // Clear previous render's collection
@@ -216,7 +213,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             &trace_view.responses,
             &trace_view.statuses,
             &trace_view_state,
-            &app_state,
             &mut missing_executions.borrow_mut(),
         )
     };
@@ -445,7 +441,6 @@ fn compute_root_trace(
     responses_map: &HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
     statuses_map: &HashMap<ExecutionId, grpc_client::execution_status::Status>,
     trace_view_state: &UseReducerHandle<TraceViewState>,
-    app_state: &AppState,
     missing_ids: &mut Vec<ExecutionId>,
 ) -> Option<TraceDataRoot> {
     let events = match events_map.get(execution_id) {
@@ -474,11 +469,10 @@ fn compute_root_trace(
             .expect("`scheduled_at` is sent by the server"),
     );
 
-    let ffqn = FunctionFqn::from(create_event);
-    let component_type = app_state
-        .ffqns_to_details
-        .get(&ffqn)
-        .map(|(_, c)| c.component_type());
+    let component_type = create_event
+        .component_id
+        .as_ref()
+        .map(|component_id| component_id.component_type());
     let is_stub = component_type == Some(ComponentType::ActivityStub);
 
     let child_ids_to_results = compute_child_execution_id_to_child_execution_finished(responses);
@@ -605,7 +599,6 @@ fn compute_root_trace(
                             responses_map,
                             statuses_map,
                             trace_view_state,
-                            app_state,
                             missing_ids,
                         ) {
                             last_event_at = last_event_at.max(child_root.last_event_at);
