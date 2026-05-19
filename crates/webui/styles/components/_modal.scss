@@ -149,6 +149,14 @@
   }
 }
 
+.captured-write-toggle {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  color: $color-text-muted;
+  user-select: none;
+}
+
 .captured-write-kind {
   color: $color-accent-yellow;
 }
@@ -156,6 +164,12 @@
 .captured-write-detail {
   color: $color-text-muted;
   margin-left: $spacing-sm;
+}
+
+.captured-write-events {
+  padding: $spacing-xs 0 $spacing-xs $spacing-lg;
+  border-left: 1px solid $color-border-primary;
+  margin-left: $spacing-md;
 }
 
 // Blocked status (shown when execution is blocked during polling)

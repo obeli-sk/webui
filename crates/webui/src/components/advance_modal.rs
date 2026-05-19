@@ -8,13 +8,20 @@ use crate::{
     components::code::syntect_code_block::{
         DEFAULT_CONTEXT_LINES, SyntectCodeBlock, highlight_code_line_by_line,
     },
+    components::execution_detail::tree_component::TreeComponent,
+    components::execution_detail::utils::event_to_detail,
+    components::execution_header::ExecutionLink,
+    components::ffqn_with_links::FfqnWithLinks,
+    components::json_tree::{JsonValue, insert_json_into_tree},
+    grpc::ffqn::FunctionFqn,
     grpc::grpc_client::{
-        self, CapturedBacktrace, CapturedWrite, ComponentId, ExecutionId,
-        GetBacktraceSourceRequest, captured_write, execution_event, execution_event::history_event,
-        execution_repository_client::ExecutionRepositoryClient,
+        self, CapturedBacktrace, CapturedWrite, ComponentId, CreateExecutionRequest, ExecutionId,
+        GetBacktraceSourceRequest, JoinSetResponseEvent, captured_write, execution_event,
+        execution_event::history_event, execution_repository_client::ExecutionRepositoryClient,
     },
+    tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData},
 };
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use log::trace;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -57,7 +64,10 @@ struct WriteSummary {
     detail: String,
 }
 
-fn summarise_write(cw: &CapturedWrite) -> WriteSummary {
+fn summarise_write(
+    cw: &CapturedWrite,
+    child_created: &HashMap<ExecutionId, execution_event::Created>,
+) -> WriteSummary {
     match &cw.write {
         Some(captured_write::Write::Append(a)) => {
             let name = a.event.as_ref().map(event_type_name).unwrap_or("(empty)");
@@ -78,14 +88,18 @@ fn summarise_write(cw: &CapturedWrite) -> WriteSummary {
                 b.child_requests.len()
             ),
         },
-        Some(captured_write::Write::AppendStubResponse(s)) => WriteSummary {
-            kind: "StubResponse",
-            detail: s
+        Some(captured_write::Write::AppendStubResponse(s)) => {
+            let fn_name = s
                 .child_execution_id
                 .as_ref()
-                .map(|id| id.to_string())
-                .unwrap_or_default(),
-        },
+                .and_then(|id| child_created.get(id))
+                .and_then(|c| c.function_name.as_ref())
+                .map(|f| FunctionFqn::from(f.clone()).short().to_string());
+            WriteSummary {
+                kind: "AppendStubResponse",
+                detail: fn_name.map(|n| format!("`{n}`")).unwrap_or_default(),
+            }
+        }
         Some(captured_write::Write::AppendFinished(_)) => WriteSummary {
             kind: "Finished",
             detail: String::new(),
@@ -100,6 +114,7 @@ fn iter_events(cw: &CapturedWrite) -> Box<dyn Iterator<Item = &grpc_client::Exec
         Some(captured_write::Write::Append(a)) => Box::new(a.event.iter()),
         Some(captured_write::Write::AppendBatch(b)) => Box::new(b.events.iter()),
         Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => Box::new(b.events.iter()),
+        Some(captured_write::Write::AppendStubResponse(s)) => Box::new(s.events.iter()),
         _ => Box::new(std::iter::empty()),
     }
 }
@@ -178,6 +193,142 @@ fn apply_pause_flags(
     writes
 }
 
+/// Convert a `CreateExecutionRequest` to an `execution_event::Created`.
+fn create_req_to_created(req: &CreateExecutionRequest) -> execution_event::Created {
+    execution_event::Created {
+        function_name: req.function_name.clone(),
+        params: req.params.clone(),
+        scheduled_at: req.scheduled_at,
+        component_id: req.component_id.clone(),
+        scheduled_by: None,
+        deployment_id: req.deployment_id.clone(),
+        parent_execution_id: req.parent_execution_id.clone(),
+        parent_join_set_id: req.parent_join_set_id.clone(),
+        metadata: req.metadata.clone(),
+    }
+}
+
+/// Build a map from child execution ID to its Created event from captured writes.
+fn child_created_from_writes(
+    writes: &[CapturedWrite],
+) -> HashMap<ExecutionId, execution_event::Created> {
+    let mut map = HashMap::new();
+    for cw in writes {
+        if let Some(captured_write::Write::AppendBatchCreateNewExecution(b)) = &cw.write {
+            for req in &b.child_requests {
+                if let Some(id) = &req.execution_id {
+                    map.insert(id.clone(), create_req_to_created(req));
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Build a tree displaying AppendStubResponse metadata: function name, params, parent execution.
+fn stub_response_tree(
+    stub: &captured_write::AppendStubResponse,
+    child_created: &HashMap<ExecutionId, execution_event::Created>,
+    app_state: &crate::app::AppState,
+    link: ExecutionLink,
+) -> TreeData<u32> {
+    let mut tree = TreeBuilder::new().build();
+    let root_id = tree
+        .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
+        .unwrap();
+
+    // Function name + params from the child's Created event
+    if let Some(created) = stub
+        .child_execution_id
+        .as_ref()
+        .and_then(|id| child_created.get(id))
+        && let Some(fn_name) = &created.function_name
+    {
+        let ffqn = FunctionFqn::from(fn_name.clone());
+        tree.insert(
+            Node::new(NodeData {
+                icon: Icon::Function,
+                label: html! { <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} /> },
+                has_caret: false,
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&root_id),
+        )
+        .unwrap();
+
+        if let Some(params_any) = &created.params
+            && let Ok(raw_params) =
+                serde_json::from_slice::<Vec<serde_json::Value>>(&params_any.value)
+        {
+            let params: Vec<(String, serde_json::Value)> = match app_state
+                .ffqns_to_details
+                .get(&ffqn)
+            {
+                Some((function_detail, _)) if function_detail.params.len() == raw_params.len() => {
+                    function_detail
+                        .params
+                        .iter()
+                        .zip(raw_params.iter())
+                        .map(|(fn_param, param_value)| (fn_param.name.clone(), param_value.clone()))
+                        .collect()
+                }
+                _ => raw_params
+                    .iter()
+                    .map(|v| ("(unknown)".to_string(), v.clone()))
+                    .collect(),
+            };
+            let params_node_id = tree
+                .insert(
+                    Node::new(NodeData {
+                        icon: Icon::FolderClose,
+                        label: "Parameters".into(),
+                        has_caret: true,
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&root_id),
+                )
+                .unwrap();
+            for (param_name, param_value) in params {
+                let param_name_node = tree
+                    .insert(
+                        Node::new(NodeData {
+                            icon: Icon::Function,
+                            label: format!("{param_name}: {param_value}").into(),
+                            has_caret: true,
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&params_node_id),
+                    )
+                    .unwrap();
+                let _ = insert_json_into_tree(
+                    &mut tree,
+                    &param_name_node,
+                    JsonValue::Parsed(&param_value),
+                );
+            }
+        }
+    }
+
+    // Parent execution link
+    if let Some(parent_id) = &stub.parent_execution_id {
+        tree.insert(
+            Node::new(NodeData {
+                icon: Icon::Flows,
+                label: html! { <>
+                    {"Parent: "}
+                    { link.link(parent_id.clone(), &parent_id.to_string()) }
+                </> },
+                has_caret: false,
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&root_id),
+        )
+        .unwrap();
+    }
+
+    TreeData::from(tree)
+}
+
 /// Extract backtraces from a captured write.
 fn backtraces_of(cw: &CapturedWrite) -> &[CapturedBacktrace] {
     match &cw.write {
@@ -223,6 +374,10 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
     let advancing = use_state(|| false);
     let pause_delays = use_state(|| false);
     let pause_executions = use_state(|| false);
+
+    let app_state = use_context::<crate::app::AppState>()
+        .expect("AppState context is set when starting the App");
+    let expanded_writes = use_state(HashSet::<usize>::new);
 
     let has_delays = has_delay_requests(&props.captured_writes);
     let has_child_execs = has_child_execution_requests(&props.captured_writes);
@@ -333,14 +488,18 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
         });
     }
 
+    let empty_join_next: HashMap<u32, &JoinSetResponseEvent> = HashMap::new();
+    let child_created = child_created_from_writes(&props.captured_writes);
+
     // Left pane: list of captured writes
     let write_list = props
         .captured_writes
         .iter()
         .enumerate()
         .map(|(idx, cw)| {
-            let summary = summarise_write(cw);
+            let summary = summarise_write(cw, &child_created);
             let is_selected = idx == *selected_idx;
+            let is_expanded = expanded_writes.contains(&idx);
             let class = classes!("captured-write-item", is_selected.then_some("selected"),);
             let on_click = {
                 let selected_idx = selected_idx.clone();
@@ -348,12 +507,71 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                     selected_idx.set(idx);
                 })
             };
-            html! {
-                <div {class} onclick={on_click}>
-                    <span class="captured-write-kind">{summary.kind}</span>
-                    if !summary.detail.is_empty() {
-                        <span class="captured-write-detail">{summary.detail}</span>
+            let events: Vec<_> = iter_events(cw).cloned().collect();
+            let is_stub_response = matches!(
+                &cw.write,
+                Some(captured_write::Write::AppendStubResponse(_))
+            );
+            let is_expandable = !events.is_empty() || is_stub_response;
+            let on_toggle_expand = {
+                let expanded_writes = expanded_writes.clone();
+                Callback::from(move |e: MouseEvent| {
+                    e.stop_propagation();
+                    let mut next = (*expanded_writes).clone();
+                    if next.contains(&idx) {
+                        next.remove(&idx);
+                    } else {
+                        next.insert(idx);
                     }
+                    expanded_writes.set(next);
+                })
+            };
+            let event_details = if is_expanded {
+                let execution_id = &props.execution_id;
+                let stub_tree =
+                    if let Some(captured_write::Write::AppendStubResponse(stub)) = &cw.write {
+                        let tree = stub_response_tree(
+                            stub,
+                            &child_created,
+                            &app_state,
+                            ExecutionLink::ExecutionLog,
+                        );
+                        html! { <TreeComponent {tree} /> }
+                    } else {
+                        html! {}
+                    };
+                html! {
+                    <div class="captured-write-events">
+                        {stub_tree}
+                        { for events.iter().map(|event| {
+                            event_to_detail(
+                                execution_id,
+                                event,
+                                &empty_join_next,
+                                &child_created,
+                                ExecutionLink::ExecutionLog,
+                                false,
+                            )
+                        })}
+                    </div>
+                }
+            } else {
+                html! {}
+            };
+            html! {
+                <div class="captured-write-wrapper">
+                    <div {class} onclick={on_click}>
+                        if is_expandable {
+                            <span class="captured-write-toggle" onclick={on_toggle_expand}>
+                                { if is_expanded { "\u{25BE}" } else { "\u{25B8}" } }
+                            </span>
+                        }
+                        <span class="captured-write-kind">{summary.kind}</span>
+                        if !summary.detail.is_empty() {
+                            <span class="captured-write-detail">{summary.detail}</span>
+                        }
+                    </div>
+                    {event_details}
                 </div>
             }
         })
