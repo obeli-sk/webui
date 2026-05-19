@@ -53,7 +53,6 @@ fn event_type_name(event: &grpc_client::ExecutionEvent) -> &'static str {
 }
 
 struct WriteSummary {
-    version: u32,
     kind: &'static str,
     detail: String,
 }
@@ -63,18 +62,15 @@ fn summarise_write(cw: &CapturedWrite) -> WriteSummary {
         Some(captured_write::Write::Append(a)) => {
             let name = a.event.as_ref().map(event_type_name).unwrap_or("(empty)");
             WriteSummary {
-                version: a.version,
                 kind: "Append",
                 detail: name.to_string(),
             }
         }
         Some(captured_write::Write::AppendBatch(b)) => WriteSummary {
-            version: b.version,
             kind: "AppendBatch",
             detail: format!("{} events", b.events.len()),
         },
         Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => WriteSummary {
-            version: b.version,
             kind: "AppendBatch+Create",
             detail: format!(
                 "{} events + {} child exec",
@@ -83,7 +79,6 @@ fn summarise_write(cw: &CapturedWrite) -> WriteSummary {
             ),
         },
         Some(captured_write::Write::AppendStubResponse(s)) => WriteSummary {
-            version: s.version,
             kind: "StubResponse",
             detail: s
                 .child_execution_id
@@ -91,16 +86,11 @@ fn summarise_write(cw: &CapturedWrite) -> WriteSummary {
                 .map(|id| id.to_string())
                 .unwrap_or_default(),
         },
-        Some(captured_write::Write::AppendFinished(f)) => WriteSummary {
-            version: f.version,
+        Some(captured_write::Write::AppendFinished(_)) => WriteSummary {
             kind: "Finished",
             detail: String::new(),
         },
-        None => WriteSummary {
-            version: 0,
-            kind: "(empty)",
-            detail: String::new(),
-        },
+        None => unreachable!("write is always sent for CapturedWrite"),
     }
 }
 
@@ -360,7 +350,6 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
             };
             html! {
                 <div {class} onclick={on_click}>
-                    <span class="captured-write-version">{format!("v{}", summary.version)}</span>
                     <span class="captured-write-kind">{summary.kind}</span>
                     if !summary.detail.is_empty() {
                         <span class="captured-write-detail">{summary.detail}</span>

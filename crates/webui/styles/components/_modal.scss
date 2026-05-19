@@ -149,11 +149,6 @@
   }
 }
 
-.captured-write-version {
-  color: $color-text-secondary;
-  margin-right: $spacing-sm;
-}
-
 .captured-write-kind {
   color: $color-accent-yellow;
 }
@@ -207,6 +202,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
