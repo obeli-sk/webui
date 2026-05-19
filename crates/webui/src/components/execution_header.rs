@@ -259,6 +259,7 @@ pub fn execution_header(
                         <UpgradeForm
                             execution_id={execution_id.clone()}
                             current_digest={workflow_digest}
+                            ffqn={exec_info.as_ref().and_then(|info| info.ffqn.clone())}
                         />
                     }
                     <ReplayButton

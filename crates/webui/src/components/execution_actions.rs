@@ -7,7 +7,7 @@ use crate::{
     grpc::{
         ffqn::FunctionFqn,
         grpc_client::{
-            self, ComponentType, ContentDigest, ExecutionId,
+            self, ContentDigest, ExecutionId,
             execution_repository_client::ExecutionRepositoryClient,
         },
     },
@@ -18,26 +18,6 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use yew_router::prelude::Link;
-
-/// Validates a digest string has the correct format (sha256:hex)
-fn validate_digest(input: &str) -> Result<(), String> {
-    let hash_hex = input
-        .strip_prefix("sha256:")
-        .ok_or_else(|| "Digest must start with 'sha256:'".to_string())?;
-
-    if hash_hex.len() != 64 {
-        return Err(format!(
-            "Expected 64 hex characters after 'sha256:', got {}",
-            hash_hex.len()
-        ));
-    }
-
-    if !hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err("Digest must contain only hexadecimal characters".to_string());
-    }
-
-    Ok(())
-}
 
 // ============================================================================
 // Replay Execution Button
@@ -246,6 +226,23 @@ pub fn advance_button(props: &AdvanceButtonProps) -> Html {
 pub struct UpgradeFormProps {
     pub execution_id: ExecutionId,
     pub current_digest: ContentDigest,
+    pub ffqn: Option<FunctionFqn>,
+}
+
+/// Find the digest of the deployed component that exports the given FFQN.
+/// Returns `None` if the FFQN is not found in the current deployment.
+fn find_upgrade_digest(
+    app_state: &AppState,
+    ffqn: &FunctionFqn,
+    current_digest: &ContentDigest,
+) -> Option<ContentDigest> {
+    let (_, component_id) = app_state.ffqns_to_details.get(ffqn)?;
+    let digest = component_id.digest.as_ref()?;
+    if digest.digest != current_digest.digest {
+        Some(digest.clone())
+    } else {
+        None
+    }
 }
 
 #[component(UpgradeForm)]
@@ -256,59 +253,50 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
     let loading_state = use_state(|| false);
-    let new_digest_state = use_state(String::new);
     let skip_determinism_state = use_state(|| false);
-    let validation_error_state = use_state(|| None::<String>);
     let show_form_state = use_state(|| false);
+    // Tracks the digest after a successful upgrade, so we can disable the button
+    // immediately without waiting for the parent to propagate the new digest.
+    let upgraded_digest = use_state(|| None::<ContentDigest>);
 
-    let new_digest_ref = use_node_ref();
+    // Use the upgraded digest if available, otherwise fall back to the prop.
+    let effective_digest = upgraded_digest
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| props.current_digest.clone());
 
-    // Get workflow components for the dropdown
-    let workflow_components: Vec<_> = app_state
-        .components_by_id
-        .iter()
-        .filter(|(id, _)| id.component_type() == ComponentType::Workflow)
-        .map(|(id, _)| id.clone())
-        .collect();
+    // Determine upgrade target from the FFQN
+    let upgrade_digest = props
+        .ffqn
+        .as_ref()
+        .and_then(|ffqn| find_upgrade_digest(&app_state, ffqn, &effective_digest));
+
+    let (button_disabled, button_title) = if props.ffqn.is_none() {
+        (true, "No function name available for this execution")
+    } else if upgrade_digest.is_some() {
+        (
+            false,
+            "Upgrade to the component version from the current deployment",
+        )
+    } else if app_state
+        .ffqns_to_details
+        .contains_key(props.ffqn.as_ref().unwrap())
+    {
+        (
+            true,
+            "Execution already uses the component from the current deployment",
+        )
+    } else {
+        (
+            true,
+            "No component exporting this function found in the current deployment",
+        )
+    };
 
     let on_toggle_form = {
         let show_form_state = show_form_state.clone();
         Callback::from(move |_| {
             show_form_state.set(!*show_form_state);
-        })
-    };
-
-    let on_digest_change = {
-        let new_digest_state = new_digest_state.clone();
-        let validation_error_state = validation_error_state.clone();
-        Callback::from(move |e: Event| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            let value = input.value();
-            new_digest_state.set(value.clone());
-
-            if value.is_empty() {
-                validation_error_state.set(None);
-            } else {
-                match validate_digest(&value) {
-                    Ok(()) => validation_error_state.set(None),
-                    Err(msg) => validation_error_state.set(Some(msg)),
-                }
-            }
-        })
-    };
-
-    let on_select_component = {
-        let new_digest_state = new_digest_state.clone();
-        let validation_error_state = validation_error_state.clone();
-        Callback::from(move |e: Event| {
-            let select: web_sys::HtmlSelectElement = e.target_unchecked_into();
-            let value = select.value();
-            if !value.is_empty() {
-                new_digest_state.set(value.clone());
-                validation_error_state.set(None);
-            } else {
-                new_digest_state.set(String::new());
-            }
         })
     };
 
@@ -322,28 +310,21 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
 
     let on_submit = {
         let execution_id = props.execution_id.clone();
-        let current_digest = props.current_digest.clone();
-        let new_digest_state = new_digest_state.clone();
+        let effective_digest = effective_digest.clone();
+        let upgrade_digest = upgrade_digest.clone();
         let skip_determinism_state = skip_determinism_state.clone();
         let notifications = notifications.clone();
         let loading_state = loading_state.clone();
-        let validation_error_state = validation_error_state.clone();
+        let show_form_state = show_form_state.clone();
+        let upgraded_digest = upgraded_digest.clone();
 
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
 
-            let new_digest = (*new_digest_state).clone();
-
-            // Validate
-            if new_digest.is_empty() {
-                validation_error_state.set(Some("New digest is required".to_string()));
-                return;
-            }
-
-            if let Err(msg) = validate_digest(&new_digest) {
-                validation_error_state.set(Some(msg));
-                return;
-            }
+            let new_digest = match &upgrade_digest {
+                Some(d) => d.clone(),
+                None => return,
+            };
 
             loading_state.set(true);
 
@@ -352,7 +333,9 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                 let skip_determinism = *skip_determinism_state;
                 let notifications = notifications.clone();
                 let loading_state = loading_state.clone();
-                let current_digest = current_digest.clone();
+                let effective_digest = effective_digest.clone();
+                let show_form_state = show_form_state.clone();
+                let upgraded_digest = upgraded_digest.clone();
 
                 async move {
                     let mut client =
@@ -362,10 +345,8 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                         .upgrade_execution_component(
                             grpc_client::UpgradeExecutionComponentRequest {
                                 execution_id: Some(execution_id.clone()),
-                                expected_component_digest: Some(current_digest.clone()),
-                                new_component_digest: Some(ContentDigest {
-                                    digest: new_digest.clone(),
-                                }),
+                                expected_component_digest: Some(effective_digest),
+                                new_component_digest: Some(new_digest.clone()),
                                 skip_determinism_check: skip_determinism,
                             },
                         )
@@ -375,14 +356,17 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
 
                     match result {
                         Ok(_) => {
+                            let digest_str = &new_digest.digest;
                             debug!(
                                 "Upgrade requested for execution {} to {}",
-                                execution_id, new_digest
+                                execution_id, digest_str
                             );
                             notifications.push(Notification::success(format!(
                                 "Upgraded to {}",
-                                &new_digest[..20.min(new_digest.len())]
+                                &digest_str[..20.min(digest_str.len())]
                             )));
+                            upgraded_digest.set(Some(new_digest));
+                            show_form_state.set(false);
                         }
                         Err(e) => {
                             error!("Failed to upgrade execution {}: {:?}", execution_id, e);
@@ -396,13 +380,14 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
 
     let is_loading = *loading_state;
     let show_form = *show_form_state;
-    let validation_error = (*validation_error_state).clone();
 
     html! {
         <div class="action-container upgrade-action">
             <button
                 class="action-button toggle-upgrade-button"
                 onclick={on_toggle_form}
+                disabled={button_disabled}
+                title={button_title}
             >
                 if show_form {
                     {"Hide Upgrade Form"}
@@ -413,58 +398,6 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
 
             if show_form {
                 <form class="upgrade-form" onsubmit={on_submit}>
-                    <div class="form-row">
-                        <label>{"Current digest:"}</label>
-                        <span class="current-digest">
-                            { &props.current_digest.digest }
-                        </span>
-                    </div>
-
-                    <div class="form-row">
-                        <label for="new-digest">{"New digest:"}</label>
-                        <input
-                            ref={new_digest_ref}
-                            id="new-digest"
-                            type="text"
-                            placeholder="sha256:..."
-                            value={(*new_digest_state).clone()}
-                            onchange={on_digest_change}
-                        />
-                    </div>
-
-                    if !workflow_components.is_empty() {
-                        <div class="form-row">
-                            <label for="select-component">{"Or select:"}</label>
-                            <select id="select-component" onchange={on_select_component}>
-                                <option value="" selected=true>{"-- Select a workflow component --"}</option>
-                                {
-                                    workflow_components.iter().map(|comp_id| {
-                                        let digest = comp_id.digest.as_ref()
-                                            .map(|d| d.digest.clone())
-                                            .unwrap_or_default();
-                                        let name = &comp_id.name;
-                                        let is_current = props.current_digest.digest == digest;
-                                        html! {
-                                            <option
-                                                value={digest.clone()}
-                                                disabled={is_current}
-                                            >
-                                                { format!("{} ({}...)", name, &digest[..20.min(digest.len())]) }
-                                                if is_current {
-                                                    {" [current]"}
-                                                }
-                                            </option>
-                                        }
-                                    }).collect::<Html>()
-                                }
-                            </select>
-                        </div>
-                    }
-
-                    if let Some(error) = validation_error {
-                        <div class="validation-error">{ error }</div>
-                    }
-
                     <div class="form-row checkbox-row">
                         <label>
                             <input
@@ -480,7 +413,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                         <button
                             type="submit"
                             class="action-button submit-upgrade-button"
-                            disabled={is_loading || validation_error_state.is_some()}
+                            disabled={is_loading}
                         >
                             if is_loading {
                                 {"Upgrading..."}
