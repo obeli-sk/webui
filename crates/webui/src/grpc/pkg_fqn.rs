@@ -1,3 +1,5 @@
+use crate::grpc::SUFFIX_PKG_SCHEDULE;
+
 use super::{NAMESPACE_OBELISK, SUFFIX_PKG_EXT, SUFFIX_PKG_STUB, ifc_fqn::IfcFqn};
 use anyhow::Context;
 use std::fmt::Display;
@@ -27,7 +29,9 @@ impl Display for PkgFqn {
 impl PkgFqn {
     #[must_use]
     pub fn is_extension(&self) -> bool {
-        self.package_name.ends_with(SUFFIX_PKG_EXT) || self.package_name.ends_with(SUFFIX_PKG_STUB)
+        self.package_name.ends_with(SUFFIX_PKG_EXT)
+            || self.package_name.ends_with(SUFFIX_PKG_SCHEDULE)
+            || self.package_name.ends_with(SUFFIX_PKG_STUB)
     }
 
     #[must_use]
