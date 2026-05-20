@@ -1,0 +1,127 @@
+// ============================================
+// Execution New Page - Function Picker & Submit
+// ============================================
+// Used by:
+//   - src/components/execution_new_page.rs
+// ============================================
+@use '../base/variables' as *;
+
+// Function picker columns (inline, not modal)
+.function-picker-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: $spacing-md;
+  min-height: 400px;
+  max-height: 60vh;
+  margin-top: $spacing-md;
+}
+
+.function-picker-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: $color-bg-tertiary;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  overflow: hidden;
+}
+
+.function-picker-column-title {
+  padding: $spacing-md;
+  border-bottom: 1px solid $color-border-primary;
+  color: $color-accent-cyan;
+  font-size: $font-size-sm;
+  font-weight: 600;
+}
+
+.function-picker-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  padding: $spacing-xs;
+}
+
+.function-picker-option {
+  width: 100%;
+  padding: $spacing-sm $spacing-md;
+  background-color: transparent;
+  border: 0;
+  border-radius: $border-radius-sm;
+  color: $color-text-primary;
+  cursor: pointer;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  text-align: left;
+  transition: background-color $transition-fast, color $transition-fast;
+
+  &:hover {
+    background-color: $color-bg-hover;
+  }
+
+  &.selected {
+    background-color: rgba($color-accent-cyan, 0.16);
+    color: $color-accent-cyan;
+  }
+}
+
+// Schedule section
+.schedule-section {
+  border-top: 1px solid $color-border-primary;
+  padding-top: $spacing-md;
+  margin-top: $spacing-sm;
+}
+
+.schedule-options {
+  margin-top: $spacing-sm;
+  margin-left: $spacing-lg;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.schedule-mode-row,
+.schedule-detail-row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+
+  label {
+    width: auto;
+    min-width: 100px;
+  }
+
+  select,
+  input[type="text"],
+  input[type="number"] {
+    padding: 5px 8px;
+    background-color: $color-bg-primary;
+    border: 1px solid $color-border-primary;
+    border-radius: $border-radius-md;
+    color: $color-text-light;
+    font-family: $font-family-mono;
+    font-size: $font-size-sm;
+
+    &:focus {
+      outline: none;
+      border-color: $color-accent-cyan;
+    }
+  }
+
+  input[type="number"] {
+    width: 80px;
+  }
+
+  .schedule-tz-label {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 900px) {
+  .function-picker-columns {
+    grid-template-columns: 1fr;
+  }
+}

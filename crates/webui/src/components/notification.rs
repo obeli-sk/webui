@@ -123,6 +123,9 @@ impl NotificationContext {
             *next_id = next_id.wrapping_add(1);
             id
         };
+        if builder.level == NotificationLevel::Error {
+            log::error!("Notification: {}", builder.message);
+        }
         let notification = builder.build(id);
 
         let mut notifications = (*self.state).clone();

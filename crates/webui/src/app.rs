@@ -7,6 +7,7 @@ use crate::{
         execution_detail_page::ExecutionLogPage,
         execution_list_page::ExecutionListPage,
         execution_logs_page::LogsPage,
+        execution_new_page::ExecutionNewPage,
         execution_stub_submit_page::ExecutionStubResultPage,
         execution_submit_page::ExecutionSubmitPage,
         not_found::NotFound,
@@ -136,6 +137,8 @@ pub enum Route {
     },
     #[at("/deployments")]
     DeploymentList,
+    #[at("/execution/new")]
+    ExecutionNew,
     #[at("/execution/submit/:ffqn")]
     ExecutionSubmit { ffqn: FunctionFqn },
     #[at("/execution/stub/:ffqn/:execution_id")]
@@ -180,6 +183,7 @@ impl Route {
                 html! { <ComponentListPage maybe_component_id={Some(component_id)}/> }
             }
             Route::DeploymentList => html! { <DeploymentListPage /> },
+            Route::ExecutionNew => html! { <ExecutionNewPage /> },
             Route::ExecutionSubmit { ffqn } => html! { <ExecutionSubmitPage {ffqn} /> },
             Route::ExecutionStubResult { ffqn, execution_id } => {
                 html! { <ExecutionStubResultPage {ffqn}  {execution_id} /> }
@@ -338,6 +342,10 @@ fn app_inner(
                         {" "}
                         <Link<Route> to={Route::ComponentList }>
                             {"Components"}
+                        </Link<Route>>
+                        {" "}
+                        <Link<Route> to={Route::ExecutionNew }>
+                            {"Submit"}
                         </Link<Route>>
 
                     </nav>

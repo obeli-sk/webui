@@ -20,6 +20,7 @@ derive_more.workspace = true
 futures.workspace = true
 getrandom.workspace = true
 gloo.workspace = true
+js-sys.workspace = true
 hashbrown.workspace = true
 indexmap.workspace = true
 log.workspace = true
