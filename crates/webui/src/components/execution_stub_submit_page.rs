@@ -76,6 +76,7 @@ pub fn execution_stub_result_page(
                         component_digest: Some(
                             component_id.digest.clone().expect("`digest` is sent"),
                         ),
+                        ..Default::default()
                     })
                     .await
                     .unwrap()

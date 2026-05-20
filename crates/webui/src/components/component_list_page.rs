@@ -77,6 +77,7 @@ pub fn component_list_page(
                         let response = fn_client
                             .get_wit(grpc_client::GetWitRequest {
                                 component_digest: Some(component_digest),
+                                ..Default::default()
                             })
                             .await;
                         match response {

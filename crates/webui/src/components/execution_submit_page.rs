@@ -48,6 +48,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                         component_digest: Some(
                             component_id.digest.clone().expect("`digest` is sent"),
                         ),
+                        ..Default::default()
                     })
                     .await
                     .unwrap()
