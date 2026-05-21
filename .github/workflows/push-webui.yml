@@ -34,19 +34,31 @@ jobs:
           nix_conf: |
             extra-substituters = https://cache.garnix.io
             extra-trusted-public-keys = cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g
-      - name: Populate the nix store
-        run: |
-          nix develop .#withObelisk --command echo
 
+      - name: Populate the nix store
+        run: nix develop .#withObelisk --command echo
+
+      # Step 1: Sync obelisk submodule to latest main
+      - name: Sync obelisk submodule to latest main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://${{ secrets.WEBUI_TO_OBELISK_PR }}@github.com/obeli-sk/webui.git
+          git submodule update --remote obelisk
+          if [ -n "$(git status --porcelain obelisk)" ]; then
+            git add obelisk
+            git commit -m "chore: Sync obelisk submodule"
+          else
+            echo "Obelisk submodule already up to date."
+          fi
+
+      # Step 2: Build webui and push to Docker Hub
       - name: Log in to Docker Hub
         run: |
           echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USERNAME" --password-stdin
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
-
-      - name: Populate the nix store
-        run: nix develop  .#withObelisk --command echo
 
       - id: obelisk-clone
         run: echo "obelisk_dir=obelisk-clone" >> $GITHUB_OUTPUT
@@ -55,12 +67,13 @@ jobs:
         run: |
           git clone https://${{ secrets.WEBUI_TO_OBELISK_PR }}@github.com/obeli-sk/obelisk.git ${{ steps.obelisk-clone.outputs.obelisk_dir }}
 
-      - name: Push webui
+      - name: Build and push webui
         run: |
-          nix develop  .#withObelisk --command ./scripts/push-webui.sh $TAG ${{ steps.obelisk-clone.outputs.obelisk_dir }}/assets/webui-version.txt
+          nix develop .#withObelisk --command ./scripts/push-webui.sh $TAG ${{ steps.obelisk-clone.outputs.obelisk_dir }}/assets/webui-version.txt
         env:
           TAG: ${{ github.event.inputs.tag }}
 
+      # Step 3: Push webui version bump to obelisk main
       - name: Push webui version bump to obelisk main
         run: |
           git config user.name "github-actions[bot]"
@@ -72,14 +85,12 @@ jobs:
           TAG: ${{ github.event.inputs.tag }}
         working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
 
-      - name: Bump obelisk submodule in webui
+      # Step 4: Sync the obelisk commit back to webui submodule and push
+      - name: Sync obelisk submodule with version bump
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git submodule update --remote obelisk
           git add obelisk
           git commit -m "chore: Bump obelisk submodule to webui $TAG"
           git push origin HEAD:main
         env:
           TAG: ${{ github.event.inputs.tag }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
