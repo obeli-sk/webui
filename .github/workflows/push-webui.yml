@@ -43,6 +43,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Override actions/checkout auth header so pushes use WEBUI_TO_OBELISK_PR instead of GITHUB_TOKEN
+          git config --local --unset-all http.https://github.com/.extraheader
           git remote set-url origin https://${{ secrets.WEBUI_TO_OBELISK_PR }}@github.com/obeli-sk/webui.git
           git submodule update --remote obelisk
           if [ -n "$(git status --porcelain obelisk)" ]; then
