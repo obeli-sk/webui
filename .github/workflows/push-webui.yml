@@ -48,13 +48,8 @@ jobs:
       - name: Populate the nix store
         run: nix develop  .#withObelisk --command echo
 
-      - name: Generate Unique Branch Name
-        id: branch-name
-        run: echo "branch_name=bump-webui-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
-
-
       - id: obelisk-clone
-        run: echo "obelisk_dir=obelisk-pr" >> $GITHUB_OUTPUT
+        run: echo "obelisk_dir=obelisk-clone" >> $GITHUB_OUTPUT
 
       - name: Clone obelisk
         run: |
@@ -66,29 +61,25 @@ jobs:
         env:
           TAG: ${{ github.event.inputs.tag }}
 
-      - name: Configure git before push
+      - name: Push webui version bump to obelisk main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-        working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
-
-      - name: Create a PR
-        run: |
-          git checkout -b ${{ steps.branch-name.outputs.branch_name }}
           git add assets/webui-version.txt
           git commit -m "chore: Bump webui to $TAG"
-          git push origin ${{ steps.branch-name.outputs.branch_name }}
-          curl --fail -X POST \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            https://api.github.com/repos/obeli-sk/obelisk/pulls \
-            -d '{
-              "title": "chore: Bump webui",
-              "head": "'${{ steps.branch-name.outputs.branch_name }}'",
-              "base": "main",
-              "body": ""
-            }'
+          git push origin main
         env:
           TAG: ${{ github.event.inputs.tag }}
-          GITHUB_TOKEN: ${{ secrets.WEBUI_TO_OBELISK_PR }}
         working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
+
+      - name: Bump obelisk submodule in webui
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git submodule update --remote obelisk
+          git add obelisk
+          git commit -m "chore: Bump obelisk submodule to webui $TAG"
+          git push origin HEAD:main
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
