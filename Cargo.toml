@@ -27,18 +27,18 @@ id_tree = "1.8.0"
 log = "0.4.29"
 semver = "1.0.27"
 tonic-web-wasm-client = "0.9.0"
-js-sys = "=0.3.91" # Must match wasm-bindgen
-wasm-bindgen = "=0.2.114" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
-wasm-bindgen-futures = "=0.4.64" # Must match https://github.com/rustwasm/wasm-bindgen/blob/0.2.114/crates/futures/Cargo.toml
-wasm-bindgen-test = "=0.3.64" # Must match wasm-bindgen
-web-sys = { version = "=0.3.91", features = [
+js-sys = "=0.3.98" # Must match wasm-bindgen
+wasm-bindgen = "=0.2.121" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
+wasm-bindgen-futures = "=0.4.71" # Must match https://github.com/rustwasm/wasm-bindgen/blob/0.2.121/crates/futures/Cargo.toml
+wasm-bindgen-test = "=0.3.71" # Must match wasm-bindgen
+web-sys = { version = "=0.3.98", features = [
     "CssStyleDeclaration",
     "HtmlElement",
     "HtmlInputElement",
     "HtmlSelectElement",
     "Performance",
     "Window",
-] } # Must match https://github.com/rustwasm/wasm-bindgen/blob/0.2.114/crates/web-sys/Cargo.toml
+] } # Must match https://github.com/rustwasm/wasm-bindgen/blob/0.2.121/crates/web-sys/Cargo.toml
 yew = { version = "0.23.0", features = ["csr"] }
 yew-router = "0.20.0"
 
