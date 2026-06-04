@@ -370,18 +370,6 @@ pub fn execution_header(
                                             )) => {
                                                 let msg = match e.error {
                                                     Some(
-                                                        advance_execution_response::error::Error::NoWrites(
-                                                            _,
-                                                        ),
-                                                    ) => "No writes to advance".to_string(),
-                                                    Some(
-                                                        advance_execution_response::error::Error::ReplayError(
-                                                            re,
-                                                        ),
-                                                    ) => {
-                                                        format!("Replay error: {}", re.message)
-                                                    }
-                                                    Some(
                                                         advance_execution_response::error::Error::VersionMismatch(
                                                             vm,
                                                         ),
@@ -394,6 +382,13 @@ pub fn execution_header(
                                                             _,
                                                         ),
                                                     ) => "Replay mismatch".to_string(),
+                                                    Some(
+                                                        advance_execution_response::error::Error::TransientError(
+                                                            te,
+                                                        ),
+                                                    ) => {
+                                                        format!("Transient error: {}", te.message)
+                                                    }
                                                     None => "Unknown advance error".to_string(),
                                                 };
                                                 notifications

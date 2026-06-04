@@ -1,3 +1,4 @@
+pub mod component_upgraded;
 pub mod created;
 pub mod finished;
 pub mod history;
