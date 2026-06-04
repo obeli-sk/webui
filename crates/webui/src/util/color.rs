@@ -10,8 +10,8 @@ pub fn generate_color(s: &str) -> String {
 }
 
 pub fn generate_color_from_hash(hash: u64) -> String {
-    // Hue: 0-360
-    let h = hash % 360;
+    // Hue: 20-340, skipping the ±20° band around red (0/360) reserved for errors
+    let h = 20 + (hash % 321);
     // Saturation: 70-100% (Vibrant)
     let s = 70 + ((hash >> 16) % 31);
     // Lightness: 65-85% (Readable on dark background)
