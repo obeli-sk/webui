@@ -1,13 +1,13 @@
-cargo-edit-upgrade 0.13.9
+cargo-edit-upgrade 0.13.10
 cargo-expand 1.0.121
-just 1.49.0
-obelisk 0.37.7
-libprotoc 34.0
-rustc 1.95.0 (59807616e 2026-04-14)
+just 1.51.0
+obelisk 0.38.2
+libprotoc 34.1
+rustc 1.96.0 (ac68faa20 2026-05-25)
 sass 1.99.0
-wasm-opt version 126
-trunk wasm_opt = "version_126"
+wasm-opt version 129
+trunk wasm_opt = "version_129"
 trunk 0.21.14
-wasm-bindgen 0.2.114
-trunk wasm_bindgen = "0.2.114"
-cargo wasm-bindgen = "=0.2.114" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
+wasm-bindgen 0.2.121
+trunk wasm_bindgen = "0.2.121"
+cargo wasm-bindgen = "=0.2.121" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
