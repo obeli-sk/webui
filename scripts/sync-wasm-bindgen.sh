@@ -53,10 +53,12 @@ fetch_version() {
 FUTURES_VER=$(fetch_version "crates/futures")
 TEST_VER=$(fetch_version "crates/test")
 WEB_SYS_VER=$(fetch_version "crates/web-sys")
+JS_SYS_VER=$(fetch_version "crates/js-sys")
 
 echo "  wasm-bindgen-futures: $FUTURES_VER"
 echo "  wasm-bindgen-test:    $TEST_VER"
 echo "  web-sys:              $WEB_SYS_VER"
+echo "  js-sys:               $JS_SYS_VER"
 
 # --- Update Cargo.toml ---
 # wasm-bindgen = "=0.2.108" # Must be equal to wasm-bindgen-cli in nix. Update Trunk.toml.
@@ -75,6 +77,10 @@ sed -i "s|^wasm-bindgen-test = \"=$OLD_TEST_VER\"|wasm-bindgen-test = \"=$TEST_V
 # web-sys = { version = "=..." ...
 OLD_WEB_SYS_VER=$(grep '^web-sys =' Cargo.toml | sed 's/.*version = "=\([^"]*\)".*/\1/')
 sed -i "s|web-sys = { version = \"=$OLD_WEB_SYS_VER\"|web-sys = { version = \"=$WEB_SYS_VER\"|" Cargo.toml
+
+# js-sys = "=..."
+OLD_JS_SYS_VER=$(grep '^js-sys =' Cargo.toml | sed 's/.*"=\([^"]*\)".*/\1/')
+sed -i "s|^js-sys = \"=$OLD_JS_SYS_VER\"|js-sys = \"=$JS_SYS_VER\"|" Cargo.toml
 
 # --- Update Trunk configs ---
 for trunk_toml in crates/webui/Trunk.toml crates/webui/Trunk-dev.toml; do
