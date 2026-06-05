@@ -51,7 +51,7 @@ fn event_type_name(event: &grpc_client::ExecutionEvent) -> &'static str {
         Some(execution_event::Event::Finished(_)) => "Finished",
         Some(execution_event::Event::Paused(_)) => "Paused",
         Some(execution_event::Event::Unpaused(_)) => "Unpaused",
-        Some(execution_event::Event::ComponentUpgraded(_)) => "ComponentUpgraded",
+        Some(execution_event::Event::ComponentUpgradeFinished(_)) => "ComponentUpgradeFinished",
         Some(execution_event::Event::HistoryVariant(h)) => match &h.event {
             Some(history_event::Event::Persist(_)) => "Persist",
             Some(history_event::Event::JoinSetCreated(_)) => "JoinSetCreated",
