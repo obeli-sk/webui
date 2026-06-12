@@ -10,8 +10,6 @@ pub struct FfqnWithLinksProps {
     pub fully_qualified: bool,
     #[prop_or_default]
     pub hide_submit: bool,
-    #[prop_or_default]
-    pub hide_find: bool,
 }
 #[component(FfqnWithLinks)]
 pub fn ffqn_with_links(
@@ -19,14 +17,13 @@ pub fn ffqn_with_links(
         ffqn,
         fully_qualified,
         hide_submit,
-        hide_find,
     }: &FfqnWithLinksProps,
 ) -> Html {
     let ext = ffqn.ifc_fqn.pkg_fqn.is_extension();
     html! {
         <div style="display: inline-flex;">
-            // Finding executions makes no sense when rendering an extension function.
-            if !ext && !hide_find {
+            if !ext && *fully_qualified {
+                // show searchable interface link
                 <Link<Route, ExecutionQuery>
                     to={Route::ExecutionList}
                     query={ExecutionQuery { ffqn_prefix: Some(ffqn.ifc_fqn.to_string()), show_derived: true, ..Default::default() }}
@@ -34,6 +31,7 @@ pub fn ffqn_with_links(
                     {ffqn.ifc_fqn.to_string()}
                 </Link<Route, ExecutionQuery>>
             } else if *fully_qualified {
+                // show unlclickabe interface
                 {ffqn.ifc_fqn.to_string()}
             }
             if !hide_submit {

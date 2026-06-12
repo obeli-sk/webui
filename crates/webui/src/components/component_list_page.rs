@@ -4,6 +4,7 @@ use crate::{
     components::{
         code::code_block::CodeBlock,
         component_tree::{ComponentTree, ComponentTreeConfig},
+        execution_list_page::ExecutionQuery,
         ffqn_with_links::FfqnWithLinks,
         function_signature::FunctionSignature,
         notification::{Notification, NotificationContext},
@@ -154,13 +155,13 @@ pub fn component_list_page(
                 html! {
                     <section class="types-interface">
                         <h4>
-                            {format!("{}:{}/", ifc_fqn.pkg_fqn.namespace, ifc_fqn.pkg_fqn.package_name)}
-                            <span class="highlight">
-                                {&ifc_fqn.ifc_name}
-                            </span>
-                            if let Some(version) = &ifc_fqn.pkg_fqn.version {
-                                {format!("@{version}")}
-                            }
+                            // show searchable interface link
+                            <Link<Route, ExecutionQuery>
+                                to={Route::ExecutionList}
+                                query={ExecutionQuery { ffqn_prefix: Some(ifc_fqn.to_string()), show_derived: true, ..Default::default() }}
+                            >
+                                {ifc_fqn.to_string()}
+                            </Link<Route, ExecutionQuery>>
                         </h4>
                         <ul>
                             {submittable_fn_details}
