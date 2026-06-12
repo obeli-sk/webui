@@ -1,21 +1,48 @@
 // ============================================
-// World/Type Definitions Page
+// Component interfaces
 // ============================================
 // Used by:
-//   - src/components/component_list_page.rs  (.world-definition, .types-interface, h3 .highlight)
+//   - src/components/component_list_page.rs
 // ============================================
 @use '../base/variables' as *;
 
-.world-definition,
 .types-interface {
   margin-top: 20px;
 }
 
-h3 .highlight {
-  color: $color-accent-cyan;
+.component-detail-header {
+  padding-bottom: $spacing-md;
+  border-bottom: 1px solid $color-border-primary;
+
+  h1 {
+    margin-bottom: $spacing-xs;
+  }
+}
+
+.component-intro,
+.component-section-help,
+.component-empty-state {
+  color: $color-text-secondary;
+}
+
+.component-intro {
+  margin-top: 0;
 }
 
 .types-interface {
+  padding: $spacing-md;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-lg;
+  background: $color-bg-tertiary;
+
+  h4 {
+    margin: 0 0 $spacing-sm;
+
+    .highlight {
+      color: $color-accent-cyan;
+    }
+  }
+
   p {
     margin: 10px 0;
     font-size: 14px;
@@ -25,4 +52,12 @@ h3 .highlight {
   ul li span {
     color: $color-accent-green;
   }
+}
+
+.component-detail-tabs {
+  margin-top: $spacing-lg;
+}
+
+.component-detail-tab-content {
+  min-height: 10rem;
 }

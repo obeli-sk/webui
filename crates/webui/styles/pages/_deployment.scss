@@ -45,6 +45,8 @@
         }
 
         .component-link {
+            float: right;
+            margin-left: $spacing-md;
             font-size: $font-size-sm;
             font-weight: normal;
             opacity: 0.8;

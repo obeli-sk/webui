@@ -30,6 +30,13 @@ pub struct ComponentListPageProps {
 
 type EffectsCallback = Box<dyn FnOnce(&Option<ComponentId>)>;
 
+#[derive(Clone, Copy, PartialEq)]
+enum ComponentDetailTab {
+    SubmittableFunctions,
+    Imports,
+    Wit,
+}
+
 #[component(ComponentListPage)]
 pub fn component_list_page(
     ComponentListPageProps { maybe_component_id }: &ComponentListPageProps,
@@ -38,13 +45,18 @@ pub fn component_list_page(
         use_context::<AppState>().expect("AppState context is set when starting the App");
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
+    let current_deployment_id = app_state.current_deployment_id.clone();
     let components_by_id = app_state.components_by_id;
     let components_by_exported_ifc = app_state.components_by_exported_ifc;
 
     let wit_state = use_state(|| None);
+    let wit_loaded = use_state(|| false);
+    let selected_tab = use_state(|| ComponentDetailTab::SubmittableFunctions);
     // Fetch GetWit
     use_effect_with(maybe_component_id.clone(), {
         let wit_state = wit_state.clone();
+        let wit_loaded = wit_loaded.clone();
+        let selected_tab = selected_tab.clone();
         let notifications = notifications.clone();
         if let Some(component_id) = maybe_component_id {
             let component = components_by_id
@@ -67,6 +79,9 @@ pub fn component_list_page(
                 .collect::<HashSet<_>>();
             let boxed_closure: EffectsCallback =
                 Box::new(move |component_id: &Option<ComponentId>| {
+                    selected_tab.set(ComponentDetailTab::SubmittableFunctions);
+                    wit_state.set(None);
+                    wit_loaded.set(false);
                     let component_id = component_id.clone().expect("checked above");
                     let component_digest = component_id.digest.expect("`digest` is sent");
                     wasm_bindgen_futures::spawn_local(async move {
@@ -89,6 +104,7 @@ pub fn component_list_page(
                                             .ok();
                                     wit_state.set(wit);
                                 } // else - no WIT is associated with the component.
+                                wit_loaded.set(true);
                             }
                             Err(e) => {
                                 error!("Failed to get WIT: {:?}", e);
@@ -96,6 +112,7 @@ pub fn component_list_page(
                                     "Failed to get WIT: {}",
                                     e.message()
                                 )));
+                                wit_loaded.set(true);
                             }
                         }
                     });
@@ -104,6 +121,7 @@ pub fn component_list_page(
         } else {
             let boxed_closure: EffectsCallback = Box::new(move |_| {
                 wit_state.set(None);
+                wit_loaded.set(true);
             });
             boxed_closure
         }
@@ -156,6 +174,15 @@ pub fn component_list_page(
                 .filter(|(_, fn_details)| fn_details.iter().any(|f_d| f_d.submittable))
                 .map(|(ifc_fqn, fn_details)| render_exported_ifc_with_fns(ifc_fqn, fn_details))
                 .collect::<Vec<_>>();
+            let submittable_functions = if submittable_ifcs_fns.is_empty() {
+                html! {
+                    <p class="component-empty-state">
+                        {"This component does not expose functions that can be submitted directly."}
+                    </p>
+                }
+            } else {
+                html! { <>{ for submittable_ifcs_fns }</> }
+            };
 
             // imports:
             let imports =
@@ -172,19 +199,89 @@ pub fn component_list_page(
                 }
                 </h4>
             </>}).collect();
+            let imported_interfaces = if imports.is_empty() {
+                html! { <p class="component-empty-state">{"No imported interfaces."}</p> }
+            } else {
+                html! { <>{ for imports }</> }
+            };
+
+            let component_name = &component
+                .component_id
+                .as_ref()
+                .expect("`component_id` is sent")
+                .name;
+            let breadcrumb = current_deployment_id.as_ref().map_or_else(
+                || html! {
+                    <Link<Route> to={Route::ComponentList}>{"Components"}</Link<Route>>
+                },
+                |deployment_id| html! {<>
+                    <Link<Route> to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
+                    <span class="breadcrumb-separator">{"/"}</span>
+                    <Link<Route> to={Route::DeploymentDetail {
+                        deployment_id: deployment_id.clone(),
+                    }}>
+                        {"Active deployment"}
+                    </Link<Route>>
+                </>},
+            );
+            let tab_button = |label: &'static str, tab: ComponentDetailTab| {
+                let selected_tab = selected_tab.clone();
+                html! {
+                    <button
+                        class={classes!((*selected_tab == tab).then_some("active"))}
+                        onclick={Callback::from(move |_| selected_tab.set(tab))}
+                    >
+                        {label}
+                    </button>
+                }
+            };
+            let tab_content = match *selected_tab {
+                ComponentDetailTab::SubmittableFunctions => submittable_functions,
+                ComponentDetailTab::Imports => html! {<>
+                    <p class="component-section-help">
+                        {"Dependencies this component expects the deployment to provide."}
+                    </p>
+                    {imported_interfaces}
+                </>},
+                ComponentDetailTab::Wit => {
+                    if let Some(wit) = wit_state.deref() {
+                        html! { <CodeBlock source={wit.clone()} /> }
+                    } else if *wit_loaded {
+                        html! {
+                            <p class="component-empty-state">
+                                {"No WIT definition is available for this component."}
+                            </p>
+                        }
+                    } else {
+                        html! { <p class="component-empty-state">{"Loading WIT..."}</p> }
+                    }
+                }
+            };
 
             html! { <>
-                <h2>
-                    {&component.component_id.as_ref().expect("`component_id` is sent").name}
-                    <span class="component-type-label">
-                        { component.as_type().as_icon_html() }
-                        {component.as_type().as_label()}
-                    </span>
-                </h2>
-                <h3>{"Exported interfaces"}</h3>
-                {submittable_ifcs_fns}
-                <h3>{"Imported interfaces"}</h3>
-                {imports}
+                <header class="component-detail-header">
+                    <p class="breadcrumbs">{breadcrumb}</p>
+                    <h1>
+                        {component_name}
+                        <span class="component-type-label">
+                            { component.as_type().as_icon_html() }
+                            {component.as_type().as_label()}
+                        </span>
+                    </h1>
+                    <p class="component-intro">
+                        {"Inspect the functions and interfaces exposed or required by this component."}
+                    </p>
+                </header>
+
+                <div class="view-tabs component-detail-tabs">
+                    {tab_button("Submittable functions", ComponentDetailTab::SubmittableFunctions)}
+                    {tab_button("Imports", ComponentDetailTab::Imports)}
+                    {tab_button("WIT", ComponentDetailTab::Wit)}
+                </div>
+
+                <section class="component-detail-tab-content">
+                    {tab_content}
+                </section>
             </>}
         });
 
@@ -192,23 +289,32 @@ pub fn component_list_page(
     let on_component_selected =
         Callback::from(move |component_id| navigator.push(&Route::Component { component_id }));
 
-    html! {<>
-        <header>
-            <h1>{"Components"}</h1>
-        </header>
+    if let Some(component_detail) = component_detail {
+        component_detail
+    } else {
+        html! {<>
+            <header>
+                <h1>{"Components"}</h1>
+                <p class="component-intro">
+                    {"Browse the interfaces currently available to this Obelisk server. Components are normally accessed from the active deployment."}
+                </p>
+                if let Some(deployment_id) = &current_deployment_id {
+                    <p>
+                        <Link<Route> to={Route::DeploymentDetail {
+                            deployment_id: deployment_id.clone(),
+                        }}>
+                            {"View active deployment"}
+                        </Link<Route>>
+                    </p>
+                }
+            </header>
 
-        <section class="component-selection">
-            <ComponentTree config={ComponentTreeConfig::ComponentsOnly {
-                on_component_selected
-            }
-            } />
-        </section>
-
-        { component_detail }
-
-        if let Some(wit) = wit_state.deref() {
-            <h3>{"WIT"}</h3>
-            <CodeBlock source={wit.clone()} />
-        }
-    </>}
+            <section class="component-selection">
+                <ComponentTree config={ComponentTreeConfig::ComponentsOnly {
+                    on_component_selected
+                }
+                } />
+            </section>
+        </>}
+    }
 }

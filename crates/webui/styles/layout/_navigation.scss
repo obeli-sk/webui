@@ -21,3 +21,16 @@ nav {
     }
   }
 }
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  margin: 0 0 $spacing-sm;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+
+  .breadcrumb-separator {
+    color: $color-text-muted;
+  }
+}

@@ -4,7 +4,6 @@ use crate::{
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
         copy_button::CopyButton,
-        ffqn_with_links::FfqnWithLinks,
     },
     grpc::{ffqn::FunctionFqn, grpc_client},
 };
@@ -558,15 +557,13 @@ pub fn deployment_config_view(
                             <details class="component-config">
                                 <summary>
                                     <span class="component-name">{ &component.name }</span>
-                                    {" "}
-                                    if let Some(ffqn) = &component.ffqn {
-                                        <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} hide_submit={true} />
-                                    }
-                                    {" "}
                                     if let Some(component_id) = &component_id {
-                                        <span class="component-link">
+                                        <span
+                                            class="component-link"
+                                            onclick={Callback::from(|event: MouseEvent| event.stop_propagation())}
+                                        >
                                             <Link<Route> to={Route::Component { component_id: component_id.clone() }}>
-                                                {"component"}
+                                                {"Component details"}
                                             </Link<Route>>
                                         </span>
                                     }

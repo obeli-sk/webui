@@ -355,10 +355,6 @@ fn app_inner(
                             {"Executions"}
                         </Link<Route>>
                         {" "}
-                        <Link<Route> to={Route::ComponentList }>
-                            {"Components"}
-                        </Link<Route>>
-                        {" "}
                         <Link<Route> to={Route::ExecutionNew }>
                             {"Submit"}
                         </Link<Route>>
