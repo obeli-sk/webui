@@ -6,6 +6,8 @@ dist = "dist-dev"
 [serve]
 port = 8081
 
+[watch]
+ignore = ["../../target-sandbox", "target-sandbox", "dist-dev"]
 [[proxy]]
 # Only /api prefixed requests should be proxied:
 # Remove /api path prefix using the rewrite rule, then add it back.

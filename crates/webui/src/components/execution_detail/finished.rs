@@ -62,7 +62,7 @@ pub fn attach_result_detail(
                 .insert(
                     Node::new(NodeData {
                         icon: Icon::Error,
-                        label: with_version(version, "Returned Error"),
+                        label: with_version(version, "Finished with error"),
                         has_caret: fallible.return_value.is_some(),
                         is_selected,
                         ..Default::default()

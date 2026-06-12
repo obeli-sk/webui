@@ -35,15 +35,145 @@ pub struct ExecutionQuery {
     pub show_derived: bool,
     #[serde(default)]
     pub hide_finished: bool,
+    #[serde(default)]
     pub show_details: bool,
     pub execution_id_prefix: Option<String>,
     pub ffqn_prefix: Option<String>,
     pub component_digest: Option<String>,
     pub deployment_id: Option<String>,
+    #[serde(default)]
+    pub status: Option<StatusFilterList>,
     pub cursor: Option<ExecutionsCursor>,
     pub direction: Option<Direction>,
     #[serde(default)]
     pub include_cursor: bool,
+}
+
+/// Execution state filter, using the same buckets as the deployment summary.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StatusFilter {
+    Locked,
+    Pending,
+    Scheduled,
+    Blocked,
+    Paused,
+    Finished,
+    FinishedOk,
+    FinishedError,
+    FinishedExecutionFailure,
+}
+
+/// Comma-separated list of [`StatusFilter`]s, matched with OR semantics.
+/// Encoded in the URL as e.g. `status=locked,pending,blocked`.
+#[derive(Clone, Debug, PartialEq, serde_with::SerializeDisplay, serde_with::DeserializeFromStr)]
+pub struct StatusFilterList(pub Vec<StatusFilter>);
+
+impl StatusFilterList {
+    /// Locked, pending or blocked: executions that will progress on their own.
+    pub fn in_progress() -> StatusFilterList {
+        StatusFilterList(vec![
+            StatusFilter::Locked,
+            StatusFilter::Pending,
+            StatusFilter::Blocked,
+        ])
+    }
+
+    pub fn single(status: StatusFilter) -> StatusFilterList {
+        StatusFilterList(vec![status])
+    }
+}
+
+impl std::fmt::Display for StatusFilterList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for status in &self.0 {
+            if !first {
+                write!(f, ",")?;
+            }
+            first = false;
+            write!(f, "{}", status.as_str())?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for StatusFilterList {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let filters = s
+            .split(',')
+            .map(StatusFilter::from_value)
+            .collect::<Option<Vec<_>>>()
+            .filter(|filters| !filters.is_empty())
+            .ok_or_else(|| format!("invalid status filter list: `{s}`"))?;
+        Ok(StatusFilterList(filters))
+    }
+}
+
+impl StatusFilter {
+    pub const ALL: [StatusFilter; 9] = [
+        StatusFilter::Locked,
+        StatusFilter::Pending,
+        StatusFilter::Scheduled,
+        StatusFilter::Blocked,
+        StatusFilter::Paused,
+        StatusFilter::Finished,
+        StatusFilter::FinishedOk,
+        StatusFilter::FinishedError,
+        StatusFilter::FinishedExecutionFailure,
+    ];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            StatusFilter::Locked => "locked",
+            StatusFilter::Pending => "pending",
+            StatusFilter::Scheduled => "scheduled",
+            StatusFilter::Blocked => "blocked",
+            StatusFilter::Paused => "paused",
+            StatusFilter::Finished => "finished",
+            StatusFilter::FinishedOk => "finished_ok",
+            StatusFilter::FinishedError => "finished_error",
+            StatusFilter::FinishedExecutionFailure => "finished_execution_failure",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            StatusFilter::Locked => "Locked",
+            StatusFilter::Pending => "Pending",
+            StatusFilter::Scheduled => "Scheduled",
+            StatusFilter::Blocked => "Blocked",
+            StatusFilter::Paused => "Paused",
+            StatusFilter::Finished => "Finished (any)",
+            StatusFilter::FinishedOk => "Finished OK",
+            StatusFilter::FinishedError => "Finished with error",
+            StatusFilter::FinishedExecutionFailure => "Execution failed",
+        }
+    }
+
+    fn from_value(value: &str) -> Option<StatusFilter> {
+        StatusFilter::ALL
+            .into_iter()
+            .find(|status| status.as_str() == value)
+    }
+
+    fn to_grpc(self) -> grpc_client::list_executions_request::ExecutionStateFilter {
+        use grpc_client::list_executions_request::ExecutionStateFilter;
+        match self {
+            StatusFilter::Locked => ExecutionStateFilter::Locked,
+            StatusFilter::Pending => ExecutionStateFilter::Pending,
+            StatusFilter::Scheduled => ExecutionStateFilter::Scheduled,
+            StatusFilter::Blocked => ExecutionStateFilter::Blocked,
+            StatusFilter::Paused => ExecutionStateFilter::Paused,
+            StatusFilter::Finished => ExecutionStateFilter::Finished,
+            StatusFilter::FinishedOk => ExecutionStateFilter::FinishedOk,
+            StatusFilter::FinishedError => ExecutionStateFilter::FinishedError,
+            StatusFilter::FinishedExecutionFailure => {
+                ExecutionStateFilter::FinishedExecutionFailure
+            }
+        }
+    }
 }
 impl ExecutionQuery {
     fn flip(mut self, old_direction: Direction) -> ExecutionQuery {
@@ -628,6 +758,12 @@ pub fn execution_list_page() -> Html {
                         .deployment_id
                         .filter(|s| !s.is_empty())
                         .map(grpc_client::DeploymentId::from),
+                    state_filters: query_params
+                        .status
+                        .iter()
+                        .flat_map(|list| list.0.iter())
+                        .map(|status| status.to_grpc() as i32)
+                        .collect(),
                 };
                 debug!("Fetching executions with query: {req:?}");
                 let response = execution_client.list_executions(req).await;
@@ -713,6 +849,20 @@ pub fn execution_list_page() -> Html {
             let input: web_sys::HtmlInputElement = e.target_unchecked_into();
             let mut new_query = query.clone();
             new_query.show_details = input.checked();
+            let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
+        })
+    };
+    let on_status_change = {
+        let navigator = navigator.clone();
+        let query = query.clone();
+        Callback::from(move |e: Event| {
+            let select: web_sys::HtmlSelectElement = e.target_unchecked_into();
+            let mut new_query = query.clone();
+            new_query.status = StatusFilterList::from_str(&select.value()).ok();
+            // Reset cursor when changing filters to start from top
+            new_query.cursor = None;
+            new_query.direction = None;
+            new_query.include_cursor = false;
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
@@ -948,6 +1098,30 @@ pub fn execution_list_page() -> Html {
                             placeholder="Component Digest..."
                             value={(query.component_digest).clone()}
                         />
+                        <select onchange={on_status_change} title="Filter by execution status">
+                            {{
+                                let current = query.status.as_ref().map(ToString::to_string).unwrap_or_default();
+                                let in_progress = StatusFilterList::in_progress().to_string();
+                                html! {<>
+                                    <option value="" selected={current.is_empty()}>{"Any status"}</option>
+                                    <option
+                                        value={in_progress.clone()}
+                                        selected={current == in_progress}
+                                        title="Locked, pending or blocked"
+                                    >
+                                        {"In progress"}
+                                    </option>
+                                    { for StatusFilter::ALL.into_iter().map(|status| html! {
+                                        <option
+                                            value={status.as_str()}
+                                            selected={current == status.as_str()}
+                                        >
+                                            {status.label()}
+                                        </option>
+                                    })}
+                                </>}
+                            }}
+                        </select>
 
                         <button onclick={&on_apply_filters}>{"Filter / Refresh"}</button>
 

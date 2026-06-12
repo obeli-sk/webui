@@ -1,7 +1,10 @@
 use crate::{
     BASE_URL,
     app::{AppState, Route},
-    components::notification::{Notification, NotificationContext},
+    components::{
+        execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
+        notification::{Notification, NotificationContext},
+    },
     grpc::grpc_client::{
         self, DeploymentId, DeploymentStatus, DeploymentSummary,
         deployment_repository_client::DeploymentRepositoryClient,
@@ -24,6 +27,9 @@ pub struct DeploymentQuery {
     pub direction: Option<Direction>,
     #[serde(default)]
     pub include_cursor: bool,
+    /// Count (and link to) child executions as well; top-level only by default.
+    #[serde(default)]
+    pub show_derived: bool,
 }
 
 impl DeploymentQuery {
@@ -147,6 +153,7 @@ pub fn deployment_list_page() -> Html {
                 let req = grpc_client::ListDeploymentsRequest {
                     pagination,
                     include_config_json: false,
+                    include_derived: query_params.show_derived,
                 };
                 debug!("Fetching deployments with query: {req:?}");
                 let response = deployment_client.list_deployments(req).await;
@@ -164,6 +171,17 @@ pub fn deployment_list_page() -> Html {
             })
         });
     }
+
+    let on_toggle_derived = {
+        let navigator = navigator.clone();
+        let query = query.clone();
+        Callback::from(move |e: Event| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            let mut new_query = query.clone();
+            new_query.show_derived = input.checked();
+            let _ = navigator.push_with_query(&Route::DeploymentList, &new_query);
+        })
+    };
 
     // Clicked on "Latest" - reset to default query
     let on_latest = {
@@ -200,11 +218,39 @@ pub fn deployment_list_page() -> Html {
                     DeploymentStatus::Inactive | DeploymentStatus::Unspecified => html! {},
                 };
 
-                // Link to execution list filtered by this deployment
-                let execution_link_query = crate::components::execution_list_page::ExecutionQuery {
-                    deployment_id: Some(deployment_id.clone()),
-                    ..Default::default()
+                // Cell linking to the execution list filtered by this deployment and status.
+                // The links inherit `show_derived` so the list matches the count.
+                let show_derived = query.show_derived;
+                let count_cell = |count: u32, status: Option<StatusFilterList>| {
+                    let query = ExecutionQuery {
+                        deployment_id: Some(deployment_id.clone()),
+                        status,
+                        show_derived,
+                        ..Default::default()
+                    };
+                    html! {
+                        <td class="number">
+                            if count > 0 {
+                                <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={query}>
+                                    {count}
+                                </Link<Route, ExecutionQuery>>
+                            } else {
+                                {count}
+                            }
+                        </td>
+                    }
                 };
+                let in_progress = deployment_summary.locked
+                    + deployment_summary.pending
+                    + deployment_summary.blocked;
+                let total = deployment_summary.locked
+                    + deployment_summary.pending
+                    + deployment_summary.scheduled
+                    + deployment_summary.blocked
+                    + deployment_summary.paused
+                    + deployment_summary.finished_ok
+                    + deployment_summary.finished_error
+                    + deployment_summary.finished_execution_failure;
 
                 let on_diff_toggle = {
                     let selected_for_diff = selected_for_diff.clone();
@@ -239,19 +285,29 @@ pub fn deployment_list_page() -> Html {
                             </Link<Route>>
                             {" "}
                             {status_badge}
-                            {" "}
-                            <Link<Route, crate::components::execution_list_page::ExecutionQuery>
-                                to={Route::ExecutionList}
-                                query={execution_link_query}
-                            >
-                                {"executions"}
-                            </Link<Route, crate::components::execution_list_page::ExecutionQuery>>
                         </td>
-                        <td class="number">{deployment_summary.locked}</td>
-                        <td class="number">{deployment_summary.pending}</td>
-                        <td class="number">{deployment_summary.scheduled}</td>
-                        <td class="number">{deployment_summary.blocked}</td>
-                        <td class="number">{deployment_summary.finished}</td>
+                        { count_cell(total, None) }
+                        { count_cell(in_progress, Some(StatusFilterList::in_progress())) }
+                        { count_cell(
+                            deployment_summary.scheduled,
+                            Some(StatusFilterList::single(StatusFilter::Scheduled)),
+                        ) }
+                        { count_cell(
+                            deployment_summary.paused,
+                            Some(StatusFilterList::single(StatusFilter::Paused)),
+                        ) }
+                        { count_cell(
+                            deployment_summary.finished_ok,
+                            Some(StatusFilterList::single(StatusFilter::FinishedOk)),
+                        ) }
+                        { count_cell(
+                            deployment_summary.finished_error,
+                            Some(StatusFilterList::single(StatusFilter::FinishedError)),
+                        ) }
+                        { count_cell(
+                            deployment_summary.finished_execution_failure,
+                            Some(StatusFilterList::single(StatusFilter::FinishedExecutionFailure)),
+                        ) }
                     </tr>
                 }
             })
@@ -315,16 +371,31 @@ pub fn deployment_list_page() -> Html {
             <>
                 <h3>{"Deployments"}</h3>
 
+                <div class="executions-filter">
+                    <div class="checkboxes">
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={query.show_derived}
+                                onchange={on_toggle_derived}
+                            />
+                            {" Show Derived Executions"}
+                        </label>
+                    </div>
+                </div>
+
                 <table class="deployment_list">
                     <thead>
                         <tr>
                             <th title="Select two deployments to compare">{"Diff"}</th>
                             <th>{"Deployment ID"}</th>
-                            <th class="number">{"Locked"}</th>
-                            <th class="number">{"Pending"}</th>
-                            <th class="number">{"Scheduled"}</th>
-                            <th class="number">{"Blocked"}</th>
-                            <th class="number">{"Finished"}</th>
+                            <th class="number" title="All executions of this deployment">{"Executions"}</th>
+                            <th class="number" title="Locked, pending or blocked">{"In progress"}</th>
+                            <th class="number" title="Pending with the scheduled time in the future">{"Scheduled"}</th>
+                            <th class="number" title="Paused, regardless of the underlying state">{"Paused"}</th>
+                            <th class="number" title="Finished successfully">{"OK"}</th>
+                            <th class="number" title="Finished with the err variant of the result type">{"Errors"}</th>
+                            <th class="number" title="Execution failures: traps, timeouts, nondeterminism, cancellations">{"Failures"}</th>
                         </tr>
                     </thead>
                     <tbody>
