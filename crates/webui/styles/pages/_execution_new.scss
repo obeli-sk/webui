@@ -6,6 +6,25 @@
 // ============================================
 @use '../base/variables' as *;
 
+.function-picker-filters {
+  display: flex;
+  align-items: center;
+  gap: $spacing-lg;
+  margin-top: $spacing-md;
+  padding: 1em;
+  border: 1px solid #ccc;
+
+  label {
+    cursor: pointer;
+  }
+}
+
+.function-picker-filter-label {
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  font-weight: 600;
+}
+
 // Function picker columns (inline, not modal)
 .function-picker-columns {
   display: grid;
@@ -13,7 +32,7 @@
   gap: $spacing-md;
   min-height: 400px;
   max-height: 60vh;
-  margin-top: $spacing-md;
+  margin-top: $spacing-sm;
 }
 
 .function-picker-column {

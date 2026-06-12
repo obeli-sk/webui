@@ -1,6 +1,6 @@
 use crate::{
     app::{AppState, Route},
-    grpc::ffqn::FunctionFqn,
+    grpc::{ffqn::FunctionFqn, grpc_client::ComponentType},
 };
 use hashbrown::{HashMap, HashSet};
 use std::{collections::BTreeMap, str::FromStr};
@@ -14,13 +14,24 @@ struct FunctionPickerData {
     functions_by_interface: BTreeMap<String, Vec<String>>,
 }
 
-fn build_function_picker_data(app_state: &AppState) -> FunctionPickerData {
+fn build_function_picker_data(
+    app_state: &AppState,
+    show_workflows: bool,
+    show_activities: bool,
+) -> FunctionPickerData {
     let mut packages = HashSet::new();
     let mut interfaces_by_package: HashMap<String, HashSet<String>> = HashMap::new();
     let mut functions_by_interface: HashMap<String, HashSet<String>> = HashMap::new();
 
-    for ffqn in app_state.ffqns_to_details.keys() {
-        if ffqn.ifc_fqn.pkg_fqn.is_extension() {
+    for (ffqn, (function_detail, component_id)) in &app_state.ffqns_to_details {
+        let component_type = component_id.component_type();
+        let type_is_visible = match component_type {
+            ComponentType::Workflow => show_workflows,
+            ComponentType::Activity => show_activities,
+            _ => false,
+        };
+
+        if !function_detail.submittable || !type_is_visible || ffqn.ifc_fqn.pkg_fqn.is_extension() {
             continue;
         }
 
@@ -72,13 +83,36 @@ pub fn execution_new_page() -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
     let navigator = use_navigator().expect("should be called inside a router");
-    let picker_data = build_function_picker_data(&app_state);
 
+    let show_workflows = use_state(|| true);
+    let show_activities = use_state(|| true);
     let selected_package = use_state(|| None::<String>);
     let selected_interface = use_state(|| None::<String>);
 
+    let picker_data = build_function_picker_data(&app_state, *show_workflows, *show_activities);
     let selected_package_value = (*selected_package).clone();
     let selected_interface_value = (*selected_interface).clone();
+
+    let on_toggle_workflows = {
+        let show_workflows = show_workflows.clone();
+        let selected_package = selected_package.clone();
+        let selected_interface = selected_interface.clone();
+        Callback::from(move |_| {
+            show_workflows.set(!*show_workflows);
+            selected_package.set(None);
+            selected_interface.set(None);
+        })
+    };
+    let on_toggle_activities = {
+        let show_activities = show_activities.clone();
+        let selected_package = selected_package.clone();
+        let selected_interface = selected_interface.clone();
+        Callback::from(move |_| {
+            show_activities.set(!*show_activities);
+            selected_package.set(None);
+            selected_interface.set(None);
+        })
+    };
 
     let interfaces = selected_package_value
         .as_ref()
@@ -96,6 +130,26 @@ pub fn execution_new_page() -> Html {
             <h1>{"Submit Execution"}</h1>
             <h3>{"Select a function"}</h3>
         </header>
+
+        <div class="function-picker-filters">
+            <span class="function-picker-filter-label">{"Show:"}</span>
+            <label>
+                <input
+                    type="checkbox"
+                    checked={*show_workflows}
+                    onchange={on_toggle_workflows}
+                />
+                {" Workflows"}
+            </label>
+            <label>
+                <input
+                    type="checkbox"
+                    checked={*show_activities}
+                    onchange={on_toggle_activities}
+                />
+                {" Activities"}
+            </label>
+        </div>
 
         <div class="function-picker-columns">
             <div class="function-picker-column">
