@@ -3,6 +3,8 @@ use crate::{
     components::{
         component_list_page::ComponentListPage,
         debugger::debugger_view::DebuggerView,
+        deployment_detail_page::DeploymentDetailPage,
+        deployment_diff_page::DeploymentDiffPage,
         deployment_list_page::DeploymentListPage,
         execution_detail_page::ExecutionLogPage,
         execution_list_page::ExecutionListPage,
@@ -137,6 +139,15 @@ pub enum Route {
     },
     #[at("/deployments")]
     DeploymentList,
+    #[at("/deployments/diff/:from/:to")]
+    DeploymentDiff {
+        from: grpc_client::DeploymentId,
+        to: grpc_client::DeploymentId,
+    },
+    #[at("/deployment/:deployment_id")]
+    DeploymentDetail {
+        deployment_id: grpc_client::DeploymentId,
+    },
     #[at("/execution/new")]
     ExecutionNew,
     #[at("/execution/submit/:ffqn")]
@@ -183,6 +194,10 @@ impl Route {
                 html! { <ComponentListPage maybe_component_id={Some(component_id)}/> }
             }
             Route::DeploymentList => html! { <DeploymentListPage /> },
+            Route::DeploymentDetail { deployment_id } => {
+                html! { <DeploymentDetailPage {deployment_id} /> }
+            }
+            Route::DeploymentDiff { from, to } => html! { <DeploymentDiffPage {from} {to} /> },
             Route::ExecutionNew => html! { <ExecutionNewPage /> },
             Route::ExecutionSubmit { ffqn } => html! { <ExecutionSubmitPage {ffqn} /> },
             Route::ExecutionStubResult { ffqn, execution_id } => {

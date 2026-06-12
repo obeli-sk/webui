@@ -1,0 +1,197 @@
+// Deployment detail and diff pages
+@use '../base/variables' as *;
+
+.deployment-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0 1rem;
+
+    label {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.9em;
+    }
+}
+
+.deployment-section {
+    margin-bottom: 1rem;
+
+    h4 {
+        margin: 0.5rem 0;
+    }
+
+    .unchanged-count {
+        font-weight: normal;
+        font-size: 0.85em;
+        opacity: 0.7;
+    }
+}
+
+.component-config {
+    border: 1px solid var(--border-color, #444);
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    padding: 0.25rem 0.5rem;
+
+    > summary {
+        cursor: pointer;
+        font-weight: 600;
+        padding: 0.15rem 0;
+
+        .component-name {
+            font-family: $font-family-mono;
+        }
+
+        .component-link {
+            font-size: $font-size-sm;
+            font-weight: normal;
+            opacity: 0.8;
+        }
+    }
+}
+
+.config-table {
+    border-collapse: collapse;
+    margin: 0.25rem 0 0.5rem;
+    font-family: $font-family-mono;
+    font-size: $font-size-sm;
+
+    th {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.15rem 1rem 0.15rem 0;
+        font-weight: 500;
+        color: $color-text-secondary;
+        white-space: nowrap;
+    }
+
+    td {
+        vertical-align: top;
+        padding: 0.15rem 0;
+    }
+
+    .config-table {
+        margin: 0;
+        font-size: 1em;
+    }
+}
+
+// Toggle between the per-component sections and the whole-deployment TOML.
+.view-tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid $color-border-primary;
+    margin: 0.75rem 0;
+
+    button {
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: $color-text-secondary;
+        cursor: pointer;
+        font-size: $font-size-base;
+        padding: 0.35rem 0.75rem;
+
+        &:hover {
+            color: $color-text-light;
+        }
+
+        &.active {
+            color: $color-text-white;
+            border-bottom-color: $color-accent-cyan;
+        }
+    }
+}
+
+// TOML snippet with a copy button in the top-right corner.
+.toml-block {
+    position: relative;
+    margin: 0.25rem 0 0.5rem;
+
+    .copy-button {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+        z-index: 1;
+        padding: 2px 8px;
+        font-size: $font-size-sm;
+    }
+}
+
+.config-list {
+    margin: 0;
+    padding-left: 1.25rem;
+}
+
+.config-null {
+    opacity: 0.6;
+}
+
+.source-block {
+    margin: 0.25rem 0;
+
+    > summary {
+        cursor: pointer;
+        font-family: monospace;
+    }
+}
+
+.text-diff {
+    overflow-x: auto;
+    margin: 0.25rem 0;
+
+    span {
+        display: inline;
+        white-space: pre;
+    }
+
+    .diff-separator {
+        opacity: 0.6;
+    }
+}
+
+.diff-del {
+    background-color: rgba(229, 83, 75, 0.25);
+}
+
+.diff-ins {
+    background-color: rgba(87, 171, 90, 0.25);
+}
+
+// Status / diff badges used on the deployment pages (the list page badge is
+// scoped to table.deployment_list in components/_badges.scss).
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: $border-radius-md;
+    font-size: $font-size-sm;
+    font-weight: bold;
+
+    &.current {
+        background-color: $color-accent-green;
+        color: $color-bg-primary;
+    }
+
+    &.enqueued,
+    &.changed {
+        background-color: #b58900;
+        color: $color-bg-primary;
+    }
+
+    &.inactive {
+        background-color: #586e75;
+        color: $color-text-white;
+    }
+
+    &.added {
+        background-color: $color-accent-green;
+        color: $color-bg-primary;
+    }
+
+    &.removed {
+        background-color: #dc322f;
+        color: $color-text-white;
+    }
+}

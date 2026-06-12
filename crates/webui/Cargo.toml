@@ -11,6 +11,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
+deployment-config.workspace = true
 val-json.workspace = true
 
 anyhow.workspace = true
@@ -30,7 +31,9 @@ rand = { workspace = true, features = ["small_rng", "std"] }
 serde.workspace = true
 serde_json.workspace = true
 serde_with.workspace = true
+similar.workspace = true
 syntect = { workspace = true, features = ["html"] }
+toml.workspace = true
 tonic = { workspace = true, default-features = false, features = [
     "codegen",
 ] }

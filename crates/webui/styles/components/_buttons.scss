@@ -29,6 +29,28 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+
+  // For actions that skip a safety step (e.g. enqueueing without verification).
+  &.warning {
+    background-color: #b58900;
+    border-color: #b58900;
+    color: $color-bg-primary;
+
+    &:hover:not(:disabled) {
+      background-color: #c9a227;
+    }
+  }
+
+  // First click arms the button, the second click executes the action.
+  &.armed {
+    background-color: $color-accent-red;
+    border-color: $color-accent-red;
+    color: $color-bg-primary;
+
+    &:hover:not(:disabled) {
+      background-color: #ff7070;
+    }
+  }
 }
 
 // Expand Buttons (Code blocks)
