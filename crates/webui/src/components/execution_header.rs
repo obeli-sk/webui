@@ -5,7 +5,6 @@ use crate::components::execution_actions::{
     AdvanceButton, CancelActivityButton, PauseButton, ReplayButton, SubmitStubButton,
     UnpauseButton, UpgradeForm, call_replay, process_replay_response,
 };
-use crate::components::execution_list_page::ExecutionQuery;
 use crate::components::execution_status::{ExecutionStatus, FinishedStatusMode};
 use crate::components::notification::{Notification, NotificationContext};
 use crate::grpc::ffqn::FunctionFqn;
@@ -234,12 +233,6 @@ pub fn execution_header(
                     { ExecutionLink::ExecutionLog.link(execution_id.clone(), "Execution Log") }
                     { ExecutionLink::Debug.link(execution_id.clone(), "Debugger") }
                     { ExecutionLink::Logs.link(execution_id.clone(), "App Logs") }
-                    <Link<Route, ExecutionQuery>
-                        to={Route::ExecutionList}
-                        query={ExecutionQuery { execution_id_prefix: Some(execution_id.to_string()), show_derived: true, ..Default::default() }}
-                    >
-                        {"Child executions"}
-                    </Link<Route, ExecutionQuery>>
                 </div>
             </div>
 
