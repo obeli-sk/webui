@@ -2,45 +2,84 @@
 // Logs Page
 // ============================================
 // Used by:
-//   - src/components/execution_logs_page.rs  (.logs-options, .logs-list, .logs-controls, .log-row)
+//   - src/components/execution_logs_page.rs  (.logs-options, .logs-list, .log-row)
 // ============================================
 @use '../base/variables' as *;
 
 .logs-options {
   margin: 10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 
-  .run-id {
-    cursor: pointer;
+  .logs-filters {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: $spacing-md;
+
+    label {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+  }
+
+  .logs-refresh {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: $color-accent-cyan;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      color: $color-accent-yellow;
+      text-decoration: underline;
+    }
+
+    &:disabled {
+      color: $color-text-secondary;
+      cursor: default;
+    }
   }
 }
 
 .logs-list {
-  padding: 10px;
+  padding: 12px;
+  border: 1px solid #333;
   border-radius: $border-radius-md;
-  overflow-x: auto;
-}
+  background: #000;
+  color: #ddd;
+  overflow: auto;
+  max-height: 70vh;
+  font-family: $font-family-mono;
+  font-size: $font-size-xs;
+  line-height: 1.45;
 
-.logs-controls {
-  margin-top: 10px;
-
-  button {
-    padding: 8px 16px;
-    cursor: pointer;
+  .logs-empty {
+    color: #888;
   }
 }
 
 .log-row {
   .time {
-    color: gray;
+    color: #888;
     margin-right: 10px;
   }
 
+  .execution-id,
   .run-id {
     margin-right: 8px;
-    color: #888;
+    color: #8eaccf;
+  }
+
+  .execution-id a {
+    color: #8eaccf;
+
+    &:hover {
+      color: $color-accent-yellow;
+    }
   }
 
   .kind {
@@ -50,16 +89,16 @@
     &.kind-debug,
     &.kind-info,
     &.kind-stdout {
-      color: rgb(66, 66, 172);
+      color: #9cc2ff;
     }
 
     &.kind-warn {
-      color: orange;
+      color: #ffd27d;
     }
 
     &.kind-error,
     &.kind-stderr {
-      color: red;
+      color: #ff9b9b;
     }
   }
 
