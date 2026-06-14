@@ -24,25 +24,6 @@
       gap: 5px;
     }
   }
-
-  .logs-refresh {
-    padding: 0;
-    border: 0;
-    background: none;
-    color: $color-accent-cyan;
-    font: inherit;
-    cursor: pointer;
-
-    &:hover:not(:disabled) {
-      color: $color-accent-yellow;
-      text-decoration: underline;
-    }
-
-    &:disabled {
-      color: $color-text-secondary;
-      cursor: default;
-    }
-  }
 }
 
 .logs-list {
