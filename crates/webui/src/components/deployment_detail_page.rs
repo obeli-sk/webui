@@ -3,9 +3,7 @@ use crate::{
     app::{AppState, Route},
     components::{
         deployment_actions::DeploymentActions,
-        deployment_config_view::{
-            DeploymentConfigView, build_sections, sections_to_toml, toml_block,
-        },
+        deployment_config_view::{DeploymentConfigView, build_sections_from_manifest, toml_block},
         execution_list_page::ExecutionQuery,
         notification::{Notification, NotificationContext},
     },
@@ -17,9 +15,9 @@ use crate::{
     util::time::format_date,
 };
 use chrono::DateTime;
-use deployment_config::config::DeploymentCanonical;
 use hashbrown::HashMap;
 use log::error;
+use serde_json::Value;
 use std::ops::Deref;
 use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
@@ -121,31 +119,28 @@ pub fn deployment_detail_page(
     let status = deployment.status();
     let is_current = app_state.current_deployment_id.as_ref() == Some(deployment_id);
 
-    let parsed_config: Option<Result<DeploymentCanonical, String>> = deployment
-        .config_json
+    let parsed_manifest: Option<Result<Value, String>> = deployment
+        .deployment_toml
         .as_ref()
-        .map(|config_json| serde_json::from_str(config_json).map_err(|e| e.to_string()));
+        .map(|manifest| toml::from_str::<Value>(manifest).map_err(|e| e.to_string()));
 
-    let config_html = match &parsed_config {
-        None => html! { <p>{"The server did not return the deployment configuration."}</p> },
+    let config_html = match &parsed_manifest {
+        None => html! { <p>{"The server did not return the deployment manifest."}</p> },
         Some(Err(parse_err)) => {
-            let raw = deployment.config_json.clone().unwrap_or_default();
-            let pretty = serde_json::from_str::<serde_json::Value>(&raw)
-                .and_then(|v| serde_json::to_string_pretty(&v))
-                .unwrap_or(raw);
+            let raw = deployment.deployment_toml.clone().unwrap_or_default();
             html! {<>
                 <p class="error">
-                    { format!("Cannot parse the deployment configuration, it was probably \
+                    { format!("Cannot parse the deployment manifest, it was probably \
                         written by an incompatible server version: {parse_err}") }
                 </p>
                 <details>
-                    <summary>{"Raw configuration"}</summary>
-                    <pre>{ pretty }</pre>
+                    <summary>{"Raw manifest"}</summary>
+                    <pre>{ raw }</pre>
                 </details>
             </>}
         }
-        Some(Ok(config)) => {
-            let sections = build_sections(config);
+        Some(Ok(manifest)) => {
+            let sections = build_sections_from_manifest(manifest);
             if sections.is_empty() {
                 html! { <p>{"This deployment contains no components."}</p> }
             } else {
@@ -167,7 +162,7 @@ pub fn deployment_detail_page(
                         { tab_button("TOML", true) }
                     </div>
                     if *show_toml {
-                        { toml_block(sections_to_toml(&sections)) }
+                        { toml_block(deployment.deployment_toml.clone().unwrap_or_default()) }
                     } else {
                         <DeploymentConfigView
                             sections={sections}

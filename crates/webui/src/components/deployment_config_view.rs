@@ -5,20 +5,34 @@ use crate::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
         copy_button::CopyButton,
     },
-    grpc::{ffqn::FunctionFqn, grpc_client},
+    grpc::grpc_client,
 };
-use deployment_config::config::{self as cfg, DeploymentCanonical};
 use hashbrown::HashMap;
 use serde_json::Value;
-use std::{path::PathBuf, rc::Rc, str::FromStr};
+use std::{path::PathBuf, rc::Rc};
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-/// One top-level section of the deployment config (e.g. `workflows_js`).
+/// Manifest (`deployment.toml`) section keys, in display order, paired with a human title.
+/// These are the `[[section]]` table-array keys the server stores verbatim.
+pub const MANIFEST_SECTIONS: &[(&str, &str)] = &[
+    ("workflow_wasm", "Workflows (WASM)"),
+    ("workflow_js", "Workflows (JS)"),
+    ("activity_wasm", "Activities (WASM)"),
+    ("activity_js", "Activities (JS)"),
+    ("activity_exec", "Activities (Exec)"),
+    ("activity_stub", "Activity Stubs"),
+    ("activity_external", "External Activities"),
+    ("webhook_endpoint_wasm", "Webhooks (WASM)"),
+    ("webhook_endpoint_js", "Webhooks (JS)"),
+    ("cron", "Crons"),
+];
+
+/// One top-level section of the deployment manifest (e.g. `workflow_js`).
 #[derive(PartialEq, Clone)]
 pub struct SectionView {
     pub title: &'static str,
-    /// Field name of the section in [`DeploymentCanonical`], used as the TOML key.
+    /// The manifest table-array key, used to regenerate a `[[key]]` TOML snippet.
     pub toml_key: &'static str,
     pub components: Vec<ComponentView>,
 }
@@ -26,7 +40,6 @@ pub struct SectionView {
 #[derive(PartialEq, Clone)]
 pub struct ComponentView {
     pub name: String,
-    pub ffqn: Option<FunctionFqn>,
     /// Component configuration with source contents replaced by a marker.
     pub config: Value,
     pub sources: Vec<SourceView>,
@@ -44,11 +57,15 @@ pub enum SourceContent {
     Oci {
         image: String,
     },
-    /// External local file, read at runtime; its content is not part of the config.
+    /// External local file, read at runtime; its content is not part of the deployment.
     ExternalPath {
         path: String,
     },
-    /// Source must be fetched via the `GetBacktraceSource` RPC.
+    /// A deployment-owned file in the content-addressed store, fetched via the `GetFile` RPC.
+    FetchFile {
+        digest: String,
+    },
+    /// Backtrace source fetched via the `GetBacktraceSource` RPC.
     Fetch {
         file: String,
     },
@@ -56,14 +73,20 @@ pub enum SourceContent {
 
 const SOURCE_MARKER: &str = "(source rendered below)";
 
-fn to_stripped_value<T: serde::Serialize>(component: &T) -> Value {
-    serde_json::to_value(component).expect("config components are serializable")
+/// The display name of a manifest component: its explicit `name`, else the
+/// auto-derived `{interface}.{function}` tail of its `ffqn`, else `<unnamed>`.
+pub fn component_display_name(table: &Value) -> String {
+    if let Some(name) = table.get("name").and_then(Value::as_str) {
+        return name.to_string();
+    }
+    if let Some(ffqn) = table.get("ffqn").and_then(Value::as_str) {
+        // ffqn is `namespace:package/interface.function`; the default name is the `/` tail.
+        return ffqn.rsplit('/').next().unwrap_or(ffqn).to_string();
+    }
+    "<unnamed>".to_string()
 }
 
-fn parse_ffqn(ffqn: &deployment_config::FunctionFqn) -> Option<FunctionFqn> {
-    FunctionFqn::from_str(&ffqn.to_string()).ok()
-}
-
+/// Replace a string leaf at `config[path]` with the source marker, if present.
 fn strip_path(config: &mut Value, path: &[&str]) {
     let mut current = &mut *config;
     for key in &path[..path.len() - 1] {
@@ -72,51 +95,18 @@ fn strip_path(config: &mut Value, path: &[&str]) {
             None => return,
         }
     }
-    if let Some(leaf) = current.get_mut(path[path.len() - 1]) {
+    if let Some(leaf) = current.get_mut(path[path.len() - 1])
+        && leaf.is_string()
+    {
         *leaf = Value::String(SOURCE_MARKER.to_string());
     }
 }
 
-fn script_location_source(location: &cfg::ScriptLocationCanonical) -> SourceView {
-    match location {
-        cfg::ScriptLocationCanonical::Content { content, file_name } => SourceView {
-            file_name: file_name.clone(),
-            content: SourceContent::Inline(content.clone()),
-        },
-        cfg::ScriptLocationCanonical::ExternalPath { path } => SourceView {
-            file_name: path.clone(),
-            content: SourceContent::ExternalPath { path: path.clone() },
-        },
-        cfg::ScriptLocationCanonical::Oci { image } => SourceView {
-            file_name: image.clone(),
-            content: SourceContent::Oci {
-                image: image.clone(),
-            },
-        },
-    }
-}
-
-fn backtrace_sources(backtrace: &cfg::ComponentBacktraceConfigCanonical) -> Vec<SourceView> {
-    let mut sources: Vec<_> = backtrace
-        .frame_files_to_sources
-        .iter()
-        .map(|(file, source)| SourceView {
-            file_name: file.clone(),
-            content: if source.content.is_empty() {
-                SourceContent::Fetch { file: file.clone() }
-            } else {
-                SourceContent::Inline(source.content.clone())
-            },
-        })
-        .collect();
-    sources.sort_by(|a, b| a.file_name.cmp(&b.file_name));
-    sources
-}
-
+/// Replace every value under `[backtrace] sources = { ... }` with the source marker.
 fn strip_backtrace_sources(config: &mut Value) {
     if let Some(Value::Object(map)) = config
         .get_mut("backtrace")
-        .and_then(|b| b.get_mut("frame_files_to_sources"))
+        .and_then(|b| b.get_mut("sources"))
     {
         for (_, content) in map.iter_mut() {
             *content = Value::String(SOURCE_MARKER.to_string());
@@ -124,181 +114,115 @@ fn strip_backtrace_sources(config: &mut Value) {
     }
 }
 
-/// Build the per-section view model from a parsed canonical deployment config.
-pub fn build_sections(config: &DeploymentCanonical) -> Vec<SectionView> {
+/// Backtrace sources of a WASM component (`[backtrace] sources`), each fetched lazily
+/// via the `GetBacktraceSource` RPC by its frame-file key.
+fn backtrace_sources(table: &Value) -> Vec<SourceView> {
+    let Some(map) = table
+        .get("backtrace")
+        .and_then(|b| b.get("sources"))
+        .and_then(Value::as_object)
+    else {
+        return Vec::new();
+    };
+    let mut sources: Vec<_> = map
+        .keys()
+        .map(|file| SourceView {
+            file_name: file.clone(),
+            content: SourceContent::Fetch { file: file.clone() },
+        })
+        .collect();
+    sources.sort_by(|a, b| a.file_name.cmp(&b.file_name));
+    sources
+}
+
+/// The script source of a JS/exec component: inline `content`, or its `location`
+/// resolved to an OCI image, a CAS blob (by `content_digest`), or an external path.
+fn script_source(table: &Value) -> Option<SourceView> {
+    if let Some(content) = table.get("content").and_then(Value::as_str) {
+        let file_name = table
+            .get("location")
+            .and_then(Value::as_str)
+            .map_or_else(|| "inline source".to_string(), file_name_of);
+        return Some(SourceView {
+            file_name,
+            content: SourceContent::Inline(content.to_string()),
+        });
+    }
+    let location = table.get("location").and_then(Value::as_str)?;
+    if location.starts_with("oci://") {
+        return Some(SourceView {
+            file_name: location.to_string(),
+            content: SourceContent::Oci {
+                image: location.to_string(),
+            },
+        });
+    }
+    let file_name = file_name_of(location);
+    match table.get("content_digest").and_then(Value::as_str) {
+        Some(digest) => Some(SourceView {
+            file_name,
+            content: SourceContent::FetchFile {
+                digest: digest.to_string(),
+            },
+        }),
+        None => Some(SourceView {
+            file_name,
+            content: SourceContent::ExternalPath {
+                path: location.to_string(),
+            },
+        }),
+    }
+}
+
+/// The trailing path segment of a (possibly `${DEPLOYMENT_DIR}/`-prefixed) location.
+fn file_name_of(location: &str) -> String {
+    location
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(location)
+        .to_string()
+}
+
+/// Build the per-section view model from a parsed `deployment.toml` manifest.
+pub fn build_sections_from_manifest(manifest: &Value) -> Vec<SectionView> {
     let mut sections = Vec::new();
-
-    sections.push(SectionView {
-        title: "Workflows (WASM)",
-        toml_key: "workflows_wasm",
-        components: config
-            .workflows_wasm
+    for (toml_key, title) in MANIFEST_SECTIONS {
+        let Some(tables) = manifest.get(toml_key).and_then(Value::as_array) else {
+            continue;
+        };
+        let has_backtrace = matches!(*toml_key, "workflow_wasm" | "webhook_endpoint_wasm");
+        let has_script = matches!(
+            *toml_key,
+            "workflow_js" | "activity_js" | "activity_exec" | "webhook_endpoint_js"
+        );
+        let components = tables
             .iter()
-            .map(|c| {
-                let mut value = to_stripped_value(c);
-                strip_backtrace_sources(&mut value);
+            .map(|table| {
+                let mut config = table.clone();
+                let mut sources = Vec::new();
+                if has_script {
+                    if let Some(source) = script_source(table) {
+                        sources.push(source);
+                    }
+                    strip_path(&mut config, &["content"]);
+                }
+                if has_backtrace {
+                    sources.extend(backtrace_sources(table));
+                    strip_backtrace_sources(&mut config);
+                }
                 ComponentView {
-                    name: c.common.name.to_string(),
-                    ffqn: None,
-                    config: value,
-                    sources: backtrace_sources(&c.backtrace),
+                    name: component_display_name(table),
+                    config,
+                    sources,
                 }
             })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "Workflows (JS)",
-        toml_key: "workflows_js",
-        components: config
-            .workflows_js
-            .iter()
-            .map(|c| {
-                let mut value = to_stripped_value(c);
-                strip_path(&mut value, &["location", "content", "content"]);
-                ComponentView {
-                    name: c.name.to_string(),
-                    ffqn: parse_ffqn(&c.ffqn),
-                    config: value,
-                    sources: vec![script_location_source(&c.location)],
-                }
-            })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "Activities (WASM)",
-        toml_key: "activities_wasm",
-        components: config
-            .activities_wasm
-            .iter()
-            .map(|c| ComponentView {
-                name: c.common.name.to_string(),
-                ffqn: None,
-                config: to_stripped_value(c),
-                sources: Vec::new(),
-            })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "Activities (JS)",
-        toml_key: "activities_js",
-        components: config
-            .activities_js
-            .iter()
-            .map(|c| {
-                let mut value = to_stripped_value(c);
-                strip_path(&mut value, &["location", "content", "content"]);
-                ComponentView {
-                    name: c.name.to_string(),
-                    ffqn: parse_ffqn(&c.ffqn),
-                    config: value,
-                    sources: vec![script_location_source(&c.location)],
-                }
-            })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "Activities (Exec)",
-        toml_key: "activities_exec",
-        components: config
-            .activities_exec
-            .iter()
-            .map(|c| {
-                let mut value = to_stripped_value(c);
-                strip_path(&mut value, &["location", "content", "content"]);
-                ComponentView {
-                    name: c.name.to_string(),
-                    ffqn: parse_ffqn(&c.ffqn),
-                    config: value,
-                    sources: vec![script_location_source(&c.location)],
-                }
-            })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "Activity Stubs",
-        toml_key: "activities_stub",
-        components: config
-            .activities_stub
-            .iter()
-            .map(|c| ComponentView {
-                name: c.name_str().to_string(),
-                ffqn: match c {
-                    cfg::ActivityStubComponentConfigCanonical::Inline(i) => parse_ffqn(&i.ffqn),
-                    cfg::ActivityStubComponentConfigCanonical::File(_) => None,
-                },
-                config: to_stripped_value(c),
-                sources: Vec::new(),
-            })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "External Activities",
-        toml_key: "activities_external",
-        components: config
-            .activities_external
-            .iter()
-            .map(|c| ComponentView {
-                name: c.name_str().to_string(),
-                ffqn: match c {
-                    cfg::ActivityExternalComponentConfigCanonical::Inline(i) => parse_ffqn(&i.ffqn),
-                    cfg::ActivityExternalComponentConfigCanonical::File(_) => None,
-                },
-                config: to_stripped_value(c),
-                sources: Vec::new(),
-            })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "Webhooks (WASM)",
-        toml_key: "webhooks_wasm",
-        components: config
-            .webhooks_wasm
-            .iter()
-            .map(|c| {
-                let mut value = to_stripped_value(c);
-                strip_backtrace_sources(&mut value);
-                ComponentView {
-                    name: c.common.name.to_string(),
-                    ffqn: None,
-                    config: value,
-                    sources: backtrace_sources(&c.backtrace),
-                }
-            })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "Webhooks (JS)",
-        toml_key: "webhooks_js",
-        components: config
-            .webhooks_js
-            .iter()
-            .map(|c| {
-                let mut value = to_stripped_value(c);
-                strip_path(&mut value, &["location", "content", "content"]);
-                ComponentView {
-                    name: c.name.to_string(),
-                    ffqn: None,
-                    config: value,
-                    sources: vec![script_location_source(&c.location)],
-                }
-            })
-            .collect(),
-    });
-    sections.push(SectionView {
-        title: "Crons",
-        toml_key: "crons",
-        components: config
-            .crons
-            .iter()
-            .map(|c| ComponentView {
-                name: c.name.to_string(),
-                ffqn: parse_ffqn(&c.ffqn),
-                config: to_stripped_value(c),
-                sources: Vec::new(),
-            })
-            .collect(),
-    });
-
+            .collect();
+        sections.push(SectionView {
+            title,
+            toml_key,
+            components,
+        });
+    }
     sections.retain(|section| !section.components.is_empty());
     sections
 }
@@ -338,24 +262,6 @@ pub fn component_to_toml(toml_key: &str, config: &Value) -> String {
     };
     let mut root = toml::value::Table::new();
     root.insert(toml_key.to_string(), toml::Value::Array(vec![component]));
-    toml_table_to_string(root)
-}
-
-/// Serialize all sections as one TOML document.
-pub fn sections_to_toml(sections: &[SectionView]) -> String {
-    let mut root = toml::value::Table::new();
-    for section in sections {
-        root.insert(
-            section.toml_key.to_string(),
-            toml::Value::Array(
-                section
-                    .components
-                    .iter()
-                    .filter_map(|component| json_to_toml(&component.config))
-                    .collect(),
-            ),
-        );
-    }
     toml_table_to_string(root)
 }
 
@@ -437,34 +343,56 @@ pub fn collapsible_source(
         let source = source.clone();
         let component_id = component_id.clone();
         use_effect_with(*opened, move |opened| {
-            if *opened
-                && fetched.is_none()
-                && let SourceContent::Fetch { file } = &source.content
-            {
-                let Some(component_id) = component_id else {
-                    fetched.set(Some(Err(
-                        "component not found in this deployment".to_string()
-                    )));
-                    return;
-                };
-                let file = file.clone();
-                wasm_bindgen_futures::spawn_local(async move {
-                    let mut client =
-                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
-                        );
-                    let response = client
-                        .get_backtrace_source(grpc_client::GetBacktraceSourceRequest {
-                            component_id: Some(component_id),
-                            file,
-                        })
-                        .await;
-                    fetched.set(Some(
-                        response
-                            .map(|resp| resp.into_inner().content)
-                            .map_err(|err| err.message().to_string()),
-                    ));
-                });
+            if !*opened || fetched.is_some() {
+                return;
+            }
+            match &source.content {
+                SourceContent::Fetch { file } => {
+                    let Some(component_id) = component_id else {
+                        fetched.set(Some(Err(
+                            "component not found in this deployment".to_string()
+                        )));
+                        return;
+                    };
+                    let file = file.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let mut client =
+                            grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
+                                tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                            );
+                        let response = client
+                            .get_backtrace_source(grpc_client::GetBacktraceSourceRequest {
+                                component_id: Some(component_id),
+                                file,
+                            })
+                            .await;
+                        fetched.set(Some(
+                            response
+                                .map(|resp| resp.into_inner().content)
+                                .map_err(|err| err.message().to_string()),
+                        ));
+                    });
+                }
+                SourceContent::FetchFile { digest } => {
+                    let digest = digest.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let mut client =
+                            grpc_client::deployment_repository_client::DeploymentRepositoryClient::new(
+                                tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                            );
+                        let response = client
+                            .get_file(grpc_client::GetFileRequest { digest })
+                            .await;
+                        fetched.set(Some(
+                            response
+                                .map(|resp| {
+                                    String::from_utf8_lossy(&resp.into_inner().content).into_owned()
+                                })
+                                .map_err(|err| err.message().to_string()),
+                        ));
+                    });
+                }
+                _ => {}
             }
         });
     }
@@ -490,18 +418,20 @@ pub fn collapsible_source(
                     </details>
                 };
             }
-            SourceContent::Fetch { .. } => match fetched.as_ref() {
-                None => None,
-                Some(Ok(content)) => Some(content.clone()),
-                Some(Err(err)) => {
-                    return html! {
-                        <details {ontoggle} class="source-block">
-                            <summary>{ &source.file_name }</summary>
-                            <p class="error">{ format!("Cannot fetch source: {err}") }</p>
-                        </details>
-                    };
+            SourceContent::Fetch { .. } | SourceContent::FetchFile { .. } => {
+                match fetched.as_ref() {
+                    None => None,
+                    Some(Ok(content)) => Some(content.clone()),
+                    Some(Err(err)) => {
+                        return html! {
+                            <details {ontoggle} class="source-block">
+                                <summary>{ &source.file_name }</summary>
+                                <p class="error">{ format!("Cannot fetch source: {err}") }</p>
+                            </details>
+                        };
+                    }
                 }
-            },
+            }
         };
         match inline_content {
             None => html! { <p>{"Loading..."}</p> },
