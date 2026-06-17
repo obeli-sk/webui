@@ -44,6 +44,10 @@ pub enum SourceContent {
     Oci {
         image: String,
     },
+    /// External local file, read at runtime; its content is not part of the config.
+    ExternalPath {
+        path: String,
+    },
     /// Source must be fetched via the `GetBacktraceSource` RPC.
     Fetch {
         file: String,
@@ -73,13 +77,17 @@ fn strip_path(config: &mut Value, path: &[&str]) {
     }
 }
 
-fn js_location_source(location: &cfg::JsLocationCanonical) -> SourceView {
+fn script_location_source(location: &cfg::ScriptLocationCanonical) -> SourceView {
     match location {
-        cfg::JsLocationCanonical::Content { content, file_name } => SourceView {
+        cfg::ScriptLocationCanonical::Content { content, file_name } => SourceView {
             file_name: file_name.clone(),
             content: SourceContent::Inline(content.clone()),
         },
-        cfg::JsLocationCanonical::Oci { image } => SourceView {
+        cfg::ScriptLocationCanonical::ExternalPath { path } => SourceView {
+            file_name: path.clone(),
+            content: SourceContent::ExternalPath { path: path.clone() },
+        },
+        cfg::ScriptLocationCanonical::Oci { image } => SourceView {
             file_name: image.clone(),
             content: SourceContent::Oci {
                 image: image.clone(),
@@ -92,12 +100,12 @@ fn backtrace_sources(backtrace: &cfg::ComponentBacktraceConfigCanonical) -> Vec<
     let mut sources: Vec<_> = backtrace
         .frame_files_to_sources
         .iter()
-        .map(|(file, content)| SourceView {
+        .map(|(file, source)| SourceView {
             file_name: file.clone(),
-            content: if content.is_empty() {
+            content: if source.content.is_empty() {
                 SourceContent::Fetch { file: file.clone() }
             } else {
-                SourceContent::Inline(content.clone())
+                SourceContent::Inline(source.content.clone())
             },
         })
         .collect();
@@ -151,7 +159,7 @@ pub fn build_sections(config: &DeploymentCanonical) -> Vec<SectionView> {
                     name: c.name.to_string(),
                     ffqn: parse_ffqn(&c.ffqn),
                     config: value,
-                    sources: vec![js_location_source(&c.location)],
+                    sources: vec![script_location_source(&c.location)],
                 }
             })
             .collect(),
@@ -183,7 +191,7 @@ pub fn build_sections(config: &DeploymentCanonical) -> Vec<SectionView> {
                     name: c.name.to_string(),
                     ffqn: parse_ffqn(&c.ffqn),
                     config: value,
-                    sources: vec![js_location_source(&c.location)],
+                    sources: vec![script_location_source(&c.location)],
                 }
             })
             .collect(),
@@ -196,24 +204,12 @@ pub fn build_sections(config: &DeploymentCanonical) -> Vec<SectionView> {
             .iter()
             .map(|c| {
                 let mut value = to_stripped_value(c);
-                strip_path(&mut value, &["source", "content"]);
-                let sources = vec![match &c.source {
-                    cfg::ExecSourceCanonical::Content(content) => SourceView {
-                        file_name: c.name.to_string(),
-                        content: SourceContent::Inline(content.clone()),
-                    },
-                    cfg::ExecSourceCanonical::Oci { image } => SourceView {
-                        file_name: image.clone(),
-                        content: SourceContent::Oci {
-                            image: image.clone(),
-                        },
-                    },
-                }];
+                strip_path(&mut value, &["location", "content", "content"]);
                 ComponentView {
                     name: c.name.to_string(),
                     ffqn: parse_ffqn(&c.ffqn),
                     config: value,
-                    sources,
+                    sources: vec![script_location_source(&c.location)],
                 }
             })
             .collect(),
@@ -283,7 +279,7 @@ pub fn build_sections(config: &DeploymentCanonical) -> Vec<SectionView> {
                     name: c.name.to_string(),
                     ffqn: None,
                     config: value,
-                    sources: vec![js_location_source(&c.location)],
+                    sources: vec![script_location_source(&c.location)],
                 }
             })
             .collect(),
@@ -483,6 +479,14 @@ pub fn collapsible_source(
                     <details {ontoggle} class="source-block">
                         <summary>{ &source.file_name }</summary>
                         <p>{ format!("Source is stored in the OCI image `{image}`.") }</p>
+                    </details>
+                };
+            }
+            SourceContent::ExternalPath { path } => {
+                return html! {
+                    <details {ontoggle} class="source-block">
+                        <summary>{ &source.file_name }</summary>
+                        <p>{ format!("Source is read at runtime from the external path `{path}`.") }</p>
                     </details>
                 };
             }
