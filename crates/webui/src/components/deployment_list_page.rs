@@ -6,7 +6,7 @@ use crate::{
         notification::{Notification, NotificationContext},
     },
     grpc::grpc_client::{
-        self, DeploymentId, DeploymentStatus, DeploymentSummary,
+        self, DeploymentComponentType, DeploymentId, DeploymentStatus, DeploymentSummary,
         deployment_repository_client::DeploymentRepositoryClient,
         list_deployments_request::{NewerThan, OlderThan, Pagination},
     },
@@ -95,6 +95,17 @@ impl DeploymentCursor {
     }
 }
 
+fn exec_activity_count(summary: &DeploymentSummary) -> Option<u32> {
+    summary.component_summary.as_ref().map(|component_summary| {
+        component_summary
+            .components
+            .iter()
+            .filter(|component| component.component_type() == DeploymentComponentType::ActivityExec)
+            .map(|component| component.count)
+            .sum()
+    })
+}
+
 #[component(DeploymentListPage)]
 pub fn deployment_list_page() -> Html {
     let location = use_location().expect("should be called inside a router");
@@ -155,6 +166,7 @@ pub fn deployment_list_page() -> Html {
                     include_deployment_toml: false,
                     include_derived: query_params.show_derived,
                     include_execution_counts: true,
+                    include_component_summary: true,
                 };
                 debug!("Fetching deployments with query: {req:?}");
                 let response = deployment_client.list_deployments(req).await;
@@ -222,6 +234,30 @@ pub fn deployment_list_page() -> Html {
                     }
                     DeploymentStatus::Inactive | DeploymentStatus::Unspecified => html! {},
                 };
+                let exec_badge = match exec_activity_count(deployment_summary) {
+                    Some(0) => html! {},
+                    Some(count) => {
+                        let activity_label = if count == 1 { "activity" } else { "activities" };
+                        html! {
+                            <span
+                                class="badge dangerous-exec"
+                                title={format!(
+                                    "This deployment includes {count} exec {activity_label}, which run outside the component sandbox"
+                                )}
+                            >
+                                {"⚠ Exec"}
+                            </span>
+                        }
+                    },
+                    None => html! {
+                        <span
+                            class="badge dangerous-exec"
+                            title="Component summary was not returned; exec activity status is unknown"
+                        >
+                            {"⚠ Exec unknown"}
+                        </span>
+                    },
+                };
 
                 // Cell linking to the execution list filtered by this deployment and status.
                 // The links inherit `show_derived` so the list matches the count.
@@ -245,17 +281,26 @@ pub fn deployment_list_page() -> Html {
                         </td>
                     }
                 };
-                let in_progress = deployment_summary.locked
-                    + deployment_summary.pending
-                    + deployment_summary.blocked;
-                let total = deployment_summary.locked
-                    + deployment_summary.pending
-                    + deployment_summary.scheduled
-                    + deployment_summary.blocked
-                    + deployment_summary.paused
-                    + deployment_summary.finished_ok
-                    + deployment_summary.finished_error
-                    + deployment_summary.finished_execution_failure;
+                let execution_summary = deployment_summary.execution_summary.as_ref();
+                let locked = execution_summary.map_or(0, |summary| summary.locked);
+                let pending = execution_summary.map_or(0, |summary| summary.pending);
+                let scheduled = execution_summary.map_or(0, |summary| summary.scheduled);
+                let blocked = execution_summary.map_or(0, |summary| summary.blocked);
+                let paused = execution_summary.map_or(0, |summary| summary.paused);
+                let finished_ok = execution_summary.map_or(0, |summary| summary.finished_ok);
+                let finished_error =
+                    execution_summary.map_or(0, |summary| summary.finished_error);
+                let finished_execution_failure =
+                    execution_summary.map_or(0, |summary| summary.finished_execution_failure);
+                let in_progress = locked + pending + blocked;
+                let total = locked
+                    + pending
+                    + scheduled
+                    + blocked
+                    + paused
+                    + finished_ok
+                    + finished_error
+                    + finished_execution_failure;
 
                 let on_diff_toggle = {
                     let selected_for_diff = selected_for_diff.clone();
@@ -290,6 +335,8 @@ pub fn deployment_list_page() -> Html {
                             </Link<Route>>
                             {" "}
                             {status_badge}
+                            {" "}
+                            {exec_badge}
                             if let Some(description) = description {
                                 <div class="description">{ description }</div>
                             }
@@ -297,23 +344,23 @@ pub fn deployment_list_page() -> Html {
                         { count_cell(total, None) }
                         { count_cell(in_progress, Some(StatusFilterList::in_progress())) }
                         { count_cell(
-                            deployment_summary.scheduled,
+                            scheduled,
                             Some(StatusFilterList::single(StatusFilter::Scheduled)),
                         ) }
                         { count_cell(
-                            deployment_summary.paused,
+                            paused,
                             Some(StatusFilterList::single(StatusFilter::Paused)),
                         ) }
                         { count_cell(
-                            deployment_summary.finished_ok,
+                            finished_ok,
                             Some(StatusFilterList::single(StatusFilter::FinishedOk)),
                         ) }
                         { count_cell(
-                            deployment_summary.finished_error,
+                            finished_error,
                             Some(StatusFilterList::single(StatusFilter::FinishedError)),
                         ) }
                         { count_cell(
-                            deployment_summary.finished_execution_failure,
+                            finished_execution_failure,
                             Some(StatusFilterList::single(StatusFilter::FinishedExecutionFailure)),
                         ) }
                     </tr>

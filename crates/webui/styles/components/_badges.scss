@@ -21,6 +21,12 @@ table.deployment_list {
       background-color: $color-accent-green;
       color: $color-bg-primary;
     }
+
+    &.dangerous-exec {
+      background-color: transparent;
+      border: 1px solid #dc322f;
+      color: #dc322f;
+    }
   }
 }
 

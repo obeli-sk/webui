@@ -222,4 +222,10 @@
         background-color: #dc322f;
         color: $color-text-white;
     }
+
+    &.dangerous-exec {
+        background-color: transparent;
+        border: 1px solid #dc322f;
+        color: #dc322f;
+    }
 }

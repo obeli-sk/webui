@@ -38,6 +38,13 @@ fn status_badge(status: DeploymentStatus) -> Html {
     }
 }
 
+fn activity_exec_count(manifest: &Value) -> usize {
+    manifest
+        .get("activity_exec")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len)
+}
+
 #[component(DeploymentDetailPage)]
 pub fn deployment_detail_page(
     DeploymentDetailPageProps { deployment_id }: &DeploymentDetailPageProps,
@@ -127,6 +134,32 @@ pub fn deployment_detail_page(
         .deployment_toml
         .as_ref()
         .map(|manifest| toml::from_str::<Value>(manifest).map_err(|e| e.to_string()));
+    let exec_badge = match &parsed_manifest {
+        Some(Ok(manifest)) => match activity_exec_count(manifest) {
+            0 => html! {},
+            count => {
+                let activity_label = if count == 1 { "activity" } else { "activities" };
+                html! {
+                    <span
+                        class="badge dangerous-exec"
+                        title={format!(
+                            "This deployment includes {count} exec {activity_label}, which run outside the component sandbox"
+                        )}
+                    >
+                        {"⚠ Exec"}
+                    </span>
+                }
+            }
+        },
+        None | Some(Err(_)) => html! {
+            <span
+                class="badge dangerous-exec"
+                title="The manifest could not be inspected; exec activity status is unknown"
+            >
+                {"⚠ Exec unknown"}
+            </span>
+        },
+    };
 
     let config_html = match &parsed_manifest {
         None => html! { <p>{"The server did not return the deployment manifest."}</p> },
@@ -197,6 +230,8 @@ pub fn deployment_detail_page(
                 {"Deployment "}{ &deployment_id.id }
                 {" "}
                 { status_badge(status) }
+                {" "}
+                { exec_badge }
             </h3>
             if let Some(description) = description {
                 <p>
