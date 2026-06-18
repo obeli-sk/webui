@@ -140,6 +140,32 @@
     }
 }
 
+.source-diff {
+    margin: 0.35rem 0;
+
+    > summary {
+        cursor: pointer;
+        font-family: $font-family-mono;
+        font-weight: 500;
+    }
+
+    .source-content {
+        overflow-x: auto;
+        margin: 0.25rem 0;
+        padding: 0.5rem;
+        border: 1px solid $color-border-primary;
+        border-radius: $border-radius-sm;
+        font-family: $font-family-mono;
+        font-size: $font-size-sm;
+        white-space: pre;
+    }
+
+    .source-note {
+        margin: 0.25rem 0;
+        color: $color-text-secondary;
+    }
+}
+
 .text-diff {
     overflow-x: auto;
     margin: 0.25rem 0;

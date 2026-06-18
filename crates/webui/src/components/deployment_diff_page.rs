@@ -2,11 +2,16 @@ use crate::{
     BASE_URL,
     app::Route,
     components::{
-        deployment_config_view::{MANIFEST_SECTIONS, component_display_name, render_config_value},
+        deployment_config_view::{
+            ComponentView, MANIFEST_SECTIONS, SectionView, SourceContent, SourceView,
+            build_sections_from_manifest, render_config_value,
+        },
         notification::{Notification, NotificationContext},
     },
     grpc::grpc_client::{
         self, DeploymentId, deployment_repository_client::DeploymentRepositoryClient,
+        execution_repository_client::ExecutionRepositoryClient,
+        function_repository_client::FunctionRepositoryClient,
     },
 };
 use log::error;
@@ -25,13 +30,54 @@ pub struct DeploymentDiffPageProps {
     pub to: DeploymentId,
 }
 
-fn components_by_name(config: &Value, section_key: &str) -> BTreeMap<String, Value> {
-    config
-        .get(section_key)
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .map(|component| (component_display_name(component), component.clone()))
+#[derive(Clone)]
+struct DeploymentInfo {
+    sections: Vec<SectionView>,
+    components_by_name: BTreeMap<String, grpc_client::ComponentId>,
+}
+
+#[derive(Clone)]
+struct DeploymentDiffData {
+    from: DeploymentInfo,
+    to: DeploymentInfo,
+    source_diffs: BTreeMap<(String, String), Vec<SourceDiff>>,
+}
+
+#[derive(Clone)]
+struct SourceDiff {
+    file_name: String,
+    change: SourceChange,
+}
+
+#[derive(Clone)]
+enum SourceChange {
+    Added(ResolvedSource),
+    Removed(ResolvedSource),
+    Changed {
+        from: ResolvedSource,
+        to: ResolvedSource,
+    },
+}
+
+#[derive(Clone, PartialEq)]
+enum ResolvedSource {
+    Text(String),
+    Note(String),
+    Error(String),
+}
+
+fn components_by_name(
+    sections: &[SectionView],
+    section_key: &str,
+) -> BTreeMap<String, ComponentView> {
+    sections
+        .iter()
+        .find(|section| section.toml_key == section_key)
+        .map(|section| {
+            section
+                .components
+                .iter()
+                .map(|component| (component.name.clone(), component.clone()))
                 .collect()
         })
         .unwrap_or_default()
@@ -101,7 +147,72 @@ fn render_text_diff(old: &str, new: &str) -> Html {
     }
 }
 
-fn render_changed_component(name: &str, from: &Value, to: &Value) -> Html {
+fn render_source_side(source: &ResolvedSource) -> Html {
+    match source {
+        ResolvedSource::Text(content) => {
+            html! { <pre class="source-content">{ content }</pre> }
+        }
+        ResolvedSource::Note(note) => html! { <p class="source-note">{ note }</p> },
+        ResolvedSource::Error(err) => html! { <p class="error">{ err }</p> },
+    }
+}
+
+fn source_summary(source: &ResolvedSource) -> String {
+    match source {
+        ResolvedSource::Text(content) => {
+            let line_count = content.lines().count();
+            format!(
+                "{line_count} source line{}",
+                if line_count == 1 { "" } else { "s" }
+            )
+        }
+        ResolvedSource::Note(note) | ResolvedSource::Error(note) => note.clone(),
+    }
+}
+
+fn render_source_diff(diff: &SourceDiff) -> Html {
+    match &diff.change {
+        SourceChange::Changed { from, to } => {
+            let body = match (from, to) {
+                (ResolvedSource::Text(from), ResolvedSource::Text(to)) => {
+                    render_text_diff(from, to)
+                }
+                _ => html! {
+                    <p>
+                        <span class="diff-del">{ source_summary(from) }</span>
+                        {" → "}
+                        <span class="diff-ins">{ source_summary(to) }</span>
+                    </p>
+                },
+            };
+            html! {
+                <details open=true class="source-diff">
+                    <summary><span class="badge changed">{"changed"}</span>{" "}{ &diff.file_name }</summary>
+                    { body }
+                </details>
+            }
+        }
+        SourceChange::Added(source) => html! {
+            <details class="source-diff">
+                <summary><span class="badge added">{"added"}</span>{" "}{ &diff.file_name }</summary>
+                { render_source_side(source) }
+            </details>
+        },
+        SourceChange::Removed(source) => html! {
+            <details class="source-diff">
+                <summary><span class="badge removed">{"removed"}</span>{" "}{ &diff.file_name }</summary>
+                { render_source_side(source) }
+            </details>
+        },
+    }
+}
+
+fn render_changed_component(
+    name: &str,
+    from: &Value,
+    to: &Value,
+    source_diffs: &[SourceDiff],
+) -> Html {
     let mut from_leaves = BTreeMap::new();
     let mut to_leaves = BTreeMap::new();
     flatten_value("", from, &mut from_leaves);
@@ -149,17 +260,25 @@ fn render_changed_component(name: &str, from: &Value, to: &Value) -> Html {
     html! {
         <details open=true class="component-config diff-changed">
             <summary><span class="badge changed">{"changed"}</span>{" "}{ name }</summary>
-            <table class="config-table">
-                { rows }
-            </table>
+            if !rows.is_empty() {
+                <table class="config-table">
+                    { rows }
+                </table>
+            }
+            if !source_diffs.is_empty() {
+                <h5>{"Source diffs"}</h5>
+                { for source_diffs.iter().map(render_source_diff) }
+            }
         </details>
     }
 }
 
 fn render_section_diff(
+    section_key: &str,
     section_title: &str,
-    from_components: &BTreeMap<String, Value>,
-    to_components: &BTreeMap<String, Value>,
+    from_components: &BTreeMap<String, ComponentView>,
+    to_components: &BTreeMap<String, ComponentView>,
+    source_diffs: &BTreeMap<(String, String), Vec<SourceDiff>>,
 ) -> Option<Html> {
     let mut names: Vec<&String> = from_components.keys().chain(to_components.keys()).collect();
     names.sort();
@@ -171,19 +290,32 @@ fn render_section_diff(
     let mut unchanged = 0usize;
     let mut entries = Vec::new();
     for name in names {
+        let source_diffs_for_component = source_diffs
+            .get(&(section_key.to_string(), name.clone()))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         match (from_components.get(name), to_components.get(name)) {
-            (Some(from), Some(to)) if from == to => unchanged += 1,
-            (Some(from), Some(to)) => entries.push(render_changed_component(name, from, to)),
+            (Some(from), Some(to))
+                if from.config == to.config && source_diffs_for_component.is_empty() =>
+            {
+                unchanged += 1;
+            }
+            (Some(from), Some(to)) => entries.push(render_changed_component(
+                name,
+                &from.config,
+                &to.config,
+                source_diffs_for_component,
+            )),
             (Some(from), None) => entries.push(html! {
                 <details class="component-config diff-removed">
                     <summary><span class="badge removed">{"removed"}</span>{" "}{ name }</summary>
-                    { render_config_value(from) }
+                    { render_config_value(&from.config) }
                 </details>
             }),
             (None, Some(to)) => entries.push(html! {
                 <details class="component-config diff-added">
                     <summary><span class="badge added">{"added"}</span>{" "}{ name }</summary>
-                    { render_config_value(to) }
+                    { render_config_value(&to.config) }
                 </details>
             }),
             (None, None) => unreachable!("name comes from one of the maps"),
@@ -205,7 +337,7 @@ fn render_section_diff(
     })
 }
 
-async fn fetch_config(deployment_id: DeploymentId) -> Result<Value, String> {
+async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<DeploymentInfo, String> {
     let mut client = DeploymentRepositoryClient::new(Client::new(BASE_URL.to_string()));
     let deployment = client
         .get_deployment(grpc_client::GetDeploymentRequest {
@@ -225,8 +357,182 @@ async fn fetch_config(deployment_id: DeploymentId) -> Result<Value, String> {
     let deployment_toml = deployment
         .deployment_toml
         .ok_or_else(|| format!("deployment {} has no manifest", deployment_id.id))?;
-    toml::from_str(&deployment_toml)
-        .map_err(|e| format!("cannot parse manifest of {}: {e}", deployment_id.id))
+    let config = toml::from_str(&deployment_toml)
+        .map_err(|e| format!("cannot parse manifest of {}: {e}", deployment_id.id))?;
+    let sections = build_sections_from_manifest(&config);
+
+    let mut function_client = FunctionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+    let components_by_name = function_client
+        .list_components(grpc_client::ListComponentsRequest {
+            function_name: None,
+            component_digest: None,
+            extensions: false,
+            deployment_id: Some(deployment_id),
+        })
+        .await
+        .map(|resp| {
+            resp.into_inner()
+                .components
+                .into_iter()
+                .filter_map(|component| component.component_id)
+                .map(|component_id| (component_id.name.clone(), component_id))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(DeploymentInfo {
+        sections,
+        components_by_name,
+    })
+}
+
+async fn resolve_source(
+    source: SourceView,
+    component_id: Option<grpc_client::ComponentId>,
+) -> ResolvedSource {
+    match source.content {
+        SourceContent::Inline(content) => ResolvedSource::Text(content),
+        SourceContent::Oci { image } => {
+            ResolvedSource::Note(format!("Source is stored in the OCI image `{image}`."))
+        }
+        SourceContent::ExternalPath { path } => ResolvedSource::Note(format!(
+            "Source is read at runtime from the external path `{path}`."
+        )),
+        SourceContent::FetchFile { digest } => {
+            let mut client = DeploymentRepositoryClient::new(Client::new(BASE_URL.to_string()));
+            client
+                .get_file(grpc_client::GetFileRequest { digest })
+                .await
+                .map(|resp| {
+                    ResolvedSource::Text(
+                        String::from_utf8_lossy(&resp.into_inner().content).into_owned(),
+                    )
+                })
+                .unwrap_or_else(|err| {
+                    ResolvedSource::Error(format!("Cannot fetch source: {}", err.message()))
+                })
+        }
+        SourceContent::Fetch { file } => {
+            let Some(component_id) = component_id else {
+                return ResolvedSource::Error("component not found in this deployment".to_string());
+            };
+            let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+            client
+                .get_backtrace_source(grpc_client::GetBacktraceSourceRequest {
+                    component_id: Some(component_id),
+                    file,
+                })
+                .await
+                .map(|resp| ResolvedSource::Text(resp.into_inner().content))
+                .unwrap_or_else(|err| {
+                    ResolvedSource::Error(format!("Cannot fetch source: {}", err.message()))
+                })
+        }
+    }
+}
+
+async fn diff_sources(
+    from_sources: &[SourceView],
+    to_sources: &[SourceView],
+    from_component_id: Option<grpc_client::ComponentId>,
+    to_component_id: Option<grpc_client::ComponentId>,
+) -> Vec<SourceDiff> {
+    let from_sources: BTreeMap<String, SourceView> = from_sources
+        .iter()
+        .map(|source| (source.file_name.clone(), source.clone()))
+        .collect();
+    let to_sources: BTreeMap<String, SourceView> = to_sources
+        .iter()
+        .map(|source| (source.file_name.clone(), source.clone()))
+        .collect();
+    let mut names: Vec<&String> = from_sources.keys().chain(to_sources.keys()).collect();
+    names.sort();
+    names.dedup();
+
+    let mut diffs = Vec::new();
+    for name in names {
+        match (from_sources.get(name), to_sources.get(name)) {
+            (Some(from), Some(to)) if from == to && from_component_id == to_component_id => {}
+            (Some(from), Some(to)) => {
+                let from = resolve_source(from.clone(), from_component_id.clone()).await;
+                let to = resolve_source(to.clone(), to_component_id.clone()).await;
+                if from != to {
+                    diffs.push(SourceDiff {
+                        file_name: name.clone(),
+                        change: SourceChange::Changed { from, to },
+                    });
+                }
+            }
+            (Some(from), None) => {
+                let from = resolve_source(from.clone(), from_component_id.clone()).await;
+                diffs.push(SourceDiff {
+                    file_name: name.clone(),
+                    change: SourceChange::Removed(from),
+                });
+            }
+            (None, Some(to)) => {
+                let to = resolve_source(to.clone(), to_component_id.clone()).await;
+                diffs.push(SourceDiff {
+                    file_name: name.clone(),
+                    change: SourceChange::Added(to),
+                });
+            }
+            (None, None) => unreachable!("name comes from one of the maps"),
+        }
+    }
+    diffs
+}
+
+async fn build_source_diffs(
+    from: &DeploymentInfo,
+    to: &DeploymentInfo,
+) -> BTreeMap<(String, String), Vec<SourceDiff>> {
+    let mut source_diffs = BTreeMap::new();
+
+    for (section_key, _) in MANIFEST_SECTIONS {
+        let from_components = components_by_name(&from.sections, section_key);
+        let to_components = components_by_name(&to.sections, section_key);
+        let mut names: Vec<&String> = from_components.keys().chain(to_components.keys()).collect();
+        names.sort();
+        names.dedup();
+
+        for name in names {
+            let (Some(from_component), Some(to_component)) =
+                (from_components.get(name), to_components.get(name))
+            else {
+                continue;
+            };
+            if from_component.sources.is_empty() && to_component.sources.is_empty() {
+                continue;
+            }
+            let diffs = diff_sources(
+                &from_component.sources,
+                &to_component.sources,
+                from.components_by_name.get(name).cloned(),
+                to.components_by_name.get(name).cloned(),
+            )
+            .await;
+            if !diffs.is_empty() {
+                source_diffs.insert(((*section_key).to_string(), name.clone()), diffs);
+            }
+        }
+    }
+
+    source_diffs
+}
+
+async fn fetch_diff_data(
+    from: DeploymentId,
+    to: DeploymentId,
+) -> Result<DeploymentDiffData, String> {
+    let from = fetch_deployment_info(from).await?;
+    let to = fetch_deployment_info(to).await?;
+    let source_diffs = build_source_diffs(&from, &to).await;
+    Ok(DeploymentDiffData {
+        from,
+        to,
+        source_diffs,
+    })
 }
 
 #[component(DeploymentDiffPage)]
@@ -235,41 +541,38 @@ pub fn deployment_diff_page(
 ) -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
-    let configs_state = use_state(|| None::<Result<(Value, Value), String>>);
+    let diff_state = use_state(|| None::<Result<DeploymentDiffData, String>>);
 
     {
-        let configs_state = configs_state.clone();
+        let diff_state = diff_state.clone();
         let notifications = notifications.clone();
         use_effect_with((from.clone(), to.clone()), move |(from, to)| {
             let from = from.clone();
             let to = to.clone();
             spawn_local(async move {
-                let result: Result<(Value, Value), String> = async {
-                    let from_config = fetch_config(from).await?;
-                    let to_config = fetch_config(to).await?;
-                    Ok((from_config, to_config))
-                }
-                .await;
+                let result = fetch_diff_data(from, to).await;
                 if let Err(err) = &result {
                     error!("Deployment diff failed: {err}");
                     notifications.push(Notification::error(err.clone()));
                 }
-                configs_state.set(Some(result));
+                diff_state.set(Some(result));
             });
         });
     }
 
-    let body = match configs_state.deref() {
+    let body = match diff_state.deref() {
         None => html! { <p>{"Loading..."}</p> },
         Some(Err(err)) => html! { <p class="error">{ err }</p> },
-        Some(Ok((from_config, to_config))) => {
+        Some(Ok(diff_data)) => {
             let sections: Vec<Html> = MANIFEST_SECTIONS
                 .iter()
                 .filter_map(|(key, title)| {
                     render_section_diff(
+                        key,
                         title,
-                        &components_by_name(from_config, key),
-                        &components_by_name(to_config, key),
+                        &components_by_name(&diff_data.from.sections, key),
+                        &components_by_name(&diff_data.to.sections, key),
+                        &diff_data.source_diffs,
                     )
                 })
                 .collect();
