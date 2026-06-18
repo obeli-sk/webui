@@ -2,7 +2,7 @@ use crate::{
     BASE_URL,
     components::notification::{Notification, NotificationContext},
     grpc::grpc_client::{
-        self, DeploymentId, DeploymentStatus,
+        self, DeploymentId, DeploymentStatus, RuntimeConfigCheck,
         deployment_repository_client::DeploymentRepositoryClient,
         switch_deployment_response::Outcome,
     },
@@ -34,7 +34,7 @@ pub fn deployment_actions(
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let in_flight = use_state(|| false);
-    // Which `(hot_redeploy, verify)` action is armed for the confirming second click.
+    // Which `(hot_redeploy, allow_missing)` action is armed for the confirming second click.
     let armed = use_state(|| None::<(bool, bool)>);
     // Dropping the previous timeout cancels it when another button is armed.
     let disarm_timer = use_mut_ref(|| None::<Timeout>);
@@ -50,8 +50,8 @@ pub fn deployment_actions(
         let in_flight = in_flight.clone();
         let armed = armed.clone();
         let disarm_timer = disarm_timer.clone();
-        // `verify` only matters for enqueueing; hot redeploy always verifies.
-        move |hot_redeploy: bool, verify: bool| {
+        // `allow_missing` only matters for enqueueing; hot redeploy is always strict.
+        move |hot_redeploy: bool, allow_missing: bool| {
             let deployment_id = deployment_id.clone();
             let notifications = notifications.clone();
             let on_switched = on_switched.clone();
@@ -60,8 +60,8 @@ pub fn deployment_actions(
             let disarm_timer = disarm_timer.clone();
             Callback::from(move |_| {
                 // First click arms the button, second click within the timeout executes.
-                if *armed != Some((hot_redeploy, verify)) {
-                    armed.set(Some((hot_redeploy, verify)));
+                if *armed != Some((hot_redeploy, allow_missing)) {
+                    armed.set(Some((hot_redeploy, allow_missing)));
                     let armed = armed.clone();
                     *disarm_timer.borrow_mut() = Some(Timeout::new(5000, move || armed.set(None)));
                     return;
@@ -79,7 +79,11 @@ pub fn deployment_actions(
                     let response = client
                         .switch_deployment(grpc_client::SwitchDeploymentRequest {
                             deployment_id: Some(deployment_id),
-                            verify,
+                            runtime_config_check: if allow_missing {
+                                RuntimeConfigCheck::AllowMissing as i32
+                            } else {
+                                RuntimeConfigCheck::Strict as i32
+                            },
                             hot_redeploy,
                         })
                         .await;
@@ -116,31 +120,32 @@ pub fn deployment_actions(
     };
 
     let enqueue_disabled = *in_flight || *status == DeploymentStatus::Enqueued;
-    let is_armed = |hot_redeploy: bool, verify: bool| *armed == Some((hot_redeploy, verify));
+    let is_armed =
+        |hot_redeploy: bool, allow_missing: bool| *armed == Some((hot_redeploy, allow_missing));
     html! {
         <div class="deployment-actions">
             <button
-                class={classes!("action-button", is_armed(true, true).then_some("armed"))}
-                onclick={switch(true, true)}
+                class={classes!("action-button", is_armed(true, false).then_some("armed"))}
+                onclick={switch(true, false)}
                 disabled={*in_flight}
             >
-                { if is_armed(true, true) { "Confirm hot redeploy" } else { "Hot redeploy" } }
+                { if is_armed(true, false) { "Confirm hot redeploy" } else { "Hot redeploy" } }
             </button>
             <button
-                class={classes!("action-button", is_armed(false, true).then_some("armed"))}
-                onclick={switch(false, true)}
-                disabled={enqueue_disabled}
-                title="Runs `obelisk server verify` on the deployment before enqueueing it"
-            >
-                { if is_armed(false, true) { "Confirm enqueue" } else { "Verify and enqueue for next restart" } }
-            </button>
-            <button
-                class={classes!("action-button", "warning", is_armed(false, false).then_some("armed"))}
+                class={classes!("action-button", is_armed(false, false).then_some("armed"))}
                 onclick={switch(false, false)}
                 disabled={enqueue_disabled}
-                title="Enqueues the deployment as-is; problems will only surface at the next server restart"
+                title="Enqueues the deployment for the next server restart, failing if any referenced environment variable or secret is missing"
             >
-                { if is_armed(false, false) { "Confirm enqueue without verifying" } else { "Enqueue without verifying" } }
+                { if is_armed(false, false) { "Confirm enqueue" } else { "Enqueue for next restart" } }
+            </button>
+            <button
+                class={classes!("action-button", "warning", is_armed(false, true).then_some("armed"))}
+                onclick={switch(false, true)}
+                disabled={enqueue_disabled}
+                title="Enqueues the deployment even if referenced environment variables or secrets are missing; activation may still fail at the next server restart"
+            >
+                { if is_armed(false, true) { "Confirm enqueue allowing missing config" } else { "Enqueue allowing missing runtime config" } }
             </button>
         </div>
     }
