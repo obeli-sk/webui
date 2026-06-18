@@ -154,6 +154,7 @@ pub fn deployment_list_page() -> Html {
                     pagination,
                     include_deployment_toml: false,
                     include_derived: query_params.show_derived,
+                    include_execution_counts: true,
                 };
                 debug!("Fetching deployments with query: {req:?}");
                 let response = deployment_client.list_deployments(req).await;
