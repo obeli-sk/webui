@@ -2,7 +2,7 @@ use crate::{
     BASE_URL,
     app::Route,
     components::{
-        deployment_config_view::render_config_value,
+        deployment_config_view::{MANIFEST_SECTIONS, component_display_name, render_config_value},
         notification::{Notification, NotificationContext},
     },
     grpc::grpc_client::{
@@ -25,34 +25,13 @@ pub struct DeploymentDiffPageProps {
     pub to: DeploymentId,
 }
 
-/// Top-level keys of the canonical deployment config in display order.
-const SECTIONS: &[(&str, &str)] = &[
-    ("workflows_wasm", "Workflows (WASM)"),
-    ("workflows_js", "Workflows (JS)"),
-    ("activities_wasm", "Activities (WASM)"),
-    ("activities_js", "Activities (JS)"),
-    ("activities_exec", "Activities (Exec)"),
-    ("activities_stub", "Activity Stubs"),
-    ("activities_external", "External Activities"),
-    ("webhooks_wasm", "Webhooks (WASM)"),
-    ("webhooks_js", "Webhooks (JS)"),
-    ("crons", "Crons"),
-];
-
 fn components_by_name(config: &Value, section_key: &str) -> BTreeMap<String, Value> {
     config
         .get(section_key)
         .and_then(Value::as_array)
         .map(|arr| {
             arr.iter()
-                .map(|component| {
-                    let name = component
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or("<unnamed>")
-                        .to_string();
-                    (name, component.clone())
-                })
+                .map(|component| (component_display_name(component), component.clone()))
                 .collect()
         })
         .unwrap_or_default()
@@ -243,11 +222,11 @@ async fn fetch_config(deployment_id: DeploymentId) -> Result<Value, String> {
         .into_inner()
         .deployment
         .ok_or_else(|| format!("deployment {} not found", deployment_id.id))?;
-    let config_json = deployment
-        .config_json
-        .ok_or_else(|| format!("deployment {} has no configuration", deployment_id.id))?;
-    serde_json::from_str(&config_json)
-        .map_err(|e| format!("cannot parse configuration of {}: {e}", deployment_id.id))
+    let deployment_toml = deployment
+        .deployment_toml
+        .ok_or_else(|| format!("deployment {} has no manifest", deployment_id.id))?;
+    toml::from_str(&deployment_toml)
+        .map_err(|e| format!("cannot parse manifest of {}: {e}", deployment_id.id))
 }
 
 #[component(DeploymentDiffPage)]
@@ -284,7 +263,7 @@ pub fn deployment_diff_page(
         None => html! { <p>{"Loading..."}</p> },
         Some(Err(err)) => html! { <p class="error">{ err }</p> },
         Some(Ok((from_config, to_config))) => {
-            let sections: Vec<Html> = SECTIONS
+            let sections: Vec<Html> = MANIFEST_SECTIONS
                 .iter()
                 .filter_map(|(key, title)| {
                     render_section_diff(

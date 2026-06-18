@@ -152,8 +152,9 @@ pub fn deployment_list_page() -> Html {
                 // Send request
                 let req = grpc_client::ListDeploymentsRequest {
                     pagination,
-                    include_config_json: false,
+                    include_deployment_toml: false,
                     include_derived: query_params.show_derived,
+                    include_execution_counts: true,
                 };
                 debug!("Fetching deployments with query: {req:?}");
                 let response = deployment_client.list_deployments(req).await;
