@@ -209,6 +209,10 @@ pub fn deployment_list_page() -> Html {
                     .expect("`deployment_id` is sent")
                     .id
                     .clone();
+                let description = deployment
+                    .description
+                    .as_deref()
+                    .filter(|description| !description.trim().is_empty());
                 let status_badge = match deployment.status() {
                     DeploymentStatus::Active => {
                         html! { <span class="badge current">{"Current"}</span> }
@@ -286,6 +290,9 @@ pub fn deployment_list_page() -> Html {
                             </Link<Route>>
                             {" "}
                             {status_badge}
+                            if let Some(description) = description {
+                                <div class="description">{ description }</div>
+                            }
                         </td>
                         { count_cell(total, None) }
                         { count_cell(in_progress, Some(StatusFilterList::in_progress())) }

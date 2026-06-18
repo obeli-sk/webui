@@ -118,6 +118,10 @@ pub fn deployment_detail_page(
     };
     let status = deployment.status();
     let is_current = app_state.current_deployment_id.as_ref() == Some(deployment_id);
+    let description = deployment
+        .description
+        .as_deref()
+        .filter(|description| !description.trim().is_empty());
 
     let parsed_manifest: Option<Result<Value, String>> = deployment
         .deployment_toml
@@ -194,6 +198,12 @@ pub fn deployment_detail_page(
                 {" "}
                 { status_badge(status) }
             </h3>
+            if let Some(description) = description {
+                <p>
+                    <strong>{"Description: "}</strong>
+                    { description }
+                </p>
+            }
             <p>
                 if let Some(created_at) = deployment.created_at {
                     {"Created: "}{ format_date(DateTime::from(created_at)) }

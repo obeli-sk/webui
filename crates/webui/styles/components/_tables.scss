@@ -40,4 +40,14 @@ table.deployment_list {
     text-align: right;
     width: 100px;
   }
+
+  .description {
+    margin-top: 0.25rem;
+    color: $color-text-secondary;
+    font-size: $font-size-sm;
+    max-width: 28rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
