@@ -41,6 +41,16 @@
     }
   }
 
+  &.confirm {
+    background-color: $color-status-info;
+    border-color: $color-status-info;
+    color: $color-text-white;
+
+    &:hover:not(:disabled) {
+      background-color: #42a5f5;
+    }
+  }
+
   // First click arms the button, the second click executes the action.
   &.armed {
     background-color: $color-accent-red;

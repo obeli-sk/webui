@@ -22,6 +22,12 @@ pub struct DeploymentActionsProps {
     pub on_switched: Callback<()>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArmedAction {
+    HotRedeploy,
+    Enqueue,
+}
+
 /// Buttons to hot redeploy a deployment or enqueue it for the next server restart.
 #[component(DeploymentActions)]
 pub fn deployment_actions(
@@ -34,14 +40,27 @@ pub fn deployment_actions(
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let in_flight = use_state(|| false);
-    // Which `(hot_redeploy, allow_missing)` action is armed for the confirming second click.
-    let armed = use_state(|| None::<(bool, bool)>);
+    let armed = use_state(|| None::<ArmedAction>);
     // Dropping the previous timeout cancels it when another button is armed.
     let disarm_timer = use_mut_ref(|| None::<Timeout>);
 
     if *status == DeploymentStatus::Active {
         return html! {};
     }
+
+    let arm = {
+        let armed = armed.clone();
+        let disarm_timer = disarm_timer.clone();
+        move |action: ArmedAction| {
+            let armed = armed.clone();
+            let disarm_timer = disarm_timer.clone();
+            Callback::from(move |_| {
+                armed.set(Some(action));
+                let armed = armed.clone();
+                *disarm_timer.borrow_mut() = Some(Timeout::new(5000, move || armed.set(None)));
+            })
+        }
+    };
 
     let switch = {
         let deployment_id = deployment_id.clone();
@@ -59,13 +78,6 @@ pub fn deployment_actions(
             let armed = armed.clone();
             let disarm_timer = disarm_timer.clone();
             Callback::from(move |_| {
-                // First click arms the button, second click within the timeout executes.
-                if *armed != Some((hot_redeploy, allow_missing)) {
-                    armed.set(Some((hot_redeploy, allow_missing)));
-                    let armed = armed.clone();
-                    *disarm_timer.borrow_mut() = Some(Timeout::new(5000, move || armed.set(None)));
-                    return;
-                }
                 armed.set(None);
                 *disarm_timer.borrow_mut() = None;
                 let deployment_id = deployment_id.clone();
@@ -120,33 +132,53 @@ pub fn deployment_actions(
     };
 
     let enqueue_disabled = *in_flight || *status == DeploymentStatus::Enqueued;
-    let is_armed =
-        |hot_redeploy: bool, allow_missing: bool| *armed == Some((hot_redeploy, allow_missing));
+    let hot_redeploy_armed = *armed == Some(ArmedAction::HotRedeploy);
+    let enqueue_armed = *armed == Some(ArmedAction::Enqueue);
     html! {
         <div class="deployment-actions">
             <button
-                class={classes!("action-button", is_armed(true, false).then_some("armed"))}
-                onclick={switch(true, false)}
+                class={classes!(
+                    "action-button",
+                    hot_redeploy_armed.then_some("confirm"),
+                )}
+                onclick={
+                    if hot_redeploy_armed {
+                        switch(true, false)
+                    } else {
+                        arm(ArmedAction::HotRedeploy)
+                    }
+                }
                 disabled={*in_flight}
             >
-                { if is_armed(true, false) { "Confirm hot redeploy" } else { "Hot redeploy" } }
+                { if hot_redeploy_armed { "Confirm hot redeploy" } else { "Hot redeploy" } }
             </button>
-            <button
-                class={classes!("action-button", is_armed(false, false).then_some("armed"))}
-                onclick={switch(false, false)}
-                disabled={enqueue_disabled}
-                title="Enqueues the deployment for the next server restart, failing if any referenced environment variable or secret is missing"
-            >
-                { if is_armed(false, false) { "Confirm enqueue" } else { "Enqueue for next restart" } }
-            </button>
-            <button
-                class={classes!("action-button", "warning", is_armed(false, true).then_some("armed"))}
-                onclick={switch(false, true)}
-                disabled={enqueue_disabled}
-                title="Enqueues the deployment even if referenced environment variables or secrets are missing; activation may still fail at the next server restart"
-            >
-                { if is_armed(false, true) { "Confirm enqueue allowing missing config" } else { "Enqueue allowing missing runtime config" } }
-            </button>
+            if enqueue_armed {
+                <button
+                    class="action-button confirm"
+                    onclick={switch(false, false)}
+                    disabled={enqueue_disabled}
+                    title="Enqueues the deployment for the next server restart, failing if any referenced environment variable or secret is missing"
+                >
+                    {"Confirm enqueue"}
+                </button>
+                <button
+                    class="action-button warning"
+                    onclick={switch(false, true)}
+                    disabled={enqueue_disabled}
+                    title="Enqueues the deployment even if referenced environment variables or secrets are missing; activation may still fail at the next server restart"
+                >
+                    {"Allow missing env vars/secrets"}
+                </button>
+            } else {
+                <button
+                    class="action-button"
+                    onclick={arm(ArmedAction::Enqueue)}
+                    disabled={enqueue_disabled}
+                    title="Enqueues the deployment for the next server restart"
+                >
+                    {"Enqueue for next restart"}
+                </button>
+            }
         </div>
     }
 }
