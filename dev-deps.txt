@@ -1,7 +1,7 @@
 cargo-edit-upgrade 0.13.11
 cargo-expand 1.0.122
 just 1.51.0
-obelisk 0.38.3
+obelisk 0.39.3
 libprotoc 34.1
 rustc 1.96.0 (ac68faa20 2026-05-25)
 sass 1.100.0
