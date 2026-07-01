@@ -271,19 +271,23 @@ pub fn component_list_page(
                 .as_ref()
                 .expect("`component_id` is sent")
                 .name;
-            let breadcrumb = current_deployment_id.as_ref().map_or_else(
+            // Link back to the deployment this component belongs to (from the query,
+            // else the active deployment). "Deployments" already lives in the header nav.
+            let component_deployment_id = deployment_id
+                .as_ref()
+                .map(|id| grpc_client::DeploymentId { id: id.clone() })
+                .or_else(|| current_deployment_id.clone());
+            let breadcrumb = component_deployment_id.as_ref().map_or_else(
                 || html! {
                     <Link<Route> to={Route::ComponentList}>{"Components"}</Link<Route>>
                 },
-                |deployment_id| html! {<>
-                    <Link<Route> to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
-                    <span class="breadcrumb-separator">{"/"}</span>
+                |deployment_id| html! {
                     <Link<Route> to={Route::DeploymentDetail {
                         deployment_id: deployment_id.clone(),
                     }}>
-                        {"Active deployment"}
+                        {"← "}{ &deployment_id.id }
                     </Link<Route>>
-                </>},
+                },
             );
             let tab_button = |label: &'static str, tab: ComponentDetailTab| {
                 let selected_tab = selected_tab.clone();

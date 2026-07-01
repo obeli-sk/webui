@@ -228,9 +228,6 @@ pub fn deployment_detail_page(
 
     html! {
         <>
-            <p class="breadcrumbs">
-                <Link<Route> to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
-            </p>
             <h3>
                 {"Deployment "}{ &deployment_id.id }
                 {" "}
