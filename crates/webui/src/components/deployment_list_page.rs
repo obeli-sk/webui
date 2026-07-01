@@ -106,6 +106,19 @@ fn exec_activity_count(summary: &DeploymentSummary) -> Option<u32> {
     })
 }
 
+/// A deployment is "empty" when its component summary reports no components.
+fn is_empty_deployment(summary: &DeploymentSummary) -> bool {
+    summary
+        .component_summary
+        .as_ref()
+        .is_some_and(|component_summary| {
+            component_summary
+                .components
+                .iter()
+                .all(|component| component.count == 0)
+        })
+}
+
 #[component(DeploymentListPage)]
 pub fn deployment_list_page() -> Html {
     let location = use_location().expect("should be called inside a router");
@@ -258,6 +271,15 @@ pub fn deployment_list_page() -> Html {
                         </span>
                     },
                 };
+                let empty_badge = if is_empty_deployment(deployment_summary) {
+                    html! {
+                        <span class="badge empty" title="This deployment contains no components">
+                            {"empty"}
+                        </span>
+                    }
+                } else {
+                    html! {}
+                };
 
                 // Cell linking to the execution list filtered by this deployment and status.
                 // The links inherit `show_derived` so the list matches the count.
@@ -337,6 +359,8 @@ pub fn deployment_list_page() -> Html {
                             {status_badge}
                             {" "}
                             {exec_badge}
+                            {" "}
+                            {empty_badge}
                             if let Some(description) = description {
                                 <div class="description">{ description }</div>
                             }

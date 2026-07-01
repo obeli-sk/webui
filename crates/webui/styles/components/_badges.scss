@@ -27,6 +27,12 @@ table.deployment_list {
       border: 1px solid #dc322f;
       color: #dc322f;
     }
+
+    &.empty {
+      background-color: transparent;
+      border: 1px solid $color-border-secondary;
+      color: $color-text-secondary;
+    }
   }
 }
 

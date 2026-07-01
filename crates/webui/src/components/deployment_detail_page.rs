@@ -161,6 +161,10 @@ pub fn deployment_detail_page(
         },
     };
 
+    // A deployment is empty when its manifest parses but yields no component sections.
+    let is_empty = matches!(&parsed_manifest, Some(Ok(manifest))
+        if build_sections_from_manifest(manifest).is_empty());
+
     let config_html = match &parsed_manifest {
         None => html! { <p>{"The server did not return the deployment manifest."}</p> },
         Some(Err(parse_err)) => {
@@ -179,7 +183,7 @@ pub fn deployment_detail_page(
         Some(Ok(manifest)) => {
             let sections = build_sections_from_manifest(manifest);
             if sections.is_empty() {
-                html! { <p>{"This deployment contains no components."}</p> }
+                html! { <p>{"This deployment is empty."}</p> }
             } else {
                 let tab_button = |label: &'static str, toml: bool| {
                     let show_toml = show_toml.clone();
@@ -248,13 +252,17 @@ pub fn deployment_detail_page(
                 }
             </p>
             <p>
-                <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={execution_link_query}>
-                    {"Executions of this deployment"}
-                </Link<Route, ExecutionQuery>>
+                if !is_empty {
+                    <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={execution_link_query}>
+                        {"Executions of this deployment"}
+                    </Link<Route, ExecutionQuery>>
+                }
                 if let Some(current_id) = &app_state.current_deployment_id
                     && !is_current
                 {
-                    {" | "}
+                    if !is_empty {
+                        {" | "}
+                    }
                     <Link<Route> to={Route::DeploymentDiff {
                         from: current_id.clone(),
                         to: deployment_id.clone(),
