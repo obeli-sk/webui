@@ -1,0 +1,4 @@
+[[webhook_endpoint_wasm]]
+name = "webui_proxy"
+location = "target/wasm32-wasip2/release/webui_proxy.wasm"
+routes = [{ methods = ["GET"], route = "/" }]
