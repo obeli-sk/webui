@@ -19,17 +19,27 @@ use crate::{
 };
 use hashbrown::HashSet;
 use log::{error, warn};
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
+use std::rc::Rc;
 use yew::prelude::*;
-use yew_router::{hooks::use_navigator, prelude::Link};
+use yew_router::{
+    hooks::{use_location, use_navigator},
+    prelude::Link,
+};
+
+/// Optional query for the component detail page: which deployment the component
+/// belongs to. Absent means the active deployment (the default the server uses).
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct ComponentQuery {
+    pub deployment_id: Option<String>,
+}
 
 #[derive(Properties, PartialEq)]
 pub struct ComponentListPageProps {
     #[prop_or_default]
     pub maybe_component_id: Option<ComponentId>,
 }
-
-type EffectsCallback = Box<dyn FnOnce(&Option<ComponentId>)>;
 
 #[derive(Clone, Copy, PartialEq)]
 enum ComponentDetailTab {
@@ -50,86 +60,136 @@ pub fn component_list_page(
     let components_by_id = app_state.components_by_id;
     let components_by_exported_ifc = app_state.components_by_exported_ifc;
 
+    let location = use_location().expect("location must be available inside a router");
+    let component_query = location.query::<ComponentQuery>().unwrap_or_default();
+    let deployment_id = component_query.deployment_id;
+
     let wit_state = use_state(|| None);
     let wit_loaded = use_state(|| false);
     let selected_tab = use_state(|| ComponentDetailTab::SubmittableFunctions);
-    // Fetch GetWit
-    use_effect_with(maybe_component_id.clone(), {
+
+    // Resolve the selected component. Prefer the active deployment's already-loaded
+    // components; otherwise fetch it from its (possibly historical) deployment.
+    let component_state = use_state(|| None::<Rc<grpc_client::Component>>);
+    {
+        // Fast path: the component belongs to the active deployment.
+        let preloaded = maybe_component_id
+            .as_ref()
+            .and_then(|id| components_by_id.get(id))
+            .cloned();
+        let component_state = component_state.clone();
+        let notifications = notifications.clone();
+        use_effect_with(
+            (maybe_component_id.clone(), deployment_id.clone()),
+            move |(maybe_component_id, deployment_id)| {
+                component_state.set(None);
+                let Some(component_id) = maybe_component_id.clone() else {
+                    return;
+                };
+                if let Some(found) = preloaded {
+                    component_state.set(Some(found));
+                    return;
+                }
+                let deployment_id = deployment_id.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let mut fn_client =
+                        grpc_client::function_repository_client::FunctionRepositoryClient::new(
+                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                        );
+                    let response = fn_client
+                        .list_components(grpc_client::ListComponentsRequest {
+                            component_digest: component_id.digest.clone(),
+                            deployment_id: deployment_id.map(|id| grpc_client::DeploymentId { id }),
+                            extensions: true,
+                            ..Default::default()
+                        })
+                        .await;
+                    match response {
+                        Ok(resp) => match resp.into_inner().components.into_iter().next() {
+                            Some(component) => component_state.set(Some(Rc::new(component))),
+                            None => notifications.push(Notification::error(
+                                "Component not found in this deployment".to_string(),
+                            )),
+                        },
+                        Err(e) => {
+                            error!("Failed to fetch component: {e:?}");
+                            notifications.push(Notification::error(format!(
+                                "Failed to fetch component: {}",
+                                e.message()
+                            )));
+                        }
+                    }
+                });
+            },
+        );
+    }
+
+    // Fetch the WIT once the component is resolved.
+    use_effect_with(((*component_state).clone(), deployment_id.clone()), {
         let wit_state = wit_state.clone();
         let wit_loaded = wit_loaded.clone();
         let selected_tab = selected_tab.clone();
         let notifications = notifications.clone();
-        if let Some(component_id) = maybe_component_id {
-            let component = components_by_id
-                .get(component_id)
-                .expect("selected component must be found")
-                .clone();
+        move |(component, deployment_id)| {
+            selected_tab.set(ComponentDetailTab::SubmittableFunctions);
+            wit_state.set(None);
+            wit_loaded.set(false);
+            let Some(component) = component.clone() else {
+                wit_loaded.set(true);
+                return;
+            };
+            let component_digest = component
+                .component_id
+                .as_ref()
+                .expect("`component_id` is sent")
+                .digest
+                .clone()
+                .expect("`digest` is sent");
             let render_ffqn_with_links = component
                 .exports
                 .iter()
-                .filter_map(|fn_detail| {
-                    if fn_detail.submittable {
-                        Some(
-                            FunctionFqn::from_fn_detail(fn_detail)
-                                .expect("fn_detail must be parseable"),
-                        )
-                    } else {
-                        None
-                    }
+                .filter(|fn_detail| fn_detail.submittable)
+                .map(|fn_detail| {
+                    FunctionFqn::from_fn_detail(fn_detail).expect("fn_detail must be parseable")
                 })
                 .collect::<HashSet<_>>();
-            let boxed_closure: EffectsCallback =
-                Box::new(move |component_id: &Option<ComponentId>| {
-                    selected_tab.set(ComponentDetailTab::SubmittableFunctions);
-                    wit_state.set(None);
-                    wit_loaded.set(false);
-                    let component_id = component_id.clone().expect("checked above");
-                    let component_digest = component_id.digest.expect("`digest` is sent");
-                    wasm_bindgen_futures::spawn_local(async move {
-                        let mut fn_client =
-                            grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                                tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
-                            );
-                        let response = fn_client
-                            .get_wit(grpc_client::GetWitRequest {
-                                component_digest: Some(component_digest),
-                                ..Default::default()
-                            })
-                            .await;
-                        match response {
-                            Ok(resp) => {
-                                if let Some(wit) = resp.into_inner().content {
-                                    let wit =
-                                        wit_highlighter::print_all(&wit, render_ffqn_with_links)
-                                            .inspect_err(|err| warn!("Cannot render WIT - {err:?}"))
-                                            .ok();
-                                    wit_state.set(wit);
-                                } // else - no WIT is associated with the component.
-                                wit_loaded.set(true);
-                            }
-                            Err(e) => {
-                                error!("Failed to get WIT: {:?}", e);
-                                notifications.push(Notification::error(format!(
-                                    "Failed to get WIT: {}",
-                                    e.message()
-                                )));
-                                wit_loaded.set(true);
-                            }
-                        }
-                    });
-                });
-            boxed_closure
-        } else {
-            let boxed_closure: EffectsCallback = Box::new(move |_| {
-                wit_state.set(None);
-                wit_loaded.set(true);
+            let deployment_id = deployment_id.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let mut fn_client =
+                    grpc_client::function_repository_client::FunctionRepositoryClient::new(
+                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                    );
+                let response = fn_client
+                    .get_wit(grpc_client::GetWitRequest {
+                        component_digest: Some(component_digest),
+                        deployment_id: deployment_id.map(|id| grpc_client::DeploymentId { id }),
+                    })
+                    .await;
+                match response {
+                    Ok(resp) => {
+                        if let Some(wit) = resp.into_inner().content {
+                            let wit = wit_highlighter::print_all(&wit, render_ffqn_with_links)
+                                .inspect_err(|err| warn!("Cannot render WIT - {err:?}"))
+                                .ok();
+                            wit_state.set(wit);
+                        } // else - no WIT is associated with the component.
+                        wit_loaded.set(true);
+                    }
+                    Err(e) => {
+                        error!("Failed to get WIT: {:?}", e);
+                        notifications.push(Notification::error(format!(
+                            "Failed to get WIT: {}",
+                            e.message()
+                        )));
+                        wit_loaded.set(true);
+                    }
+                }
             });
-            boxed_closure
         }
     });
 
-    let component_detail = maybe_component_id.as_ref()
-        .and_then(|id| components_by_id.get(id))
+    let component_detail = component_state
+        .as_ref()
         .map(|component| {
             let exports =
                 map_interfaces_to_fn_details(&component.exports, InterfaceFilter::All);
@@ -292,6 +352,9 @@ pub fn component_list_page(
 
     if let Some(component_detail) = component_detail {
         component_detail
+    } else if maybe_component_id.is_some() {
+        // A component is selected but not yet resolved (fetching from its deployment).
+        html! { <p class="component-empty-state">{"Loading component..."}</p> }
     } else {
         html! {<>
             <header>

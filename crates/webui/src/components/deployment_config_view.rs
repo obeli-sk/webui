@@ -3,6 +3,7 @@ use crate::{
     app::Route,
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
+        component_list_page::ComponentQuery,
         copy_button::CopyButton,
     },
     grpc::grpc_client,
@@ -442,13 +443,16 @@ pub fn collapsible_source(
                 let highlighted: Rc<[(Html, usize)]> =
                     Rc::from(highlight_code_line_by_line(&content, language.as_deref()));
                 html! {
-                    <SyntectCodeBlock
-                        source={highlighted}
-                        focus_line={None}
-                        lines_above={0}
-                        lines_below={0}
-                        on_expand={Callback::from(|_| {})}
-                    />
+                    <div class="source-code">
+                        <CopyButton text={content} />
+                        <SyntectCodeBlock
+                            source={highlighted}
+                            focus_line={None}
+                            lines_above={0}
+                            lines_below={0}
+                            on_expand={Callback::from(|_| {})}
+                        />
+                    </div>
                 }
             }
         }
@@ -467,6 +471,8 @@ pub struct DeploymentConfigViewProps {
     pub sections: Vec<SectionView>,
     /// Component name -> component id resolved via `ListComponents` for this deployment.
     pub components_by_name: HashMap<String, grpc_client::ComponentId>,
+    /// The deployment these components belong to; threaded into component detail links.
+    pub deployment_id: grpc_client::DeploymentId,
 }
 
 #[component(DeploymentConfigView)]
@@ -474,6 +480,7 @@ pub fn deployment_config_view(
     DeploymentConfigViewProps {
         sections,
         components_by_name,
+        deployment_id,
     }: &DeploymentConfigViewProps,
 ) -> Html {
     if sections.is_empty() {
@@ -496,9 +503,12 @@ pub fn deployment_config_view(
                                             class="component-link"
                                             onclick={Callback::from(|event: MouseEvent| event.stop_propagation())}
                                         >
-                                            <Link<Route> to={Route::Component { component_id: component_id.clone() }}>
+                                            <Link<Route, ComponentQuery>
+                                                to={Route::Component { component_id: component_id.clone() }}
+                                                query={ComponentQuery { deployment_id: Some(deployment_id.id.clone()) }}
+                                            >
                                                 {"Component details"}
-                                            </Link<Route>>
+                                            </Link<Route, ComponentQuery>>
                                         </span>
                                     }
                                 </summary>

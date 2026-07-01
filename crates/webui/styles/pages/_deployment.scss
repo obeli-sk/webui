@@ -140,6 +140,20 @@
     }
 }
 
+// Expanded source code with a copy button in the top-right corner.
+.source-code {
+    position: relative;
+
+    .copy-button {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+        z-index: 1;
+        padding: 2px 8px;
+        font-size: $font-size-sm;
+    }
+}
+
 .source-diff {
     margin: 0.35rem 0;
 

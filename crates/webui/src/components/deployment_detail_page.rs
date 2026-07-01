@@ -208,6 +208,7 @@ pub fn deployment_detail_page(
                         <DeploymentConfigView
                             sections={sections}
                             components_by_name={components_by_name.deref().clone()}
+                            deployment_id={deployment_id.clone()}
                         />
                     }
                 </>}
