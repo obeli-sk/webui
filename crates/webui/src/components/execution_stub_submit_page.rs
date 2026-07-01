@@ -13,7 +13,7 @@ use crate::{
     },
     util::{wit_highlighter, wit_type_formatter::format_wit_type},
 };
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use serde_json::json;
 use std::ops::Deref;
 use val_json::wast_val::WastValWithType;
@@ -182,10 +182,12 @@ pub fn execution_stub_result_page(
         })
     };
 
-    let wit = wit_state
-        .deref()
-        .as_ref()
-        .map(|wit| wit_highlighter::print_interface_with_single_fn(wit, ffqn));
+    let wit = wit_state.deref().as_ref().map(|wit| {
+        wit_highlighter::print_interface_with_single_fn(wit, ffqn).unwrap_or_else(|err| {
+            warn!("Cannot render WIT, showing raw text - {err:?}");
+            wit_highlighter::print_raw(wit)
+        })
+    });
 
     html! {<>
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
@@ -227,7 +229,7 @@ pub fn execution_stub_result_page(
                 {"Submit execution result"}
             </button>
         </form>
-        if let Some(Ok(wit)) = wit {
+        if let Some(wit) = wit {
             <h3>{"WIT"}</h3>
             <CodeBlock source={wit.clone()} />
         }

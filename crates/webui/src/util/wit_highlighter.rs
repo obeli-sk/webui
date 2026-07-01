@@ -9,6 +9,13 @@ use wit_component::{Output, TypeKind, WitPrinter};
 use wit_parser::{Resolve, Type, TypeDefKind, TypeOwner, UnresolvedPackageGroup};
 use yew::{Html, html};
 
+/// Fallback rendering: the WIT verbatim as plain text. Used when the structured
+/// printer cannot parse the document (e.g. Obelisk-generated packages that form a
+/// package-level cycle, which `wit-parser` rejects).
+pub fn print_raw(wit: &str) -> Vec<Html> {
+    vec![html! { { wit.to_string() } }]
+}
+
 pub fn print_all(
     wit: &str,
     render_ffqn_with_links: HashSet<FunctionFqn>,

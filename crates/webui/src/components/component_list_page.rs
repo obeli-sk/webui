@@ -168,10 +168,12 @@ pub fn component_list_page(
                 match response {
                     Ok(resp) => {
                         if let Some(wit) = resp.into_inner().content {
-                            let wit = wit_highlighter::print_all(&wit, render_ffqn_with_links)
-                                .inspect_err(|err| warn!("Cannot render WIT - {err:?}"))
-                                .ok();
-                            wit_state.set(wit);
+                            let rendered = wit_highlighter::print_all(&wit, render_ffqn_with_links)
+                                .unwrap_or_else(|err| {
+                                    warn!("Cannot render WIT, showing raw text - {err:?}");
+                                    wit_highlighter::print_raw(&wit)
+                                });
+                            wit_state.set(Some(rendered));
                         } // else - no WIT is associated with the component.
                         wit_loaded.set(true);
                     }

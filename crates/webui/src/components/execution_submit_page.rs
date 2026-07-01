@@ -515,10 +515,12 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
         })
     };
 
-    let wit = wit_state
-        .deref()
-        .as_ref()
-        .map(|wit| wit_highlighter::print_interface_with_single_fn(wit, ffqn));
+    let wit = wit_state.deref().as_ref().map(|wit| {
+        wit_highlighter::print_interface_with_single_fn(wit, ffqn).unwrap_or_else(|err| {
+            warn!("Cannot render WIT, showing raw text - {err:?}");
+            wit_highlighter::print_raw(wit)
+        })
+    });
 
     html! {<>
         <header>
@@ -636,7 +638,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
             </button>
         </form>
 
-        if let Some(Ok(wit)) = wit {
+        if let Some(wit) = wit {
             <h3>{"WIT"}</h3>
             <CodeBlock source={wit.clone()} />
         }
