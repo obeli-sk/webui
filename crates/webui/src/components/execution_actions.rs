@@ -522,16 +522,16 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
 }
 
 // ============================================================================
-// Cancel Activity Button
+// Cancel Execution Button
 // ============================================================================
 
 #[derive(Properties, PartialEq)]
-pub struct CancelActivityButtonProps {
+pub struct CancelExecutionButtonProps {
     pub execution_id: ExecutionId,
 }
 
-#[component(CancelActivityButton)]
-pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
+#[component(CancelExecutionButton)]
+pub fn cancel_execution_button(props: &CancelExecutionButtonProps) -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let loading_state = use_state(|| false);
@@ -552,7 +552,7 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
                 let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
 
                 let result = client
-                    .cancel_activity(grpc_client::CancelActivityRequest {
+                    .cancel_execution(grpc_client::CancelExecutionRequest {
                         execution_id: Some(execution_id.clone()),
                     })
                     .await;
@@ -563,24 +563,27 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
                     Ok(response) => {
                         let outcome = response.into_inner().outcome();
                         debug!(
-                            "Cancel requested for activity {}: {:?}",
+                            "Cancel requested for execution {}: {:?}",
                             execution_id, outcome
                         );
                         let message = match outcome {
-                            grpc_client::cancel_activity_response::CancelActivityOutcome::Cancelled => {
-                                "Cancel requested successfully"
+                            grpc_client::cancel_execution_response::CancelExecutionOutcome::CancellationRequested => {
+                                "Cancellation requested"
                             }
-                            grpc_client::cancel_activity_response::CancelActivityOutcome::AlreadyFinished => {
-                                "Activity already finished"
+                            grpc_client::cancel_execution_response::CancelExecutionOutcome::AlreadyFinished => {
+                                "Execution already finished"
                             }
-                            grpc_client::cancel_activity_response::CancelActivityOutcome::Unspecified => {
+                            grpc_client::cancel_execution_response::CancelExecutionOutcome::AlreadyCancelling => {
+                                "Execution already cancelling"
+                            }
+                            grpc_client::cancel_execution_response::CancelExecutionOutcome::Unspecified => {
                                 "Unknown cancel outcome"
                             }
                         };
                         notifications.push(Notification::success(message));
                     }
                     Err(e) => {
-                        error!("Failed to cancel activity {}: {:?}", execution_id, e);
+                        error!("Failed to cancel execution {}: {:?}", execution_id, e);
                         notifications.push(Notification::error(e.message().to_string()));
                     }
                 }
@@ -600,7 +603,7 @@ pub fn cancel_activity_button(props: &CancelActivityButtonProps) -> Html {
                 if is_loading {
                     {"Cancelling..."}
                 } else {
-                    {"Cancel Activity"}
+                    {"Cancel Execution"}
                 }
             </button>
         </div>

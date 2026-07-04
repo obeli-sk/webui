@@ -389,6 +389,7 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
             }
         }
         grpc_client::execution_status::Status::Paused(_) => html! {"Paused"},
+        grpc_client::execution_status::Status::Cancelling(_) => html! {"Cancelling"},
     }
 }
 
