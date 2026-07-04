@@ -309,6 +309,7 @@ pub fn deployment_list_page() -> Html {
                 let scheduled = execution_summary.map_or(0, |summary| summary.scheduled);
                 let blocked = execution_summary.map_or(0, |summary| summary.blocked);
                 let paused = execution_summary.map_or(0, |summary| summary.paused);
+                let cancelling = execution_summary.map_or(0, |summary| summary.cancelling);
                 let finished_ok = execution_summary.map_or(0, |summary| summary.finished_ok);
                 let finished_error =
                     execution_summary.map_or(0, |summary| summary.finished_error);
@@ -320,6 +321,7 @@ pub fn deployment_list_page() -> Html {
                     + scheduled
                     + blocked
                     + paused
+                    + cancelling
                     + finished_ok
                     + finished_error
                     + finished_execution_failure;
@@ -374,6 +376,10 @@ pub fn deployment_list_page() -> Html {
                         { count_cell(
                             paused,
                             Some(StatusFilterList::single(StatusFilter::Paused)),
+                        ) }
+                        { count_cell(
+                            cancelling,
+                            Some(StatusFilterList::single(StatusFilter::Cancelling)),
                         ) }
                         { count_cell(
                             finished_ok,
@@ -472,6 +478,7 @@ pub fn deployment_list_page() -> Html {
                             <th class="number" title="Locked, pending or blocked">{"In progress"}</th>
                             <th class="number" title="Pending with the scheduled time in the future">{"Scheduled"}</th>
                             <th class="number" title="Paused, regardless of the underlying state">{"Paused"}</th>
+                            <th class="number" title="Cancellation requested; teardown in progress">{"Cancelling"}</th>
                             <th class="number" title="Finished successfully">{"OK"}</th>
                             <th class="number" title="Finished with the err variant of the result type">{"Errors"}</th>
                             <th class="number" title="Execution failures: traps, timeouts, nondeterminism, cancellations">{"Failures"}</th>

@@ -1,0 +1,41 @@
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
+use crate::{
+    components::execution_detail::tree_component::TreeComponent, grpc::version::VersionType,
+};
+use yew::prelude::*;
+
+#[derive(Properties, PartialEq, Clone)]
+pub struct CancellationRequestedEventProps {
+    pub version: VersionType,
+    pub is_selected: bool,
+}
+
+impl CancellationRequestedEventProps {
+    fn construct_tree(&self) -> TreeData<u32> {
+        let mut tree = TreeBuilder::new().build();
+        let root_id = tree
+            .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
+            .unwrap();
+        tree.insert(
+            Node::new(NodeData {
+                icon: Icon::Pause,
+                label: Html::from(format!("{}. Cancellation Requested", self.version)),
+                has_caret: false,
+                is_selected: self.is_selected,
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&root_id),
+        )
+        .unwrap();
+
+        TreeData::from(tree)
+    }
+}
+
+#[component(CancellationRequestedEvent)]
+pub fn cancellation_requested_event(props: &CancellationRequestedEventProps) -> Html {
+    let tree = props.construct_tree();
+    html! {
+        <TreeComponent {tree} />
+    }
+}

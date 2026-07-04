@@ -2,7 +2,7 @@ use crate::BASE_URL;
 use crate::app::Route;
 use crate::components::advance_modal::AdvanceModal;
 use crate::components::execution_actions::{
-    AdvanceButton, CancelActivityButton, PauseButton, ReplayButton, SubmitStubButton,
+    AdvanceButton, CancelExecutionButton, PauseButton, ReplayButton, SubmitStubButton,
     UnpauseButton, UpgradeForm, call_replay, process_replay_response,
 };
 use crate::components::execution_status::{ExecutionStatus, FinishedStatusMode};
@@ -75,6 +75,7 @@ pub fn execution_header(
     let exec_info = use_state(|| None::<ExecutionInfo>);
     let is_finished = use_state(|| false);
     let is_paused = use_state(|| false);
+    let is_cancelling = use_state(|| false);
 
     // Cached replay response for the Advance button
     let cached_replay = use_state(|| None::<grpc_client::ReplayExecutionResponse>);
@@ -93,6 +94,7 @@ pub fn execution_header(
         let exec_info = exec_info.clone();
         let is_finished = is_finished.clone();
         let is_paused = is_paused.clone();
+        let is_cancelling = is_cancelling.clone();
         let cached_replay = cached_replay.clone();
         let modal_writes = modal_writes.clone();
         let is_blocked = is_blocked.clone();
@@ -100,6 +102,7 @@ pub fn execution_header(
             exec_info.set(None);
             is_finished.set(false);
             is_paused.set(false);
+            is_cancelling.set(false);
             cached_replay.set(None);
             modal_writes.set(None);
             is_blocked.set(false);
@@ -126,11 +129,13 @@ pub fn execution_header(
         }))
     };
 
-    // Callback when status changes - updates is_paused state
+    // Callback when status changes - updates lifecycle state
     let on_status_change = {
         let is_paused = is_paused.clone();
+        let is_cancelling = is_cancelling.clone();
         Callback::from(move |status: execution_status::Status| {
             is_paused.set(matches!(status, execution_status::Status::Paused(_)));
+            is_cancelling.set(matches!(status, execution_status::Status::Cancelling(_)));
         })
     };
 
@@ -147,6 +152,14 @@ pub fn execution_header(
             exec_info.component_type,
             ComponentType::Activity | ComponentType::ActivityStub
         )
+    });
+
+    let is_cancellable_workflow = exec_info.as_ref().is_some_and(|exec_info| {
+        exec_info.component_type == ComponentType::Workflow
+            && exec_info
+                .ffqn
+                .as_ref()
+                .is_some_and(FunctionFqn::is_cancellable)
     });
 
     let stub_info = exec_info.as_ref().and_then(|exec_info| {
@@ -240,7 +253,7 @@ pub fn execution_header(
 
             if let Some(workflow_digest) = workflow_digest {
                 <div class="execution-actions">
-                    if !*is_finished {
+                    if !*is_finished && !*is_cancelling {
                         <PauseButton
                             execution_id={execution_id.clone()}
                             is_paused={*is_paused}
@@ -254,6 +267,11 @@ pub fn execution_header(
                             current_digest={workflow_digest}
                             ffqn={exec_info.as_ref().and_then(|info| info.ffqn.clone())}
                         />
+                        if is_cancellable_workflow {
+                            <CancelExecutionButton
+                                execution_id={execution_id.clone()}
+                            />
+                        }
                     }
                     <ReplayButton
                         execution_id={execution_id.clone()}
@@ -264,7 +282,7 @@ pub fn execution_header(
                             })
                         }
                     />
-                    if !*is_finished && *is_paused {
+                    if !*is_finished && !*is_cancelling && *is_paused {
                         <AdvanceButton
                             execution_id={execution_id.clone()}
                             cached_replay_response={(*cached_replay).clone()}
@@ -464,7 +482,7 @@ pub fn execution_header(
                 />
             }
 
-            if is_activity && !*is_finished {
+            if is_activity && !*is_finished && !*is_cancelling {
                 <div class="execution-actions">
                     <PauseButton
                         execution_id={execution_id.clone()}
@@ -474,7 +492,7 @@ pub fn execution_header(
                         execution_id={execution_id.clone()}
                         is_paused={*is_paused}
                     />
-                    <CancelActivityButton
+                    <CancelExecutionButton
                         execution_id={execution_id.clone()}
                     />
                     if let Some(ffqn) = &stub_info {

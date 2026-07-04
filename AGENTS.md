@@ -124,7 +124,7 @@ The proto definitions are in `obelisk/proto/obelisk.proto`. Available services:
 
 - `ExecutionRepository` - Execution management:
   - `ListExecutions`, `ListExecutionEvents`, `GetStatus` - Query executions
-  - `Submit`, `Stub`, `Cancel` - Control executions
+  - `Submit`, `Stub`, `CancelExecution`, `CancelDelay` - Control executions
   - `ReplayExecution` - Replay a workflow execution
   - `UpgradeExecutionComponent` - Upgrade workflow to new component version
 - `FunctionRepository` - Component and function listing, WIT retrieval
@@ -274,4 +274,3 @@ The tree component (`crates/webui/src/tree/`) is a custom implementation replaci
 - `icon.rs` - Icon enum using Unicode characters for cross-platform support
 - `tree_data.rs` - `TreeData<T>` wrapper around `id_tree::Tree` with `RefCell` for interior mutability
 - `tree_view.rs` - `Tree` function component that renders the tree
-

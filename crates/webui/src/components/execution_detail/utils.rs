@@ -1,4 +1,5 @@
 use super::history::stub::HistoryStubEvent;
+use crate::components::execution_detail::cancellation_requested::CancellationRequestedEvent;
 use crate::components::execution_detail::component_upgrade_finished::ComponentUpgradeFinishedEvent;
 use crate::components::execution_detail::created::CreatedEvent;
 use crate::components::execution_detail::finished::FinishedEvent;
@@ -198,6 +199,9 @@ pub fn event_to_detail(
         },
         execution_event::Event::Unpaused(_) => html! {
             <UnpausedEvent version={event.version} {is_selected} />
+        },
+        execution_event::Event::CancellationRequested(_) => html! {
+            <CancellationRequestedEvent version={event.version} {is_selected} />
         },
         execution_event::Event::ComponentUpgradeFinished(inner_event) => html! {
             <ComponentUpgradeFinishedEvent event={inner_event.clone()} version={event.version} {is_selected} />

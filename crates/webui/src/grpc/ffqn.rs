@@ -27,6 +27,10 @@ impl FunctionFqn {
     pub fn short(&self) -> String {
         format!(".../{}.{}", self.ifc_fqn.ifc_name, self.function_name)
     }
+
+    pub fn is_cancellable(&self) -> bool {
+        self.function_name.ends_with("-cancellable")
+    }
 }
 
 impl FromStr for FunctionFqn {

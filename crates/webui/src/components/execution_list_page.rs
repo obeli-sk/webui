@@ -57,6 +57,7 @@ pub enum StatusFilter {
     Scheduled,
     Blocked,
     Paused,
+    Cancelling,
     Finished,
     FinishedOk,
     FinishedError,
@@ -112,12 +113,13 @@ impl FromStr for StatusFilterList {
 }
 
 impl StatusFilter {
-    pub const ALL: [StatusFilter; 9] = [
+    pub const ALL: [StatusFilter; 10] = [
         StatusFilter::Locked,
         StatusFilter::Pending,
         StatusFilter::Scheduled,
         StatusFilter::Blocked,
         StatusFilter::Paused,
+        StatusFilter::Cancelling,
         StatusFilter::Finished,
         StatusFilter::FinishedOk,
         StatusFilter::FinishedError,
@@ -131,6 +133,7 @@ impl StatusFilter {
             StatusFilter::Scheduled => "scheduled",
             StatusFilter::Blocked => "blocked",
             StatusFilter::Paused => "paused",
+            StatusFilter::Cancelling => "cancelling",
             StatusFilter::Finished => "finished",
             StatusFilter::FinishedOk => "finished_ok",
             StatusFilter::FinishedError => "finished_error",
@@ -145,6 +148,7 @@ impl StatusFilter {
             StatusFilter::Scheduled => "Scheduled",
             StatusFilter::Blocked => "Blocked",
             StatusFilter::Paused => "Paused",
+            StatusFilter::Cancelling => "Cancelling",
             StatusFilter::Finished => "Finished (any)",
             StatusFilter::FinishedOk => "Finished OK",
             StatusFilter::FinishedError => "Finished with error",
@@ -166,6 +170,7 @@ impl StatusFilter {
             StatusFilter::Scheduled => ExecutionStateFilter::Scheduled,
             StatusFilter::Blocked => ExecutionStateFilter::Blocked,
             StatusFilter::Paused => ExecutionStateFilter::Paused,
+            StatusFilter::Cancelling => ExecutionStateFilter::Cancelling,
             StatusFilter::Finished => ExecutionStateFilter::Finished,
             StatusFilter::FinishedOk => ExecutionStateFilter::FinishedOk,
             StatusFilter::FinishedError => ExecutionStateFilter::FinishedError,
