@@ -7,13 +7,12 @@ use crate::{
         get_status_response,
     },
     util::{
-        time::{TimeGranularity, format_date, relative_time},
+        time::{TimeGranularity, format_date, relative_time, use_relative_now},
         trace_id,
     },
 };
 use chrono::{DateTime, Utc};
 use futures::FutureExt as _;
-use gloo::timers::callback::Interval;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use std::rc::Rc;
@@ -442,21 +441,6 @@ struct RelativeStatusProps {
 /// value stays fresh while the underlying execution status doesn't change.
 #[function_component(RelativeStatus)]
 fn relative_status(props: &RelativeStatusProps) -> Html {
-    let trigger = use_force_update();
-    let now = Utc::now();
-    // Tick fast only while the value changes fast (Coarse granularity means the
-    // label is stable within a minute/hour once past those thresholds).
-    let secs = (props.target - now).num_seconds().unsigned_abs();
-    let period_ms: u32 = if secs < 60 {
-        1_000
-    } else if secs < 3_600 {
-        30_000
-    } else {
-        300_000
-    };
-    use_effect_with(period_ms, move |&period_ms| {
-        let interval = Interval::new(period_ms, move || trigger.force_update());
-        move || drop(interval)
-    });
+    let now = use_relative_now(props.target);
     html! { <span title={format_date(props.target)}>{ props.kind.label(props.target, now) }</span> }
 }

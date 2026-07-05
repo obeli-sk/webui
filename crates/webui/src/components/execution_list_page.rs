@@ -14,7 +14,7 @@ use crate::{
             list_executions_request::{NewerThan, OlderThan, Pagination, cursor},
         },
     },
-    util::time::{TimeGranularity, human_formatted_timedelta, relative_time},
+    util::time::{RelativeAgo, TimeGranularity, human_formatted_timedelta},
 };
 use chrono::{DateTime, Utc};
 use hashbrown::{HashMap, HashSet};
@@ -941,7 +941,6 @@ pub fn execution_list_page() -> Html {
             } else {
                 None
             };
-            let now = Utc::now();
             html! {
                 <tr key={execution_id.id.clone()}>
                     <td>
@@ -991,7 +990,7 @@ pub fn execution_list_page() -> Html {
                             if query.show_details {
                                 { created_at }
                             } else {
-                                {relative_time(created_at, now, TimeGranularity::Coarse)}{" ago"}
+                                <RelativeAgo target={created_at} />
                             }
                         </div>
                         // Duration
