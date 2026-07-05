@@ -7,11 +7,11 @@ use crate::{
         get_status_response,
     },
     util::{
-        time::{TimeGranularity, relative_time},
+        time::{TimeGranularity, format_date, relative_time},
         trace_id,
     },
 };
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use futures::FutureExt as _;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
@@ -337,12 +337,49 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
     match status {
         grpc_client::execution_status::Status::Locked(Locked {
             lock_expires_at, ..
-        }) => html! {
-            format!("Locked{}", convert_date(" until ", lock_expires_at.as_ref()))
+        }) => match lock_expires_at.as_ref() {
+            Some(lock_expires_at) => {
+                let lock_expires_at = DateTime::from(*lock_expires_at);
+                let now = Utc::now();
+                let label = if lock_expires_at > now {
+                    format!(
+                        "Locked for another {}",
+                        relative_time(now, lock_expires_at, TimeGranularity::Coarse)
+                    )
+                } else {
+                    // Past: lock has expired but the state hasn't transitioned yet.
+                    format!(
+                        "Locked, expired {} ago",
+                        relative_time(lock_expires_at, now, TimeGranularity::Coarse)
+                    )
+                };
+                html! { <span title={format_date(lock_expires_at)}>{ label }</span> }
+            }
+            None => html! { "Locked" },
         },
-        grpc_client::execution_status::Status::PendingAt(PendingAt { scheduled_at }) => html! {
-            format!("Pending{}", convert_date(" at ", scheduled_at.as_ref()))
-        },
+        grpc_client::execution_status::Status::PendingAt(PendingAt { scheduled_at }) => {
+            match scheduled_at.as_ref() {
+                Some(scheduled_at) => {
+                    let scheduled_at = DateTime::from(*scheduled_at);
+                    let now = Utc::now();
+                    let label = if scheduled_at > now {
+                        // Future: hasn't become runnable yet.
+                        format!(
+                            "Scheduled in {}",
+                            relative_time(now, scheduled_at, TimeGranularity::Coarse)
+                        )
+                    } else {
+                        // Past: runnable, waiting for an executor to pick it up.
+                        format!(
+                            "Pending for {}",
+                            relative_time(scheduled_at, now, TimeGranularity::Coarse)
+                        )
+                    };
+                    html! { <span title={format_date(scheduled_at)}>{ label }</span> }
+                }
+                None => html! { "Pending" },
+            }
+        }
         grpc_client::execution_status::Status::BlockedByJoinSet(
             grpc_client::execution_status::BlockedByJoinSet { join_set_id, .. },
         ) => {
@@ -391,12 +428,4 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
         grpc_client::execution_status::Status::Paused(_) => html! {"Paused"},
         grpc_client::execution_status::Status::Cancelling(_) => html! {"Cancelling"},
     }
-}
-
-fn convert_date(prefix: &str, date: Option<&::prost_wkt_types::Timestamp>) -> String {
-    date.map(|date| {
-        let date = DateTime::from(*date);
-        format!("{prefix}{date:?}")
-    })
-    .unwrap_or_default()
 }
