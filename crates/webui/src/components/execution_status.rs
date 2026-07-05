@@ -13,6 +13,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use futures::FutureExt as _;
+use gloo::timers::callback::Interval;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use std::rc::Rc;
@@ -338,45 +339,16 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
         grpc_client::execution_status::Status::Locked(Locked {
             lock_expires_at, ..
         }) => match lock_expires_at.as_ref() {
-            Some(lock_expires_at) => {
-                let lock_expires_at = DateTime::from(*lock_expires_at);
-                let now = Utc::now();
-                let label = if lock_expires_at > now {
-                    format!(
-                        "Locked for another {}",
-                        relative_time(now, lock_expires_at, TimeGranularity::Coarse)
-                    )
-                } else {
-                    // Past: lock has expired but the state hasn't transitioned yet.
-                    format!(
-                        "Locked, expired {} ago",
-                        relative_time(lock_expires_at, now, TimeGranularity::Coarse)
-                    )
-                };
-                html! { <span title={format_date(lock_expires_at)}>{ label }</span> }
-            }
+            Some(lock_expires_at) => html! {
+                <RelativeStatus target={DateTime::from(*lock_expires_at)} kind={RelativeStatusKind::Locked} />
+            },
             None => html! { "Locked" },
         },
         grpc_client::execution_status::Status::PendingAt(PendingAt { scheduled_at }) => {
             match scheduled_at.as_ref() {
-                Some(scheduled_at) => {
-                    let scheduled_at = DateTime::from(*scheduled_at);
-                    let now = Utc::now();
-                    let label = if scheduled_at > now {
-                        // Future: hasn't become runnable yet.
-                        format!(
-                            "Scheduled in {}",
-                            relative_time(now, scheduled_at, TimeGranularity::Coarse)
-                        )
-                    } else {
-                        // Past: runnable, waiting for an executor to pick it up.
-                        format!(
-                            "Pending for {}",
-                            relative_time(scheduled_at, now, TimeGranularity::Coarse)
-                        )
-                    };
-                    html! { <span title={format_date(scheduled_at)}>{ label }</span> }
-                }
+                Some(scheduled_at) => html! {
+                    <RelativeStatus target={DateTime::from(*scheduled_at)} kind={RelativeStatusKind::Pending} />
+                },
                 None => html! { "Pending" },
             }
         }
@@ -428,4 +400,63 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
         grpc_client::execution_status::Status::Paused(_) => html! {"Paused"},
         grpc_client::execution_status::Status::Cancelling(_) => html! {"Cancelling"},
     }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum RelativeStatusKind {
+    /// `PendingAt`: future = not yet runnable, past = waiting for an executor.
+    Pending,
+    /// `Locked`: future = lock still held, past = lock expired but not yet transitioned.
+    Locked,
+}
+impl RelativeStatusKind {
+    fn label(self, target: DateTime<Utc>, now: DateTime<Utc>) -> String {
+        match (self, target > now) {
+            (RelativeStatusKind::Pending, true) => format!(
+                "Scheduled in {}",
+                relative_time(now, target, TimeGranularity::Coarse)
+            ),
+            (RelativeStatusKind::Pending, false) => format!(
+                "Pending for {}",
+                relative_time(target, now, TimeGranularity::Coarse)
+            ),
+            (RelativeStatusKind::Locked, true) => format!(
+                "Locked for another {}",
+                relative_time(now, target, TimeGranularity::Coarse)
+            ),
+            (RelativeStatusKind::Locked, false) => format!(
+                "Locked, expired {} ago",
+                relative_time(target, now, TimeGranularity::Coarse)
+            ),
+        }
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct RelativeStatusProps {
+    target: DateTime<Utc>,
+    kind: RelativeStatusKind,
+}
+
+/// Renders a status label relative to the browser clock, ticking itself so the
+/// value stays fresh while the underlying execution status doesn't change.
+#[function_component(RelativeStatus)]
+fn relative_status(props: &RelativeStatusProps) -> Html {
+    let trigger = use_force_update();
+    let now = Utc::now();
+    // Tick fast only while the value changes fast (Coarse granularity means the
+    // label is stable within a minute/hour once past those thresholds).
+    let secs = (props.target - now).num_seconds().unsigned_abs();
+    let period_ms: u32 = if secs < 60 {
+        1_000
+    } else if secs < 3_600 {
+        30_000
+    } else {
+        300_000
+    };
+    use_effect_with(period_ms, move |&period_ms| {
+        let interval = Interval::new(period_ms, move || trigger.force_update());
+        move || drop(interval)
+    });
+    html! { <span title={format_date(props.target)}>{ props.kind.label(props.target, now) }</span> }
 }
