@@ -18,7 +18,7 @@ impl CancellationRequestedEventProps {
             .unwrap();
         tree.insert(
             Node::new(NodeData {
-                icon: Icon::Pause,
+                icon: Icon::Cross,
                 label: Html::from(format!("{}. Cancellation Requested", self.version)),
                 has_caret: false,
                 is_selected: self.is_selected,

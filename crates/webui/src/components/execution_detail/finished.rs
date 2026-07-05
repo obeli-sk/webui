@@ -77,10 +77,21 @@ pub fn attach_result_detail(
         }
 
         grpc_client::supported_function_result::Value::ExecutionFailure(failure) => {
+            let (failure_kind, icon) = match failure.kind() {
+                grpc_client::ExecutionFailureKind::Unspecified => ("Unspecified", Icon::Error),
+                grpc_client::ExecutionFailureKind::TimedOut => ("Timed out", Icon::Time),
+                grpc_client::ExecutionFailureKind::NondeterminismDetected => {
+                    ("Nondeterminism detected", Icon::Exchange)
+                }
+                grpc_client::ExecutionFailureKind::OutOfFuel => ("Out of fuel", Icon::Error),
+                grpc_client::ExecutionFailureKind::Cancelled => ("Cancelled", Icon::Cross),
+                grpc_client::ExecutionFailureKind::Uncategorized => ("Uncategorized", Icon::Error),
+            };
+
             let failure_node = tree
                 .insert(
                     Node::new(NodeData {
-                        icon: Icon::Error,
+                        icon,
                         label: with_version(version, "Execution Failed"),
                         has_caret: true,
                         is_selected,
@@ -90,16 +101,6 @@ pub fn attach_result_detail(
                 )
                 .unwrap();
 
-            let (failure_kind, icon) = match failure.kind() {
-                grpc_client::ExecutionFailureKind::Unspecified => ("Unspecified", Icon::Error),
-                grpc_client::ExecutionFailureKind::TimedOut => ("Timed out", Icon::Error),
-                grpc_client::ExecutionFailureKind::NondeterminismDetected => {
-                    ("Nondeterminism detected", Icon::Error)
-                }
-                grpc_client::ExecutionFailureKind::OutOfFuel => ("Out of fuel", Icon::Error),
-                grpc_client::ExecutionFailureKind::Cancelled => ("Cancelled", Icon::Error),
-                grpc_client::ExecutionFailureKind::Uncategorized => ("Uncategorized", Icon::Error),
-            };
             tree.insert(
                 Node::new(NodeData {
                     icon,

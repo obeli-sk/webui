@@ -16,6 +16,15 @@ use log::error;
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
+/// A matched child execution whose result is an `ExecutionFailure` of kind `Cancelled`.
+fn child_failure_is_cancelled(result: &SupportedFunctionResult) -> bool {
+    matches!(
+        &result.value,
+        Some(grpc_client::supported_function_result::Value::ExecutionFailure(failure))
+            if failure.kind() == grpc_client::ExecutionFailureKind::Cancelled
+    )
+}
+
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinNextEventProps {
     pub event: grpc_client::execution_event::history_event::JoinNext,
@@ -66,6 +75,28 @@ impl HistoryJoinNextEventProps {
                 ..
             }) => Icon::Tick,
 
+            // Cancelled delay
+            Some(JoinSetResponseEvent {
+                response:
+                    Some(join_set_response_event::Response::DelayFinished(DelayFinished {
+                        success: false,
+                        ..
+                    })),
+                ..
+            }) => Icon::Cross,
+
+            // Cancelled child execution
+            Some(JoinSetResponseEvent {
+                response:
+                    Some(join_set_response_event::Response::ChildExecutionFinished(
+                        join_set_response_event::ChildExecutionFinished {
+                            value: Some(result_detail),
+                            ..
+                        },
+                    )),
+                ..
+            }) if child_failure_is_cancelled(result_detail) => Icon::Cross,
+
             Some(_) => Icon::Error,
 
             None => Icon::Search,
@@ -107,7 +138,13 @@ impl HistoryJoinNextEventProps {
                     result_detail.value,
                     Some(grpc_client::supported_function_result::Value::Ok(_))
                 );
-                let icon = if success { Icon::Flows } else { Icon::Error };
+                let icon = if success {
+                    Icon::Flows
+                } else if child_failure_is_cancelled(result_detail) {
+                    Icon::Cross
+                } else {
+                    Icon::Error
+                };
 
                 let child_node = tree.insert(
                         Node::new(NodeData {
@@ -150,7 +187,8 @@ impl HistoryJoinNextEventProps {
                     })),
             }) => {
                 let success = *success;
-                let icon = if success { Icon::Time } else { Icon::Error };
+                // A delay that did not succeed was cancelled.
+                let icon = if success { Icon::Time } else { Icon::Cross };
                 let delay_node = tree
                     .insert(
                         Node::new(NodeData {
