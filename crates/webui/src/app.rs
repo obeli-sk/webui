@@ -159,11 +159,11 @@ pub enum Route {
     },
     #[at("/execution/list")]
     ExecutionList,
-    #[at("/execution/:execution_id")]
+    #[at("/execution/:execution_id/log")]
     ExecutionLog {
         execution_id: grpc_client::ExecutionId,
     },
-    #[at("/execution/:execution_id/trace")]
+    #[at("/execution/:execution_id")]
     ExecutionTrace {
         execution_id: grpc_client::ExecutionId,
     },
@@ -176,7 +176,7 @@ pub enum Route {
         execution_id: grpc_client::ExecutionId,
         versions: BacktraceVersionsPath,
     },
-    #[at("/execution/:execution_id/logs")]
+    #[at("/execution/:execution_id/applogs")]
     Logs {
         execution_id: grpc_client::ExecutionId,
     },
