@@ -13,7 +13,8 @@ use crate::grpc::grpc_client::{
 };
 use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use chrono::DateTime;
+use crate::util::time::{TimeGranularity, format_date, relative_time, use_relative_now};
+use chrono::{DateTime, Utc};
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
@@ -119,28 +120,25 @@ impl HistoryJoinSetRequestEventProps {
                 // Scheduled at variant
                 if let Some(scheduled_at) = &delay_req.scheduled_at {
                     use grpc_client::execution_event::history_event::join_set_request::delay_request::scheduled_at::Variant;
-                    let label = match &scheduled_at.variant {
-                        Some(Variant::Now(_)) => "Scheduled At: Now".to_string(),
+                    let label: Html = match &scheduled_at.variant {
+                        Some(Variant::Now(_)) => "Scheduled At: Now".into(),
                         Some(Variant::At(at)) => {
                             let ts = at.at.map(DateTime::from);
                             format!(
                                 "Scheduled At: {}",
                                 ts.map(|t| t.to_string()).unwrap_or_default()
                             )
+                            .into()
                         }
-                        Some(Variant::In(dur)) => {
-                            let d = dur.r#in.as_ref();
-                            format!(
-                                "Scheduled In: {}s",
-                                d.map(|d| d.seconds).unwrap_or_default()
-                            )
+                        Some(Variant::In(_)) => {
+                            html! { <RelativeScheduledIn expires_at={expires_at} /> }
                         }
-                        None => "Scheduled At: (unknown)".to_string(),
+                        None => "Scheduled At: (unknown)".into(),
                     };
                     tree.insert(
                         Node::new(NodeData {
                             icon: Icon::Time,
-                            label: label.into(),
+                            label,
                             ..Default::default()
                         }),
                         InsertBehavior::UnderNode(&join_set_node),
@@ -329,6 +327,28 @@ impl HistoryJoinSetRequestEventProps {
         }
         TreeData::from(tree)
     }
+}
+
+#[derive(Properties, PartialEq)]
+struct RelativeScheduledInProps {
+    expires_at: DateTime<Utc>,
+}
+
+#[function_component(RelativeScheduledIn)]
+fn relative_scheduled_in(props: &RelativeScheduledInProps) -> Html {
+    let now = use_relative_now(props.expires_at);
+    let label = if props.expires_at > now {
+        format!(
+            "Scheduled In: {}",
+            relative_time(now, props.expires_at, TimeGranularity::Coarse)
+        )
+    } else {
+        format!(
+            "Scheduled: {} ago",
+            relative_time(props.expires_at, now, TimeGranularity::Coarse)
+        )
+    };
+    html! { <span title={format_date(props.expires_at)}>{label}</span> }
 }
 
 #[component(HistoryJoinSetRequestEvent)]
