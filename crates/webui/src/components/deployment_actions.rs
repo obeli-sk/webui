@@ -69,8 +69,8 @@ pub fn deployment_actions(
         let in_flight = in_flight.clone();
         let armed = armed.clone();
         let disarm_timer = disarm_timer.clone();
-        // `allow_missing` only matters for enqueueing; hot redeploy is always strict.
-        move |hot_redeploy: bool, allow_missing: bool| {
+        // `allow_unavailable` only matters for enqueueing; hot redeploy is always strict.
+        move |hot_redeploy: bool, allow_unavailable: bool| {
             let deployment_id = deployment_id.clone();
             let notifications = notifications.clone();
             let on_switched = on_switched.clone();
@@ -91,8 +91,8 @@ pub fn deployment_actions(
                     let response = client
                         .switch_deployment(grpc_client::SwitchDeploymentRequest {
                             deployment_id: Some(deployment_id),
-                            runtime_config_check: if allow_missing {
-                                RuntimeConfigCheck::AllowMissing as i32
+                            runtime_config_check: if allow_unavailable {
+                                RuntimeConfigCheck::AllowUnavailable as i32
                             } else {
                                 RuntimeConfigCheck::Strict as i32
                             },
@@ -157,7 +157,7 @@ pub fn deployment_actions(
                     class="action-button confirm"
                     onclick={switch(false, false)}
                     disabled={enqueue_disabled}
-                    title="Enqueues the deployment for the next server restart, failing if any referenced environment variable or secret is missing"
+                    title="Enqueues the deployment for the next server restart, failing if any runtime requirement is unavailable"
                 >
                     {"Confirm enqueue"}
                 </button>
@@ -165,9 +165,9 @@ pub fn deployment_actions(
                     class="action-button warning"
                     onclick={switch(false, true)}
                     disabled={enqueue_disabled}
-                    title="Enqueues the deployment even if referenced environment variables or secrets are missing; activation may still fail at the next server restart"
+                    title="Enqueues the deployment even if environment variables, secrets, or server capabilities are unavailable; activation may still fail at the next server restart"
                 >
-                    {"Allow missing env vars/secrets"}
+                    {"Allow unavailable requirements"}
                 </button>
             } else {
                 <button
