@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     app::{AppState, Route},
     components::{
         code::code_block::CodeBlock,
@@ -94,7 +93,7 @@ pub fn component_list_page(
                 wasm_bindgen_futures::spawn_local(async move {
                     let mut fn_client =
                         grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                            crate::auth::client(),
                         );
                     let response = fn_client
                         .list_components(grpc_client::ListComponentsRequest {
@@ -157,7 +156,7 @@ pub fn component_list_page(
             wasm_bindgen_futures::spawn_local(async move {
                 let mut fn_client =
                     grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                        crate::auth::client(),
                     );
                 let response = fn_client
                     .get_wit(grpc_client::GetWitRequest {

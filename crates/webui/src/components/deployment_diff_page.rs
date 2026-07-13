@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     app::Route,
     components::{
         deployment_config_view::{
@@ -19,7 +18,6 @@ use serde_json::Value;
 use similar::{ChangeTag, TextDiff};
 use std::collections::BTreeMap;
 use std::ops::Deref;
-use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -338,7 +336,7 @@ fn render_section_diff(
 }
 
 async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<DeploymentInfo, String> {
-    let mut client = DeploymentRepositoryClient::new(Client::new(BASE_URL.to_string()));
+    let mut client = DeploymentRepositoryClient::new(crate::auth::client());
     let deployment = client
         .get_deployment(grpc_client::GetDeploymentRequest {
             deployment_id: Some(deployment_id.clone()),
@@ -361,7 +359,7 @@ async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<Deployment
         .map_err(|e| format!("cannot parse manifest of {}: {e}", deployment_id.id))?;
     let sections = build_sections_from_manifest(&config);
 
-    let mut function_client = FunctionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+    let mut function_client = FunctionRepositoryClient::new(crate::auth::client());
     let components_by_name = function_client
         .list_components(grpc_client::ListComponentsRequest {
             function_name: None,
@@ -399,7 +397,7 @@ async fn resolve_source(
             "Source is read at runtime from the external path `{path}`."
         )),
         SourceContent::FetchFile { digest } => {
-            let mut client = DeploymentRepositoryClient::new(Client::new(BASE_URL.to_string()));
+            let mut client = DeploymentRepositoryClient::new(crate::auth::client());
             client
                 .get_file(grpc_client::GetFileRequest { digest })
                 .await
@@ -416,7 +414,7 @@ async fn resolve_source(
             let Some(component_id) = component_id else {
                 return ResolvedSource::Error("component not found in this deployment".to_string());
             };
-            let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+            let mut client = ExecutionRepositoryClient::new(crate::auth::client());
             client
                 .get_backtrace_source(grpc_client::GetBacktraceSourceRequest {
                     component_id: Some(component_id),

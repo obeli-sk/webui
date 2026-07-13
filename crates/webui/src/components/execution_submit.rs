@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     app::Route,
     components::notification::{Notification, NotificationContext},
     grpc::{
@@ -174,7 +173,7 @@ pub fn execution_submit_form(
                 async move {
                     let mut client =
                         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                            crate::auth::client(),
                         );
                     let execution_id = ExecutionId::generate();
                     let response = client

@@ -4,7 +4,6 @@
 //! right pane shows the backtrace + source code for the selected write.
 
 use crate::{
-    BASE_URL,
     components::{
         code::syntect_code_block::{
             DEFAULT_CONTEXT_LINES, SyntectCodeBlock, highlight_code_line_by_line,
@@ -31,7 +30,6 @@ use hashbrown::{HashMap, HashSet};
 use log::trace;
 use std::path::PathBuf;
 use std::rc::Rc;
-use tonic_web_wasm_client::Client;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
@@ -494,8 +492,7 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                             sources.set(next);
                         }
 
-                        let mut client =
-                            ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                        let mut client = ExecutionRepositoryClient::new(crate::auth::client());
                         let result = client
                             .get_backtrace_source(tonic::Request::new(GetBacktraceSourceRequest {
                                 component_id: Some(component_id.clone()),

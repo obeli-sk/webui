@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     components::execution_detail::finished::FinishedEvent,
     grpc::grpc_client::{
         self, ExecutionStatus as GExecutionStatus, ExecutionSummary, FinishedStatus,
@@ -142,7 +141,7 @@ async fn run_status_subscription(
     let send_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
     let mut execution_client =
         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+            crate::auth::client(),
         );
     let mut response_stream = match execution_client
         .get_status(grpc_client::GetStatusRequest {

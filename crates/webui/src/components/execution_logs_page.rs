@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     components::execution_header::{ExecutionHeader, ExecutionLink},
     components::notification::{Notification, NotificationContext},
     grpc::grpc_client::{self, ExecutionId},
@@ -361,7 +360,7 @@ fn fetch_logs_page(
     wasm_bindgen_futures::spawn_local(async move {
         let mut execution_client =
             grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                crate::auth::client(),
             );
         const PAGE_SIZE: i32 = 200;
         debug!("Requesting logs page `{page_token}`");

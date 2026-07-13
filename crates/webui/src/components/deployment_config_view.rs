@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     app::Route,
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
@@ -359,7 +358,7 @@ pub fn collapsible_source(
                     wasm_bindgen_futures::spawn_local(async move {
                         let mut client =
                             grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                                tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                                crate::auth::client(),
                             );
                         let response = client
                             .get_backtrace_source(grpc_client::GetBacktraceSourceRequest {
@@ -379,7 +378,7 @@ pub fn collapsible_source(
                     wasm_bindgen_futures::spawn_local(async move {
                         let mut client =
                             grpc_client::deployment_repository_client::DeploymentRepositoryClient::new(
-                                tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                                crate::auth::client(),
                             );
                         let response = client
                             .get_file(grpc_client::GetFileRequest { digest })

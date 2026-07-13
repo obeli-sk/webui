@@ -43,7 +43,7 @@ ulid.workspace = true
 wasm-bindgen-futures.workspace = true
 wasm-bindgen.workspace = true
 wasm-logger.workspace = true
-web-sys.workspace = true
+web-sys = { workspace = true, features = ["Location", "Storage", "SubmitEvent"] }
 wit-component.workspace = true
 wit-parser.workspace = true
 yew-router.workspace = true

@@ -1,4 +1,5 @@
 pub mod app;
+pub mod auth;
 pub mod components;
 pub mod grpc;
 pub mod loader;

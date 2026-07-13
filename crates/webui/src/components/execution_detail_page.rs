@@ -1,4 +1,3 @@
-use crate::BASE_URL;
 use crate::components::execution_detail::utils::{compute_join_next_to_response, event_to_detail};
 use crate::components::execution_header::{ExecutionHeader, ExecutionLink};
 use crate::components::notification::{Notification, NotificationContext};
@@ -228,7 +227,7 @@ fn on_state_change(
         wasm_bindgen_futures::spawn_local(async move {
             let mut execution_client =
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                    tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                    crate::auth::client(),
                 );
             let response = execution_client
                 .list_execution_events_and_responses(

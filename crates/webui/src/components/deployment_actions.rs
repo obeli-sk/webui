@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     components::notification::{Notification, NotificationContext},
     grpc::grpc_client::{
         self, DeploymentId, DeploymentStatus, RuntimeConfigCheck,
@@ -9,7 +8,6 @@ use crate::{
 };
 use gloo::timers::callback::Timeout;
 use log::error;
-use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
@@ -86,8 +84,7 @@ pub fn deployment_actions(
                 let in_flight = in_flight.clone();
                 in_flight.set(true);
                 spawn_local(async move {
-                    let mut client =
-                        DeploymentRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                    let mut client = DeploymentRepositoryClient::new(crate::auth::client());
                     let response = client
                         .switch_deployment(grpc_client::SwitchDeploymentRequest {
                             deployment_id: Some(deployment_id),

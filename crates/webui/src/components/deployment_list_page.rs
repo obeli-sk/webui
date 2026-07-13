@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     app::{AppState, Route},
     components::{
         execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
@@ -15,7 +14,6 @@ use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::{ops::Deref, str::FromStr};
-use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
@@ -149,8 +147,7 @@ pub fn deployment_list_page() -> Html {
             let query_params = query_params.clone();
 
             spawn_local(async move {
-                let mut deployment_client =
-                    DeploymentRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                let mut deployment_client = DeploymentRepositoryClient::new(crate::auth::client());
 
                 let page_size = 20;
 

@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     app::{AppState, Route},
     components::{
         deployment_actions::DeploymentActions,
@@ -19,7 +18,6 @@ use hashbrown::HashMap;
 use log::error;
 use serde_json::Value;
 use std::ops::Deref;
-use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -69,8 +67,7 @@ pub fn deployment_detail_page(
             move |(deployment_id, _)| {
                 let deployment_id = deployment_id.clone();
                 spawn_local(async move {
-                    let mut client =
-                        DeploymentRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                    let mut client = DeploymentRepositoryClient::new(crate::auth::client());
                     match client
                         .get_deployment(grpc_client::GetDeploymentRequest {
                             deployment_id: Some(deployment_id.clone()),
@@ -89,8 +86,7 @@ pub fn deployment_detail_page(
                         }
                     }
                     // Resolve component IDs of this deployment for links and source fetching.
-                    let mut fn_client =
-                        FunctionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                    let mut fn_client = FunctionRepositoryClient::new(crate::auth::client());
                     match fn_client
                         .list_components(grpc_client::ListComponentsRequest {
                             function_name: None,

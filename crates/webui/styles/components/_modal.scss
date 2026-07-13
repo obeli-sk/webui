@@ -80,6 +80,40 @@
   max-height: none;
 }
 
+.auth-modal-window {
+  width: min(90vw, 480px);
+  height: auto;
+  max-height: none;
+
+  form {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.auth-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  padding: $spacing-lg;
+
+  p {
+    margin: 0 0 $spacing-sm;
+    color: $color-text-secondary;
+    line-height: 1.5;
+  }
+
+  label {
+    color: $color-text-primary;
+    font-size: $font-size-sm;
+    font-weight: 600;
+  }
+
+  input {
+    width: 100%;
+  }
+}
+
 .upgrade-modal-form {
   display: flex;
   flex-direction: column;
