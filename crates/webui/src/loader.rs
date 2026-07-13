@@ -1,19 +1,16 @@
 //! Component and deployment loading utilities.
 
-use crate::{
-    BASE_URL,
-    grpc::{
-        function_detail::{InterfaceFilter, map_interfaces_to_fn_details},
-        grpc_client::{self, ComponentId, DeploymentId},
-        ifc_fqn::IfcFqn,
-    },
+use crate::grpc::{
+    function_detail::{InterfaceFilter, map_interfaces_to_fn_details},
+    grpc_client::{self, ComponentId, DeploymentId},
+    ifc_fqn::IfcFqn,
 };
 use hashbrown::HashMap;
 use log::debug;
 use std::rc::Rc;
 
 /// Loaded component data from the server.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct LoadedComponents {
     pub components_by_id: HashMap<ComponentId, Rc<grpc_client::Component>>,
     pub components_by_exported_ifc: HashMap<IfcFqn, Rc<grpc_client::Component>>,
@@ -22,7 +19,7 @@ pub struct LoadedComponents {
 /// Fetches all components from the server.
 pub async fn load_components() -> Result<LoadedComponents, tonic::Status> {
     let mut fn_repo_client = grpc_client::function_repository_client::FunctionRepositoryClient::new(
-        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+        crate::auth::client(),
     );
     let mut response = fn_repo_client
         .list_components(grpc_client::ListComponentsRequest {
@@ -78,7 +75,7 @@ pub async fn load_components() -> Result<LoadedComponents, tonic::Status> {
 pub async fn get_current_deployment_id() -> Result<DeploymentId, tonic::Status> {
     let mut deployment_client =
         grpc_client::deployment_repository_client::DeploymentRepositoryClient::new(
-            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+            crate::auth::client(),
         );
     let response = deployment_client
         .get_current_deployment_id(grpc_client::GetCurrentDeploymentIdRequest {})

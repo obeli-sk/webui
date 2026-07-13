@@ -1,7 +1,6 @@
 //! Execution action components: Replay, Pause, Unpause, and Upgrade functionality
 
 use crate::{
-    BASE_URL,
     app::{AppState, Route},
     components::notification::{Notification, NotificationContext},
     grpc::{
@@ -13,7 +12,6 @@ use crate::{
     },
 };
 use log::{debug, error};
-use tonic_web_wasm_client::Client;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
@@ -37,7 +35,7 @@ pub async fn call_replay(
     execution_id: &ExecutionId,
     notifications: &NotificationContext,
 ) -> Option<grpc_client::ReplayExecutionResponse> {
-    let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+    let mut client = ExecutionRepositoryClient::new(crate::auth::client());
     match client
         .replay_execution(grpc_client::ReplayExecutionRequest {
             execution_id: Some(execution_id.clone()),
@@ -353,8 +351,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                 let upgraded_digest = upgraded_digest.clone();
 
                 async move {
-                    let mut client =
-                        ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                    let mut client = ExecutionRepositoryClient::new(crate::auth::client());
 
                     let result = client
                         .upgrade_execution_component(
@@ -549,7 +546,7 @@ pub fn cancel_execution_button(props: &CancelExecutionButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
 
                 let result = client
                     .cancel_execution(grpc_client::CancelExecutionRequest {
@@ -640,7 +637,7 @@ pub fn pause_button(props: &PauseButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
 
                 let result = client
                     .pause_execution(grpc_client::PauseExecutionRequest {
@@ -714,7 +711,7 @@ pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
 
                 let result = client
                     .unpause_execution(grpc_client::UnpauseExecutionRequest {
@@ -787,7 +784,7 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
 
                 let result = client
                     .cancel_delay(grpc_client::CancelDelayRequest {
@@ -870,7 +867,7 @@ pub fn pause_delay_button(props: &PauseDelayButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
 
                 let result = client
                     .pause_delay(grpc_client::PauseDelayRequest {
@@ -953,7 +950,7 @@ pub fn unpause_delay_button(props: &UnpauseDelayButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
 
                 let result = client
                     .unpause_delay(grpc_client::UnpauseDelayRequest {

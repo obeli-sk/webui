@@ -1,6 +1,5 @@
 use crate::tree::Icon;
 use crate::{
-    BASE_URL,
     app::{AppState, Route},
     components::{
         execution_status::{ExecutionStatus, StatusCacheContext, StatusState},
@@ -21,7 +20,6 @@ use hashbrown::{HashMap, HashSet};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Deref, str::FromStr};
-use tonic_web_wasm_client::Client;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
@@ -722,8 +720,7 @@ pub fn execution_list_page() -> Html {
                 }
                 ffqn_prefix_state.set(query_params.ffqn_prefix.clone().unwrap_or_default());
 
-                let mut execution_client =
-                    ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
+                let mut execution_client = ExecutionRepositoryClient::new(crate::auth::client());
 
                 let page_size = 20;
 

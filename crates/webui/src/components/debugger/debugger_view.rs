@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     app::{Route, query::BacktraceVersionsPath},
     components::{
         code::syntect_code_block::{
@@ -299,7 +298,7 @@ pub fn debugger_view(
                     info!("[{hook_id}] GetBacktraceRequest {execution_id} {version:?}");
                     let mut execution_client =
                         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                            crate::auth::client(),
                         );
                     let backtrace_response = execution_client
                         .get_backtrace(tonic::Request::new(grpc_client::GetBacktraceRequest {
@@ -387,7 +386,7 @@ pub fn debugger_view(
                     trace!("[{trace_id}] `GetBacktraceSourceRequest` start {component_id} {file}");
                     let mut execution_client =
                         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                            crate::auth::client(),
                         );
                     let backtrace_src_response = execution_client
                         .get_backtrace_source(tonic::Request::new(GetBacktraceSourceRequest {
@@ -863,7 +862,7 @@ fn on_state_change(
             trace!("list_execution_events {cursors:?}");
             let mut execution_client =
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                    tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                    crate::auth::client(),
                 );
             let response = execution_client
                 .list_execution_events_and_responses(

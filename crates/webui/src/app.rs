@@ -1,5 +1,6 @@
 use crate::{
     app::query::BacktraceVersionsPath,
+    auth::AuthProvider,
     components::{
         component_list_page::ComponentListPage,
         debugger::debugger_view::DebuggerView,
@@ -240,12 +241,14 @@ pub fn app(
     }: &AppProps,
 ) -> Html {
     html! {
-        <NotificationProvider>
-            <AppInner
-                initial_components={initial_components.clone()}
-                initial_deployment_id={initial_deployment_id.clone()}
-            />
-        </NotificationProvider>
+        <AuthProvider>
+            <NotificationProvider>
+                <AppInner
+                    initial_components={initial_components.clone()}
+                    initial_deployment_id={initial_deployment_id.clone()}
+                />
+            </NotificationProvider>
+        </AuthProvider>
     }
 }
 

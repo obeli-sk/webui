@@ -1,6 +1,5 @@
 use super::data::{BusyIntervalStatus, TraceData};
 use crate::{
-    BASE_URL,
     app::Route,
     components::{
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
@@ -378,7 +377,7 @@ fn on_state_change(
             trace!("list_execution_events {cursors:?}");
             let mut execution_client =
                 grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                    tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                    crate::auth::client(),
                 );
             let response = execution_client
                 .list_execution_events_and_responses(

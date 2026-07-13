@@ -1,4 +1,3 @@
-use crate::BASE_URL;
 use crate::app::Route;
 use crate::components::advance_modal::AdvanceModal;
 use crate::components::execution_actions::{
@@ -15,7 +14,6 @@ use crate::grpc::grpc_client::{
 use crate::grpc::version::VersionType;
 use gloo::timers::callback::Interval;
 use log::{debug, error};
-use tonic_web_wasm_client::Client;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::Link;
@@ -320,7 +318,7 @@ pub fn execution_header(
                             let advanced_version = last_version_of(&execution_id, &writes);
                             spawn_local(async move {
                                 let mut client = ExecutionRepositoryClient::new(
-                                    Client::new(BASE_URL.to_string()),
+                                    crate::auth::client(),
                                 );
                                 let result = client
                                     .advance_execution(grpc_client::AdvanceExecutionRequest {
@@ -442,7 +440,7 @@ pub fn execution_header(
                             let notifications = notifications.clone();
                             spawn_local(async move {
                                 let mut client = ExecutionRepositoryClient::new(
-                                    Client::new(BASE_URL.to_string()),
+                                    crate::auth::client(),
                                 );
                                 match client
                                     .unpause_execution(grpc_client::UnpauseExecutionRequest {

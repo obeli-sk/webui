@@ -1,5 +1,4 @@
 use crate::{
-    BASE_URL,
     app::{AppState, Route},
     components::{
         code::code_block::CodeBlock,
@@ -194,7 +193,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
             wasm_bindgen_futures::spawn_local(async move {
                 let mut fn_client =
                     grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                        tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                        crate::auth::client(),
                     );
                 match fn_client
                     .get_wit(grpc_client::GetWitRequest {
@@ -348,7 +347,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                 async move {
                     let mut client =
                         grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            tonic_web_wasm_client::Client::new(BASE_URL.to_string()),
+                            crate::auth::client(),
                         );
                     let execution_id = ExecutionId::generate();
                     let params_json = serde_json::Value::Array(submit_params);
