@@ -1,8 +1,8 @@
 cargo-edit-upgrade 0.13.11
 cargo-expand 1.0.123
-just 1.54.0
-obelisk 0.39.4
-libprotoc 34.1
+just 1.56.0
+obelisk 0.40.0
+libprotoc 35.1
 rustc 1.96.0 (ac68faa20 2026-05-25)
 sass 1.101.0
 wasm-opt version 129
