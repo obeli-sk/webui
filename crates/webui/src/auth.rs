@@ -23,7 +23,7 @@ thread_local! {
 
 fn token() -> Option<String> {
     web_sys::window()?
-        .session_storage()
+        .local_storage()
         .ok()??
         .get_item(TOKEN_STORAGE_KEY)
         .ok()?
@@ -120,7 +120,7 @@ pub fn auth_provider(props: &AuthProviderProps) -> Html {
                 return;
             }
             if let Some(storage) =
-                web_sys::window().and_then(|window| window.session_storage().ok().flatten())
+                web_sys::window().and_then(|window| window.local_storage().ok().flatten())
             {
                 let _ = storage.set_item(TOKEN_STORAGE_KEY, token);
             }
@@ -147,7 +147,7 @@ pub fn auth_provider(props: &AuthProviderProps) -> Html {
                                 <h3 id="auth-modal-title">{"Authentication required"}</h3>
                             </div>
                             <div class="auth-modal-body">
-                                <p>{"Paste an Obelisk API token to continue. It will be kept for this browser tab."}</p>
+                                <p>{"Paste an Obelisk API token to continue. It will be kept in this browser."}</p>
                                 <label for="auth-token">{"API token"}</label>
                                 <input
                                     ref={token_input}
