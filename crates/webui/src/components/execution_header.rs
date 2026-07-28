@@ -60,6 +60,8 @@ pub struct ExecutionHeaderProps {
     /// Called after a successful advance with the version of the last written event.
     #[prop_or_default]
     pub on_advanced: Option<Callback<VersionType>>,
+    #[prop_or_default]
+    pub additional_action: Html,
 }
 
 #[component(ExecutionHeader)]
@@ -68,6 +70,7 @@ pub fn execution_header(
         execution_id,
         link,
         on_advanced,
+        additional_action,
     }: &ExecutionHeaderProps,
 ) -> Html {
     let exec_info = use_state(|| None::<ExecutionInfo>);
@@ -280,6 +283,7 @@ pub fn execution_header(
                             })
                         }
                     />
+                    {additional_action.clone()}
                     if !*is_finished && !*is_cancelling && *is_paused {
                         <AdvanceButton
                             execution_id={execution_id.clone()}
@@ -324,6 +328,7 @@ pub fn execution_header(
                                     .advance_execution(grpc_client::AdvanceExecutionRequest {
                                         execution_id: Some(execution_id.clone()),
                                         captured_writes: writes,
+                                        persist_backtrace: true,
                                     })
                                     .await;
                                 match result {

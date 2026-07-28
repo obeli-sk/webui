@@ -44,26 +44,34 @@ struct Cursors {
 enum ExecutionFetchState {
     Requested(Cursors),
     Pending,
+    Waiting,
     Finished,
 }
 
 enum DebuggerStateAction {
     AddExecutionId(ExecutionId),
-    SetPending(ExecutionId),
+    Reload,
+    SetPending {
+        execution_id: ExecutionId,
+        generation: u64,
+    },
     SavePage {
         execution_id: ExecutionId,
         new_events: Vec<ExecutionEvent>,
         new_responses: Vec<ResponseWithCursor>,
         is_finished: bool,
+        generation: u64,
     },
     RequestNextPage {
         execution_id: ExecutionId,
         cursors: Cursors,
+        generation: u64,
     },
 }
 
 #[derive(Default, Clone, PartialEq)]
 struct DebuggerState {
+    fetch_generation: u64,
     execution_ids_to_fetch_state: HashMap<ExecutionId, ExecutionFetchState>,
     events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
     responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
@@ -90,7 +98,28 @@ impl Reducible for DebuggerState {
                     self
                 }
             }
-            DebuggerStateAction::SetPending(execution_id) => {
+            DebuggerStateAction::Reload => {
+                let mut this = self.as_ref().clone();
+                this.fetch_generation = this.fetch_generation.wrapping_add(1);
+                for state in this.execution_ids_to_fetch_state.values_mut() {
+                    *state = ExecutionFetchState::Requested(Cursors::default());
+                }
+                this.events.clear();
+                this.responses.clear();
+                Rc::from(this)
+            }
+            DebuggerStateAction::SetPending {
+                execution_id,
+                generation,
+            } => {
+                if generation != self.fetch_generation
+                    || !matches!(
+                        self.execution_ids_to_fetch_state.get(&execution_id),
+                        Some(ExecutionFetchState::Requested(_))
+                    )
+                {
+                    return self;
+                }
                 let mut this = self.as_ref().clone();
                 this.execution_ids_to_fetch_state
                     .insert(execution_id, ExecutionFetchState::Pending);
@@ -99,7 +128,16 @@ impl Reducible for DebuggerState {
             DebuggerStateAction::RequestNextPage {
                 execution_id,
                 cursors,
+                generation,
             } => {
+                if generation != self.fetch_generation
+                    || !matches!(
+                        self.execution_ids_to_fetch_state.get(&execution_id),
+                        Some(ExecutionFetchState::Waiting)
+                    )
+                {
+                    return self;
+                }
                 let mut this = self.as_ref().clone();
                 this.execution_ids_to_fetch_state
                     .insert(execution_id, ExecutionFetchState::Requested(cursors));
@@ -110,7 +148,16 @@ impl Reducible for DebuggerState {
                 new_events,
                 new_responses,
                 is_finished,
+                generation,
             } => {
+                if generation != self.fetch_generation
+                    || !matches!(
+                        self.execution_ids_to_fetch_state.get(&execution_id),
+                        Some(ExecutionFetchState::Pending)
+                    )
+                {
+                    return self;
+                }
                 let mut this = self.as_ref().clone();
                 this.events
                     .entry(execution_id.clone())
@@ -133,8 +180,7 @@ impl Reducible for DebuggerState {
                     info!("{execution_id} is finished loading events and responses");
                     ExecutionFetchState::Finished
                 } else {
-                    ExecutionFetchState::Pending
-                    // Will be followed by ExecutionFetchState::Requested
+                    ExecutionFetchState::Waiting
                 };
                 this.execution_ids_to_fetch_state
                     .insert(execution_id, new_fetch_state);
@@ -194,31 +240,36 @@ enum BacktraceError {
 struct BacktracesState(
     HashMap<(ExecutionId, VersionType), Result<GetBacktraceResponse, BacktraceError>>,
 );
-struct BacktracesStateAction {
-    key: (ExecutionId, VersionType),
-    value: Result<GetBacktraceResponse, BacktraceError>,
-    trace_id: Rc<str>,
+enum BacktracesStateAction {
+    Clear,
+    Set {
+        key: (ExecutionId, VersionType),
+        value: Result<GetBacktraceResponse, BacktraceError>,
+        trace_id: Rc<str>,
+    },
 }
 impl Reducible for BacktracesState {
     type Action = BacktracesStateAction;
 
-    fn reduce(
-        self: Rc<Self>,
-        BacktracesStateAction {
-            key,
-            value,
-            trace_id,
-        }: Self::Action,
-    ) -> Rc<Self> {
-        if self.0.contains_key(&key) {
-            trace!("[{trace_id}] Skipping {key:?}");
-            // Do not readd the same entry.
-            return self;
+    fn reduce(self: Rc<Self>, action: Self::Action) -> Rc<Self> {
+        match action {
+            BacktracesStateAction::Clear => Self::default().into(),
+            BacktracesStateAction::Set {
+                key,
+                value,
+                trace_id,
+            } => {
+                if self.0.contains_key(&key) {
+                    trace!("[{trace_id}] Skipping {key:?}");
+                    // Do not readd the same entry.
+                    return self;
+                }
+                let mut next_map = self.0.clone();
+                let old = next_map.insert(key.clone(), value.clone());
+                debug!("[{trace_id}] Updated from {old:?} to {value:?} key {key:?}");
+                Self(next_map).into()
+            }
         }
-        let mut next_map = self.0.clone();
-        let old = next_map.insert(key.clone(), value.clone());
-        debug!("[{trace_id}] Updated from {old:?} to {value:?} key {key:?}");
-        Self(next_map).into()
     }
 }
 
@@ -276,14 +327,15 @@ pub fn debugger_view(
 
     let backtraces_state = use_reducer_eq(BacktracesState::default);
     let sources_state = use_reducer_eq(SourcesState::default);
+    let backtraces_reload = use_state(|| 0_u32);
 
     // 4. Fetch backtraces for ALL items in the ancestry chain
-    use_effect_with(ancestry.clone(), {
+    use_effect_with((ancestry.clone(), *backtraces_reload), {
         let backtraces_state = backtraces_state.clone();
         let sources_state = sources_state.clone();
         let notifications = notifications.clone();
         let hook_id = trace_id();
-        move |ancestry| {
+        move |(ancestry, _reload)| {
             for (execution_id, versions) in ancestry.iter() {
                 let execution_id = execution_id.clone();
                 let version = versions.last();
@@ -352,7 +404,7 @@ pub fn debugger_view(
                             });
                         }
                     }
-                    backtraces_state.dispatch(BacktracesStateAction {
+                    backtraces_state.dispatch(BacktracesStateAction::Set {
                         key: (execution_id, version),
                         value: backtrace_response,
                         trace_id: hook_id.clone(),
@@ -812,8 +864,85 @@ pub fn debugger_view(
         })
     };
 
+    let populating_backtraces = use_state(|| false);
+    let on_populate_backtraces = {
+        let execution_id = execution_id.clone();
+        let debugger_state = debugger_state.clone();
+        let backtraces_state = backtraces_state.clone();
+        let backtraces_reload = backtraces_reload.clone();
+        let populating_backtraces = populating_backtraces.clone();
+        let notifications = notifications.clone();
+        Callback::from(move |_| {
+            let execution_id = execution_id.clone();
+            let debugger_state = debugger_state.clone();
+            let backtraces_state = backtraces_state.clone();
+            let backtraces_reload = backtraces_reload.clone();
+            let populating_backtraces = populating_backtraces.clone();
+            let notifications = notifications.clone();
+
+            populating_backtraces.set(true);
+            wasm_bindgen_futures::spawn_local(async move {
+                let mut client =
+                    grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
+                        crate::auth::client(),
+                    );
+                match client
+                    .persist_execution_backtraces(grpc_client::PersistExecutionBacktracesRequest {
+                        execution_id: Some(execution_id.clone()),
+                    })
+                    .await
+                {
+                    Ok(response) => {
+                        let count = response.into_inner().persisted_backtrace_count;
+                        if count == 0 {
+                            notifications
+                                .push(Notification::info("No new backtraces were persisted"));
+                        } else {
+                            let suffix = if count == 1 { "" } else { "s" };
+                            notifications.push(Notification::success(format!(
+                                "Persisted {count} backtrace{suffix}"
+                            )));
+                        }
+                        debugger_state.dispatch(DebuggerStateAction::Reload);
+                        backtraces_state.dispatch(BacktracesStateAction::Clear);
+                        backtraces_reload.set(backtraces_reload.wrapping_add(1));
+                    }
+                    Err(err) => {
+                        error!("Failed to persist backtraces for {execution_id}: {err:?}");
+                        notifications.push(Notification::error(format!(
+                            "Failed to populate backtraces: {}",
+                            err.message()
+                        )));
+                    }
+                }
+                populating_backtraces.set(false);
+            });
+        })
+    };
+    let populate_backtraces_action = html! {
+        <div class="action-container">
+            <button
+                class="action-button"
+                onclick={on_populate_backtraces}
+                disabled={*populating_backtraces}
+                title="Replay this execution and persist any missing call-site backtraces"
+            >
+                if *populating_backtraces {
+                    {"Populating..."}
+                } else {
+                    {"Populate backtraces"}
+                }
+            </button>
+        </div>
+    };
+
     html! {<>
-        <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Debug} on_advanced={on_advanced} />
+        <ExecutionHeader
+            execution_id={execution_id.clone()}
+            link={ExecutionLink::Debug}
+            on_advanced={on_advanced}
+            additional_action={populate_backtraces_action}
+        />
 
         <VersionSlider
             backtrace_versions={leaf_backtrace_versions.clone()}
@@ -823,13 +952,12 @@ pub fn debugger_view(
 
         <div class="trace-layout-container">
             <div class="trace-view">
-                <div class="trace-controls" style="margin-bottom: 10px; text-align: right;">
+                <div class="trace-controls">
                     <input
                         type="checkbox"
                         id="hide-frames"
                         checked={*hide_frames}
                         onclick={on_toggle_frames}
-                        style="margin-right: 5px;"
                     />
                     <label for="hide-frames">{"Hide locations (source only)"}</label>
                 </div>
@@ -851,10 +979,16 @@ fn on_state_change(
         .iter()
         .filter_map(|(id, state)| match state {
             ExecutionFetchState::Requested(cursors) => Some((id, *cursors)),
-            ExecutionFetchState::Pending | ExecutionFetchState::Finished => None,
+            ExecutionFetchState::Pending
+            | ExecutionFetchState::Waiting
+            | ExecutionFetchState::Finished => None,
         })
     {
-        debugger_state.dispatch(DebuggerStateAction::SetPending(execution_id.clone()));
+        let generation = debugger_state.fetch_generation;
+        debugger_state.dispatch(DebuggerStateAction::SetPending {
+            execution_id: execution_id.clone(),
+            generation,
+        });
         let execution_id = execution_id.clone();
         let debugger_state = debugger_state.clone();
         let notifications = notifications.clone();
@@ -907,12 +1041,14 @@ fn on_state_change(
                         new_events: server_resp.events,
                         new_responses: server_resp.responses,
                         is_finished,
+                        generation,
                     });
                     if !is_finished {
                         TimeoutFuture::new(SLEEP_MILLIS).await;
                         debugger_state.dispatch(DebuggerStateAction::RequestNextPage {
                             execution_id,
                             cursors,
+                            generation,
                         });
                     }
                 }
@@ -987,4 +1123,46 @@ fn get_parent_execution_bounds(
     }
 
     (start, end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_page_response_is_ignored() {
+        let execution_id = ExecutionId {
+            id: "E_test".to_string(),
+        };
+        let state = Rc::new(DebuggerState::default())
+            .reduce(DebuggerStateAction::AddExecutionId(execution_id.clone()))
+            .reduce(DebuggerStateAction::SetPending {
+                execution_id: execution_id.clone(),
+                generation: 0,
+            });
+        let event = ExecutionEvent {
+            version: 2,
+            ..Default::default()
+        };
+        let state = state.reduce(DebuggerStateAction::SavePage {
+            execution_id: execution_id.clone(),
+            new_events: vec![event.clone()],
+            new_responses: Vec::new(),
+            is_finished: false,
+            generation: 0,
+        });
+        let state = state.reduce(DebuggerStateAction::SavePage {
+            execution_id: execution_id.clone(),
+            new_events: vec![event],
+            new_responses: Vec::new(),
+            is_finished: false,
+            generation: 0,
+        });
+
+        assert_eq!(state.events[&execution_id].len(), 1);
+        assert!(matches!(
+            state.execution_ids_to_fetch_state[&execution_id],
+            ExecutionFetchState::Waiting
+        ));
+    }
 }
