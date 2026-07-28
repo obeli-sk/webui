@@ -44,27 +44,34 @@ struct Cursors {
 enum ExecutionFetchState {
     Requested(Cursors),
     Pending,
+    Waiting,
     Finished,
 }
 
 enum DebuggerStateAction {
     AddExecutionId(ExecutionId),
     Reload,
-    SetPending(ExecutionId),
+    SetPending {
+        execution_id: ExecutionId,
+        generation: u64,
+    },
     SavePage {
         execution_id: ExecutionId,
         new_events: Vec<ExecutionEvent>,
         new_responses: Vec<ResponseWithCursor>,
         is_finished: bool,
+        generation: u64,
     },
     RequestNextPage {
         execution_id: ExecutionId,
         cursors: Cursors,
+        generation: u64,
     },
 }
 
 #[derive(Default, Clone, PartialEq)]
 struct DebuggerState {
+    fetch_generation: u64,
     execution_ids_to_fetch_state: HashMap<ExecutionId, ExecutionFetchState>,
     events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
     responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
@@ -93,6 +100,7 @@ impl Reducible for DebuggerState {
             }
             DebuggerStateAction::Reload => {
                 let mut this = self.as_ref().clone();
+                this.fetch_generation = this.fetch_generation.wrapping_add(1);
                 for state in this.execution_ids_to_fetch_state.values_mut() {
                     *state = ExecutionFetchState::Requested(Cursors::default());
                 }
@@ -100,7 +108,18 @@ impl Reducible for DebuggerState {
                 this.responses.clear();
                 Rc::from(this)
             }
-            DebuggerStateAction::SetPending(execution_id) => {
+            DebuggerStateAction::SetPending {
+                execution_id,
+                generation,
+            } => {
+                if generation != self.fetch_generation
+                    || !matches!(
+                        self.execution_ids_to_fetch_state.get(&execution_id),
+                        Some(ExecutionFetchState::Requested(_))
+                    )
+                {
+                    return self;
+                }
                 let mut this = self.as_ref().clone();
                 this.execution_ids_to_fetch_state
                     .insert(execution_id, ExecutionFetchState::Pending);
@@ -109,7 +128,16 @@ impl Reducible for DebuggerState {
             DebuggerStateAction::RequestNextPage {
                 execution_id,
                 cursors,
+                generation,
             } => {
+                if generation != self.fetch_generation
+                    || !matches!(
+                        self.execution_ids_to_fetch_state.get(&execution_id),
+                        Some(ExecutionFetchState::Waiting)
+                    )
+                {
+                    return self;
+                }
                 let mut this = self.as_ref().clone();
                 this.execution_ids_to_fetch_state
                     .insert(execution_id, ExecutionFetchState::Requested(cursors));
@@ -120,7 +148,16 @@ impl Reducible for DebuggerState {
                 new_events,
                 new_responses,
                 is_finished,
+                generation,
             } => {
+                if generation != self.fetch_generation
+                    || !matches!(
+                        self.execution_ids_to_fetch_state.get(&execution_id),
+                        Some(ExecutionFetchState::Pending)
+                    )
+                {
+                    return self;
+                }
                 let mut this = self.as_ref().clone();
                 this.events
                     .entry(execution_id.clone())
@@ -143,8 +180,7 @@ impl Reducible for DebuggerState {
                     info!("{execution_id} is finished loading events and responses");
                     ExecutionFetchState::Finished
                 } else {
-                    ExecutionFetchState::Pending
-                    // Will be followed by ExecutionFetchState::Requested
+                    ExecutionFetchState::Waiting
                 };
                 this.execution_ids_to_fetch_state
                     .insert(execution_id, new_fetch_state);
@@ -943,10 +979,16 @@ fn on_state_change(
         .iter()
         .filter_map(|(id, state)| match state {
             ExecutionFetchState::Requested(cursors) => Some((id, *cursors)),
-            ExecutionFetchState::Pending | ExecutionFetchState::Finished => None,
+            ExecutionFetchState::Pending
+            | ExecutionFetchState::Waiting
+            | ExecutionFetchState::Finished => None,
         })
     {
-        debugger_state.dispatch(DebuggerStateAction::SetPending(execution_id.clone()));
+        let generation = debugger_state.fetch_generation;
+        debugger_state.dispatch(DebuggerStateAction::SetPending {
+            execution_id: execution_id.clone(),
+            generation,
+        });
         let execution_id = execution_id.clone();
         let debugger_state = debugger_state.clone();
         let notifications = notifications.clone();
@@ -999,12 +1041,14 @@ fn on_state_change(
                         new_events: server_resp.events,
                         new_responses: server_resp.responses,
                         is_finished,
+                        generation,
                     });
                     if !is_finished {
                         TimeoutFuture::new(SLEEP_MILLIS).await;
                         debugger_state.dispatch(DebuggerStateAction::RequestNextPage {
                             execution_id,
                             cursors,
+                            generation,
                         });
                     }
                 }
@@ -1079,4 +1123,46 @@ fn get_parent_execution_bounds(
     }
 
     (start, end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_page_response_is_ignored() {
+        let execution_id = ExecutionId {
+            id: "E_test".to_string(),
+        };
+        let state = Rc::new(DebuggerState::default())
+            .reduce(DebuggerStateAction::AddExecutionId(execution_id.clone()))
+            .reduce(DebuggerStateAction::SetPending {
+                execution_id: execution_id.clone(),
+                generation: 0,
+            });
+        let event = ExecutionEvent {
+            version: 2,
+            ..Default::default()
+        };
+        let state = state.reduce(DebuggerStateAction::SavePage {
+            execution_id: execution_id.clone(),
+            new_events: vec![event.clone()],
+            new_responses: Vec::new(),
+            is_finished: false,
+            generation: 0,
+        });
+        let state = state.reduce(DebuggerStateAction::SavePage {
+            execution_id: execution_id.clone(),
+            new_events: vec![event],
+            new_responses: Vec::new(),
+            is_finished: false,
+            generation: 0,
+        });
+
+        assert_eq!(state.events[&execution_id].len(), 1);
+        assert!(matches!(
+            state.execution_ids_to_fetch_state[&execution_id],
+            ExecutionFetchState::Waiting
+        ));
+    }
 }
