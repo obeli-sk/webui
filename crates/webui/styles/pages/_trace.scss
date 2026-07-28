@@ -30,6 +30,15 @@
   border-radius: $border-radius-md;
   background-color: $color-bg-tertiary;
 
+  .trace-controls {
+    text-align: right;
+    margin-bottom: $spacing-md;
+
+    input {
+      margin-right: $spacing-xs;
+    }
+  }
+
   // Step action links
   .step a {
     display: inline-block;
