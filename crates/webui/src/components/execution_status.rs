@@ -65,6 +65,10 @@ pub enum StatusStateAction {
 #[derive(Default, PartialEq)]
 pub struct StatusState {
     pub statuses: HashMap<grpc_client::ExecutionId, get_status_response::Message>,
+    /// Last `Summary` message seen per execution. Kept separately because the
+    /// immutable component metadata it carries is otherwise lost once a later
+    /// `CurrentStatus`/`FinishedStatus` message overwrites `statuses`.
+    pub summaries: HashMap<grpc_client::ExecutionId, ExecutionSummary>,
 }
 
 impl Reducible for StatusState {
@@ -77,8 +81,16 @@ impl Reducible for StatusState {
                 message,
             } => {
                 let mut statuses = self.statuses.clone();
+                let mut summaries = self.summaries.clone();
+                if let get_status_response::Message::Summary(summary) = &message {
+                    summaries.insert(execution_id.clone(), summary.clone());
+                }
                 statuses.insert(execution_id, message);
-                Self { statuses }.into()
+                Self {
+                    statuses,
+                    summaries,
+                }
+                .into()
             }
         }
     }
@@ -258,6 +270,13 @@ pub fn execution_status(
         let on_summary = on_summary.clone();
         let on_status_change = on_status_change.clone();
         let finished_status = finished_status.clone();
+        // Cached state to replay when the subscription is skipped (e.g. after
+        // navigating back to an already-finished execution). Consumers reset
+        // their derived state on `execution_id` change and rely on these
+        // callbacks to repopulate it.
+        let cached_summary = status_state.summaries.get(&execution_id).cloned();
+        let cached_status = stored_message.as_ref().and_then(extract_status);
+        let cached_finished = stored_message.as_ref().is_some_and(is_finished_any);
 
         use_effect_with(
             (execution_id.clone(), is_done),
@@ -267,6 +286,22 @@ pub fn execution_status(
                     trace!(
                         "[{connection_id}] Execution {execution_id} status is finished. Skipping subscription."
                     );
+                    // Deferred so it runs after synchronous effects (e.g. a
+                    // parent clearing its state on `execution_id` change).
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if let (Some(callback), Some(summary)) = (&on_summary, &cached_summary) {
+                            callback.emit(summary.clone());
+                        }
+                        if let (Some(callback), Some(status)) = (&on_status_change, &cached_status)
+                        {
+                            callback.emit(status.clone());
+                        }
+                        if cached_finished
+                            && let FinishedStatusMode::RequestAndNotify(callback) = &finished_status
+                        {
+                            callback.emit(());
+                        }
+                    });
                     None
                 } else {
                     let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
