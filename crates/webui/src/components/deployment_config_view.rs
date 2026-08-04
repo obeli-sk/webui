@@ -4,8 +4,14 @@ use crate::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
         component_list_page::ComponentQuery,
         copy_button::CopyButton,
+        ffqn_with_links::FfqnWithLinks,
+        function_signature::FunctionSignature,
     },
-    grpc::grpc_client,
+    grpc::{
+        ffqn::FunctionFqn,
+        function_detail::{InterfaceFilter, map_interfaces_to_fn_details},
+        grpc_client,
+    },
 };
 use hashbrown::HashMap;
 use serde_json::Value;
@@ -468,10 +474,12 @@ pub fn collapsible_source(
 #[derive(Properties, PartialEq)]
 pub struct DeploymentConfigViewProps {
     pub sections: Vec<SectionView>,
-    /// Component name -> component id resolved via `ListComponents` for this deployment.
-    pub components_by_name: HashMap<String, grpc_client::ComponentId>,
+    /// Component name -> component metadata resolved via `ListComponents` for this deployment.
+    pub components_by_name: HashMap<String, grpc_client::Component>,
     /// The deployment these components belong to; threaded into component detail links.
     pub deployment_id: grpc_client::DeploymentId,
+    /// Whether execution submission is safe because this deployment is active.
+    pub allow_submit: bool,
 }
 
 #[component(DeploymentConfigView)]
@@ -480,6 +488,7 @@ pub fn deployment_config_view(
         sections,
         components_by_name,
         deployment_id,
+        allow_submit,
     }: &DeploymentConfigViewProps,
 ) -> Html {
     if sections.is_empty() {
@@ -491,17 +500,23 @@ pub fn deployment_config_view(
             html! {
                 <section class="deployment-section">
                     <h4>{ section.title } { format!(" ({})", section.components.len()) }</h4>
-                    { for section.components.iter().map(|component| {
-                        let component_id = components_by_name.get(&component.name).cloned();
-                        html!{
-                            <details class="component-config">
-                                <summary>
+                    <div class="deployment-component-list">
+                        { for section.components.iter().map(|component| {
+                            let component_metadata = components_by_name.get(&component.name);
+                            let component_id = component_metadata
+                                .and_then(|component| component.component_id.clone());
+                            let exports = component_metadata
+                                .map(|component| map_interfaces_to_fn_details(
+                                    &component.exports,
+                                    InterfaceFilter::WithoutExtensions,
+                                ))
+                                .unwrap_or_default();
+                            html!{
+                                <article class="deployment-component-card">
+                                    <header>
                                     <span class="component-name">{ &component.name }</span>
                                     if let Some(component_id) = &component_id {
-                                        <span
-                                            class="component-link"
-                                            onclick={Callback::from(|event: MouseEvent| event.stop_propagation())}
-                                        >
+                                        <span class="component-link">
                                             <Link<Route, ComponentQuery>
                                                 to={Route::Component { component_id: component_id.clone() }}
                                                 query={ComponentQuery { deployment_id: Some(deployment_id.id.clone()) }}
@@ -510,20 +525,39 @@ pub fn deployment_config_view(
                                             </Link<Route, ComponentQuery>>
                                         </span>
                                     }
-                                </summary>
-                                { toml_block(component_to_toml(section.toml_key, &component.config)) }
-                                if !component.sources.is_empty() {
-                                    <h5>{"Sources"}</h5>
-                                    { for component.sources.iter().map(|source| html!{
-                                        <CollapsibleSource
-                                            source={source.clone()}
-                                            component_id={component_id.clone()}
-                                        />
-                                    })}
+                                    </header>
+                                if !exports.is_empty() {
+                                    { for exports.iter().map(|(interface, functions)| html! {
+                                        <div class="component-exports">
+                                            <h6>{interface.to_string()}</h6>
+                                            <ul>
+                                                { for functions.iter().map(|function| {
+                                                    let ffqn = FunctionFqn::from_fn_detail(function)
+                                                        .expect("exported function must be parseable");
+                                                    html! {
+                                                        <li>
+                                                            <FfqnWithLinks
+                                                                {ffqn}
+                                                                hide_submit={!*allow_submit || !function.submittable}
+                                                            />
+                                                            {": "}
+                                                            <FunctionSignature
+                                                                params={function.params.clone()}
+                                                                return_type={function.return_type.clone()}
+                                                            />
+                                                        </li>
+                                                    }
+                                                }) }
+                                            </ul>
+                                        </div>
+                                    }) }
+                                } else {
+                                    <p class="component-empty-state">{"No exported functions."}</p>
                                 }
-                            </details>
-                        }
-                    })}
+                                </article>
+                            }
+                        })}
+                    </div>
                 </section>
             }
         })

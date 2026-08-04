@@ -3,6 +3,10 @@ use crate::{
     components::{
         code::code_block::CodeBlock,
         component_tree::{ComponentTree, ComponentTreeConfig},
+        deployment_config_view::{
+            CollapsibleSource, MANIFEST_SECTIONS, SourceView, build_sections_from_manifest,
+            component_display_name, component_to_toml, toml_block,
+        },
         execution_list_page::ExecutionQuery,
         ffqn_with_links::FfqnWithLinks,
         function_signature::FunctionSignature,
@@ -42,9 +46,17 @@ pub struct ComponentListPageProps {
 
 #[derive(Clone, Copy, PartialEq)]
 enum ComponentDetailTab {
-    SubmittableFunctions,
+    Exports,
+    Sources,
     Imports,
     Wit,
+    Toml,
+}
+
+#[derive(Clone, PartialEq)]
+struct ComponentDeploymentConfig {
+    toml: String,
+    sources: Vec<SourceView>,
 }
 
 #[component(ComponentListPage)]
@@ -62,10 +74,21 @@ pub fn component_list_page(
     let location = use_location().expect("location must be available inside a router");
     let component_query = location.query::<ComponentQuery>().unwrap_or_default();
     let deployment_id = component_query.deployment_id;
+    let is_active_deployment = current_deployment_id.as_ref().is_some_and(|current| {
+        deployment_id.as_deref().map_or_else(
+            || {
+                maybe_component_id
+                    .as_ref()
+                    .is_some_and(|component_id| components_by_id.contains_key(component_id))
+            },
+            |deployment_id| deployment_id == current.id,
+        )
+    });
 
     let wit_state = use_state(|| None);
     let wit_loaded = use_state(|| false);
-    let selected_tab = use_state(|| ComponentDetailTab::SubmittableFunctions);
+    let selected_tab = use_state(|| ComponentDetailTab::Exports);
+    let deployment_config = use_state(|| None::<Result<Option<ComponentDeploymentConfig>, String>>);
 
     // Resolve the selected component. Prefer the active deployment's already-loaded
     // components; otherwise fetch it from its (possibly historical) deployment.
@@ -124,70 +147,169 @@ pub fn component_list_page(
     }
 
     // Fetch the WIT once the component is resolved.
-    use_effect_with(((*component_state).clone(), deployment_id.clone()), {
-        let wit_state = wit_state.clone();
-        let wit_loaded = wit_loaded.clone();
-        let selected_tab = selected_tab.clone();
-        let notifications = notifications.clone();
-        move |(component, deployment_id)| {
-            selected_tab.set(ComponentDetailTab::SubmittableFunctions);
-            wit_state.set(None);
-            wit_loaded.set(false);
-            let Some(component) = component.clone() else {
-                wit_loaded.set(true);
-                return;
-            };
-            let component_digest = component
-                .component_id
-                .as_ref()
-                .expect("`component_id` is sent")
-                .digest
-                .clone()
-                .expect("`digest` is sent");
-            let render_ffqn_with_links = component
-                .exports
-                .iter()
-                .filter(|fn_detail| fn_detail.submittable)
-                .map(|fn_detail| {
-                    FunctionFqn::from_fn_detail(fn_detail).expect("fn_detail must be parseable")
-                })
-                .collect::<HashSet<_>>();
-            let deployment_id = deployment_id.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                let mut fn_client =
-                    grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                        crate::auth::client(),
-                    );
-                let response = fn_client
-                    .get_wit(grpc_client::GetWitRequest {
-                        component_digest: Some(component_digest),
-                        deployment_id: deployment_id.map(|id| grpc_client::DeploymentId { id }),
+    use_effect_with(
+        (
+            (*component_state).clone(),
+            deployment_id.clone(),
+            is_active_deployment,
+        ),
+        {
+            let wit_state = wit_state.clone();
+            let wit_loaded = wit_loaded.clone();
+            let selected_tab = selected_tab.clone();
+            let notifications = notifications.clone();
+            move |(component, deployment_id, is_active_deployment)| {
+                selected_tab.set(ComponentDetailTab::Exports);
+                wit_state.set(None);
+                wit_loaded.set(false);
+                let Some(component) = component.clone() else {
+                    wit_loaded.set(true);
+                    return;
+                };
+                let component_digest = component
+                    .component_id
+                    .as_ref()
+                    .expect("`component_id` is sent")
+                    .digest
+                    .clone()
+                    .expect("`digest` is sent");
+                let render_ffqn_with_links = component
+                    .exports
+                    .iter()
+                    .filter(|fn_detail| *is_active_deployment && fn_detail.submittable)
+                    .map(|fn_detail| {
+                        FunctionFqn::from_fn_detail(fn_detail).expect("fn_detail must be parseable")
                     })
-                    .await;
-                match response {
-                    Ok(resp) => {
-                        if let Some(wit) = resp.into_inner().content {
-                            let rendered = wit_highlighter::print_all(&wit, render_ffqn_with_links)
-                                .unwrap_or_else(|err| {
-                                    warn!("Cannot render WIT, showing raw text - {err:?}");
-                                    wit_highlighter::print_raw(&wit)
-                                });
-                            wit_state.set(Some(rendered));
-                        } // else - no WIT is associated with the component.
-                        wit_loaded.set(true);
+                    .collect::<HashSet<_>>();
+                let deployment_id = deployment_id.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let mut fn_client =
+                        grpc_client::function_repository_client::FunctionRepositoryClient::new(
+                            crate::auth::client(),
+                        );
+                    let response = fn_client
+                        .get_wit(grpc_client::GetWitRequest {
+                            component_digest: Some(component_digest),
+                            deployment_id: deployment_id.map(|id| grpc_client::DeploymentId { id }),
+                        })
+                        .await;
+                    match response {
+                        Ok(resp) => {
+                            if let Some(wit) = resp.into_inner().content {
+                                let rendered =
+                                    wit_highlighter::print_all(&wit, render_ffqn_with_links)
+                                        .unwrap_or_else(|err| {
+                                            warn!("Cannot render WIT, showing raw text - {err:?}");
+                                            wit_highlighter::print_raw(&wit)
+                                        });
+                                wit_state.set(Some(rendered));
+                            } // else - no WIT is associated with the component.
+                            wit_loaded.set(true);
+                        }
+                        Err(e) => {
+                            error!("Failed to get WIT: {:?}", e);
+                            notifications.push(Notification::error(format!(
+                                "Failed to get WIT: {}",
+                                e.message()
+                            )));
+                            wit_loaded.set(true);
+                        }
                     }
-                    Err(e) => {
-                        error!("Failed to get WIT: {:?}", e);
-                        notifications.push(Notification::error(format!(
-                            "Failed to get WIT: {}",
-                            e.message()
-                        )));
-                        wit_loaded.set(true);
+                });
+            }
+        },
+    );
+
+    use_effect_with(
+        (
+            (*component_state).clone(),
+            deployment_id.clone(),
+            current_deployment_id.clone(),
+        ),
+        {
+            let deployment_config = deployment_config.clone();
+            let notifications = notifications.clone();
+            move |(component, deployment_id, current_deployment_id)| {
+                deployment_config.set(None);
+                let Some(component) = component.clone() else {
+                    deployment_config.set(Some(Ok(None)));
+                    return;
+                };
+                let Some(deployment_id) = deployment_id
+                    .as_ref()
+                    .map(|id| grpc_client::DeploymentId { id: id.clone() })
+                    .or_else(|| current_deployment_id.clone())
+                else {
+                    deployment_config.set(Some(Ok(None)));
+                    return;
+                };
+                let component_name = component
+                    .component_id
+                    .as_ref()
+                    .expect("`component_id` is sent")
+                    .name
+                    .clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let mut client =
+                        grpc_client::deployment_repository_client::DeploymentRepositoryClient::new(
+                            crate::auth::client(),
+                        );
+                    let response = client
+                        .get_deployment(grpc_client::GetDeploymentRequest {
+                            deployment_id: Some(deployment_id),
+                        })
+                        .await;
+                    match response {
+                        Ok(response) => {
+                            let result = response
+                                .into_inner()
+                                .deployment
+                                .and_then(|deployment| deployment.deployment_toml)
+                                .map(|manifest| {
+                                    let manifest = toml::from_str::<serde_json::Value>(&manifest)
+                                        .map_err(|error| error.to_string())?;
+                                    let sources = build_sections_from_manifest(&manifest)
+                                        .into_iter()
+                                        .find_map(|section| {
+                                            section
+                                                .components
+                                                .into_iter()
+                                                .find(|component| component.name == component_name)
+                                                .map(|component| component.sources)
+                                        });
+                                    Ok(MANIFEST_SECTIONS.iter().find_map(|(toml_key, _)| {
+                                        manifest
+                                            .get(toml_key)
+                                            .and_then(serde_json::Value::as_array)
+                                            .and_then(|components| {
+                                                components.iter().find(|component| {
+                                                    component_display_name(component)
+                                                        == component_name
+                                                })
+                                            })
+                                            .map(|component| ComponentDeploymentConfig {
+                                                toml: component_to_toml(toml_key, component),
+                                                sources: sources.clone().unwrap_or_default(),
+                                            })
+                                    }))
+                                })
+                                .transpose()
+                                .map(Option::flatten);
+                            deployment_config.set(Some(result));
+                        }
+                        Err(error) => {
+                            error!("Failed to load component configuration: {error:?}");
+                            notifications.push(Notification::error(format!(
+                                "Failed to load component configuration: {}",
+                                error.message()
+                            )));
+                            deployment_config.set(Some(Err(error.message().to_string())));
+                        }
                     }
-                }
-            });
-        }
-    });
+                });
+            }
+        },
+    );
 
     let component_detail = component_state
         .as_ref()
@@ -196,14 +318,16 @@ pub fn component_list_page(
                 map_interfaces_to_fn_details(&component.exports, InterfaceFilter::All);
 
             let render_exported_ifc_with_fns = |ifc_fqn: &IfcFqn, fn_details: &[FunctionDetail] | {
-                let submittable_fn_details = fn_details
+                let exported_fn_details = fn_details
                     .iter()
-                    .filter(|fn_detail| fn_detail.submittable)
                     .map(|fn_detail| {
                         let ffqn = FunctionFqn::from_fn_detail(fn_detail).expect("ffqn should be parseable");
                         html! {
                             <li>
-                                <FfqnWithLinks {ffqn} />
+                                <FfqnWithLinks
+                                    {ffqn}
+                                    hide_submit={!is_active_deployment || !fn_detail.submittable}
+                                />
                                 {": "}
                                 <span>
                                     <FunctionSignature params = {fn_detail.params.clone()} return_type={fn_detail.return_type.clone()} />
@@ -225,25 +349,24 @@ pub fn component_list_page(
                             </Link<Route, ExecutionQuery>>
                         </h4>
                         <ul>
-                            {submittable_fn_details}
+                            {exported_fn_details}
                         </ul>
                     </section>
                 }
             };
 
-            let submittable_ifcs_fns = exports
+            let exported_ifcs_fns = exports
                 .iter()
-                .filter(|(_, fn_details)| fn_details.iter().any(|f_d| f_d.submittable))
                 .map(|(ifc_fqn, fn_details)| render_exported_ifc_with_fns(ifc_fqn, fn_details))
                 .collect::<Vec<_>>();
-            let submittable_functions = if submittable_ifcs_fns.is_empty() {
+            let exported_functions = if exported_ifcs_fns.is_empty() {
                 html! {
                     <p class="component-empty-state">
-                        {"This component does not expose functions that can be submitted directly."}
+                        {"This component does not export any functions."}
                     </p>
                 }
             } else {
-                html! { <>{ for submittable_ifcs_fns }</> }
+                html! { <>{ for exported_ifcs_fns }</> }
             };
 
             // imports:
@@ -272,6 +395,7 @@ pub fn component_list_page(
                 .as_ref()
                 .expect("`component_id` is sent")
                 .name;
+            let component_id = component.component_id.clone();
             // Link back to the deployment this component belongs to (from the query,
             // else the active deployment). "Deployments" already lives in the header nav.
             let component_deployment_id = deployment_id
@@ -302,7 +426,31 @@ pub fn component_list_page(
                 }
             };
             let tab_content = match *selected_tab {
-                ComponentDetailTab::SubmittableFunctions => submittable_functions,
+                ComponentDetailTab::Exports => exported_functions,
+                ComponentDetailTab::Sources => match deployment_config.as_ref() {
+                    None => html! { <p class="component-empty-state">{"Loading sources..."}</p> },
+                    Some(Ok(Some(config))) if config.sources.is_empty() => html! {
+                        <p class="component-empty-state">{"No sources are available for this component."}</p>
+                    },
+                    Some(Ok(Some(config))) => html! {
+                        <div class="component-sources">
+                            { for config.sources.iter().map(|source| html! {
+                                <CollapsibleSource
+                                    source={source.clone()}
+                                    component_id={component_id.clone()}
+                                />
+                            }) }
+                        </div>
+                    },
+                    Some(Ok(None)) => html! {
+                        <p class="component-empty-state">
+                            {"No deployment sources are available for this component."}
+                        </p>
+                    },
+                    Some(Err(error)) => html! {
+                        <p class="error">{format!("Cannot load component sources: {error}")}</p>
+                    },
+                },
                 ComponentDetailTab::Imports => html! {<>
                     <p class="component-section-help">
                         {"Dependencies this component expects the deployment to provide."}
@@ -321,7 +469,19 @@ pub fn component_list_page(
                     } else {
                         html! { <p class="component-empty-state">{"Loading WIT..."}</p> }
                     }
-                }
+                },
+                ComponentDetailTab::Toml => match deployment_config.as_ref() {
+                    None => html! { <p class="component-empty-state">{"Loading TOML..."}</p> },
+                    Some(Ok(Some(config))) => toml_block(config.toml.clone()),
+                    Some(Ok(None)) => html! {
+                        <p class="component-empty-state">
+                            {"No deployment configuration is available for this component."}
+                        </p>
+                    },
+                    Some(Err(error)) => html! {
+                        <p class="error">{format!("Cannot load component TOML: {error}")}</p>
+                    },
+                },
             };
 
             html! { <>
@@ -340,9 +500,11 @@ pub fn component_list_page(
                 </header>
 
                 <div class="view-tabs component-detail-tabs">
-                    {tab_button("Submittable functions", ComponentDetailTab::SubmittableFunctions)}
+                    {tab_button("Exports", ComponentDetailTab::Exports)}
+                    {tab_button("Sources", ComponentDetailTab::Sources)}
                     {tab_button("Imports", ComponentDetailTab::Imports)}
                     {tab_button("WIT", ComponentDetailTab::Wit)}
+                    {tab_button("TOML", ComponentDetailTab::Toml)}
                 </div>
 
                 <section class="component-detail-tab-content">

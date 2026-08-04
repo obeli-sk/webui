@@ -29,6 +29,14 @@ pub struct DeploymentDetailPageProps {
     pub deployment_id: DeploymentId,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum DeploymentTab {
+    #[default]
+    Overview,
+    Components,
+    Toml,
+}
+
 fn status_badge(status: DeploymentStatus) -> Html {
     match status {
         DeploymentStatus::Active => html! { <span class="badge current">{"Active"}</span> },
@@ -55,11 +63,10 @@ pub fn deployment_detail_page(
 
     let deployment_state = use_state(|| None::<grpc_client::Deployment>);
     let execution_summary = use_state(|| None::<DeploymentExecutionSummary>);
-    let components_by_name = use_state(HashMap::<String, grpc_client::ComponentId>::new);
+    let components_by_name = use_state(HashMap::<String, grpc_client::Component>::new);
     // Bumped after a successful switch action to refetch the deployment.
     let refresh = use_state(|| 0u32);
-    // Whether to show the configuration as one TOML document instead of per-component sections.
-    let show_toml = use_state(|| false);
+    let active_tab = use_state(DeploymentTab::default);
     let show_derived = use_state(|| false);
 
     {
@@ -105,8 +112,10 @@ pub fn deployment_detail_page(
                                 .into_inner()
                                 .components
                                 .into_iter()
-                                .filter_map(|component| component.component_id)
-                                .map(|component_id| (component_id.name.clone(), component_id))
+                                .filter_map(|component| {
+                                    let name = component.component_id.as_ref()?.name.clone();
+                                    Some((name, component))
+                                })
                                 .collect();
                             components_by_name.set(map);
                         }
@@ -218,7 +227,7 @@ pub fn deployment_detail_page(
     let is_empty = matches!(&parsed_manifest, Some(Ok(manifest))
         if build_sections_from_manifest(manifest).is_empty());
 
-    let config_html = match &parsed_manifest {
+    let components_html = match &parsed_manifest {
         None => html! { <p>{"The server did not return the deployment manifest."}</p> },
         Some(Err(parse_err)) => {
             let raw = deployment.deployment_toml.clone().unwrap_or_default();
@@ -238,36 +247,21 @@ pub fn deployment_detail_page(
             if sections.is_empty() {
                 html! { <p>{"This deployment is empty."}</p> }
             } else {
-                let tab_button = |label: &'static str, toml: bool| {
-                    let show_toml = show_toml.clone();
-                    let active = *show_toml == toml;
-                    html! {
-                        <button
-                            class={classes!(active.then_some("active"))}
-                            onclick={Callback::from(move |_| show_toml.set(toml))}
-                        >
-                            {label}
-                        </button>
-                    }
-                };
-                html! {<>
-                    <div class="view-tabs">
-                        { tab_button("Components", false) }
-                        { tab_button("TOML", true) }
-                    </div>
-                    if *show_toml {
-                        { toml_block(deployment.deployment_toml.clone().unwrap_or_default()) }
-                    } else {
-                        <DeploymentConfigView
-                            sections={sections}
-                            components_by_name={components_by_name.deref().clone()}
-                            deployment_id={deployment_id.clone()}
-                        />
-                    }
-                </>}
+                html! {
+                    <DeploymentConfigView
+                        sections={sections}
+                        components_by_name={components_by_name.deref().clone()}
+                        deployment_id={deployment_id.clone()}
+                        allow_submit={is_current}
+                    />
+                }
             }
         }
     };
+    let toml_html = deployment.deployment_toml.as_ref().map_or_else(
+        || html! { <p>{"The server did not return the deployment manifest."}</p> },
+        |manifest| toml_block(manifest.clone()),
+    );
 
     let on_switched = {
         let refresh = refresh.clone();
@@ -284,9 +278,9 @@ pub fn deployment_detail_page(
             + summary.finished_ok
             + summary.finished_error
             + summary.finished_execution_failure;
-        let count_row = |label: &'static str,
-                         count: u32,
-                         status: Option<StatusFilterList>| {
+        let count_metric = |label: &'static str,
+                            count: u32,
+                            status: Option<StatusFilterList>| {
             let query = ExecutionQuery {
                 deployment_id: Some(deployment_id.id.clone()),
                 status,
@@ -294,9 +288,9 @@ pub fn deployment_detail_page(
                 ..Default::default()
             };
             html! {
-                <tr>
-                    <th>{label}</th>
-                    <td class="number">
+                <div class={classes!("execution-metric", (count == 0).then_some("empty"))}>
+                    <span>{label}</span>
+                    <strong>
                         if count > 0 {
                             <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={query}>
                                 {count}
@@ -304,25 +298,21 @@ pub fn deployment_detail_page(
                         } else {
                             {count}
                         }
-                    </td>
-                </tr>
+                    </strong>
+                </div>
             }
         };
         html! {
-            <table class="deployment-execution-summary">
-                <tbody>
-                    { count_row("All executions", total, None) }
-                    { count_row("Locked", summary.locked, Some(StatusFilterList::single(StatusFilter::Locked))) }
-                    { count_row("Pending", summary.pending, Some(StatusFilterList::single(StatusFilter::Pending))) }
-                    { count_row("Scheduled", summary.scheduled, Some(StatusFilterList::single(StatusFilter::Scheduled))) }
-                    { count_row("Blocked", summary.blocked, Some(StatusFilterList::single(StatusFilter::Blocked))) }
-                    { count_row("Paused", summary.paused, Some(StatusFilterList::single(StatusFilter::Paused))) }
-                    { count_row("Cancelling", summary.cancelling, Some(StatusFilterList::single(StatusFilter::Cancelling))) }
-                    { count_row("Finished successfully", summary.finished_ok, Some(StatusFilterList::single(StatusFilter::FinishedOk))) }
-                    { count_row("Finished with error", summary.finished_error, Some(StatusFilterList::single(StatusFilter::FinishedError))) }
-                    { count_row("Execution failures", summary.finished_execution_failure, Some(StatusFilterList::single(StatusFilter::FinishedExecutionFailure))) }
-                </tbody>
-            </table>
+            <div class="deployment-execution-summary">
+                { count_metric("Total", total, None) }
+                { count_metric("In progress", summary.locked + summary.pending + summary.blocked, Some(StatusFilterList::in_progress())) }
+                { count_metric("Scheduled", summary.scheduled, Some(StatusFilterList::single(StatusFilter::Scheduled))) }
+                { count_metric("Paused", summary.paused, Some(StatusFilterList::single(StatusFilter::Paused))) }
+                { count_metric("Cancelling", summary.cancelling, Some(StatusFilterList::single(StatusFilter::Cancelling))) }
+                { count_metric("Successful", summary.finished_ok, Some(StatusFilterList::single(StatusFilter::FinishedOk))) }
+                { count_metric("Errors", summary.finished_error, Some(StatusFilterList::single(StatusFilter::FinishedError))) }
+                { count_metric("Failures", summary.finished_execution_failure, Some(StatusFilterList::single(StatusFilter::FinishedExecutionFailure))) }
+            </div>
         }
     });
 
@@ -334,32 +324,75 @@ pub fn deployment_detail_page(
         })
     };
 
+    let tab_button = |label: &'static str, tab: DeploymentTab| {
+        let active_tab = active_tab.clone();
+        html! {
+            <button
+                class={classes!((*active_tab == tab).then_some("active"))}
+                onclick={Callback::from(move |_| active_tab.set(tab))}
+            >
+                {label}
+            </button>
+        }
+    };
+
+    let overview_html = html! {
+        <section class="deployment-executions">
+            <div class="deployment-section-heading">
+                <h4>{"Executions"}</h4>
+                if !is_empty {
+                    <label>
+                        <input
+                            type="checkbox"
+                            checked={*show_derived}
+                            onchange={on_toggle_derived}
+                        />
+                        {" Include derived"}
+                    </label>
+                }
+            </div>
+            if is_empty {
+                <p class="secondary-text">{"This deployment contains no components."}</p>
+            } else if let Some(execution_summary_html) = execution_summary_html {
+                { execution_summary_html }
+            } else {
+                <p>{"Loading execution summary..."}</p>
+            }
+        </section>
+    };
+
+    let tab_content = match *active_tab {
+        DeploymentTab::Overview => overview_html,
+        DeploymentTab::Components => components_html,
+        DeploymentTab::Toml => toml_html,
+    };
+
     html! {
         <>
-            <h3>
-                {"Deployment "}{ &deployment_id.id }
-                {" "}
-                { status_badge(status) }
-                {" "}
-                { exec_badge }
-            </h3>
-            if let Some(description) = description {
-                <p>
-                    <strong>{"Description: "}</strong>
-                    { description }
-                </p>
-            }
-            <p>
-                if let Some(created_at) = deployment.created_at {
-                    {"Created: "}{ format_date(DateTime::from(created_at)) }{" UTC"}
-                }
-                if let Some(last_active_at) = deployment.last_active_at {
-                    {" | Last deployed: "}{ format_date(DateTime::from(last_active_at)) }{" UTC"}
-                } else {
-                    {" | Last deployed: Never"}
-                }
-            </p>
-            <p>
+            <header class="deployment-detail-header">
+                <div class="deployment-detail-title">
+                    <h3>{ description.unwrap_or("Deployment") }</h3>
+                    { status_badge(status) }
+                    { exec_badge }
+                </div>
+                <div class="deployment-detail-id">{ &deployment_id.id }</div>
+                <div class="deployment-detail-metadata">
+                    if let Some(created_at) = deployment.created_at {
+                        <span>{"Created "}{ format_date(DateTime::from(created_at)) }{" UTC"}</span>
+                    }
+                    if let Some(last_active_at) = deployment.last_active_at {
+                        <span>{"Last deployed "}{ format_date(DateTime::from(last_active_at)) }{" UTC"}</span>
+                    } else {
+                        <span>{"Never deployed"}</span>
+                    }
+                </div>
+            </header>
+            <div class="deployment-detail-tools">
+                <DeploymentActions
+                    deployment_id={deployment_id.clone()}
+                    status={status}
+                    on_switched={on_switched}
+                />
                 if let Some(current_id) = &app_state.current_deployment_id
                     && !is_current
                 {
@@ -370,33 +403,13 @@ pub fn deployment_detail_page(
                         {"Diff against current deployment"}
                     </Link<Route>>
                 }
-            </p>
-            <DeploymentActions
-                deployment_id={deployment_id.clone()}
-                status={status}
-                on_switched={on_switched}
-            />
-            if !is_empty {
-                <section class="deployment-executions">
-                    <div class="deployment-section-heading">
-                        <h4>{"Executions"}</h4>
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={*show_derived}
-                                onchange={on_toggle_derived}
-                            />
-                            {" Include derived executions"}
-                        </label>
-                    </div>
-                    if let Some(execution_summary_html) = execution_summary_html {
-                        { execution_summary_html }
-                    } else {
-                        <p>{"Loading execution summary..."}</p>
-                    }
-                </section>
-            }
-            { config_html }
+            </div>
+            <div class="view-tabs deployment-detail-tabs">
+                { tab_button("Overview", DeploymentTab::Overview) }
+                { tab_button("Components", DeploymentTab::Components) }
+                { tab_button("TOML", DeploymentTab::Toml) }
+            </div>
+            <div class="deployment-tab-content">{ tab_content }</div>
         </>
     }
 }

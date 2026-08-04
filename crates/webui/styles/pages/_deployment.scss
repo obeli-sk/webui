@@ -130,6 +130,49 @@
     }
 }
 
+.deployment-detail-header {
+    padding-bottom: $spacing-md;
+    border-bottom: 1px solid $color-border-primary;
+}
+
+.deployment-detail-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: $spacing-sm;
+
+    h3 {
+        margin: 0;
+    }
+}
+
+.deployment-detail-id {
+    margin-top: $spacing-xs;
+    color: $color-text-secondary;
+    font-family: $font-family-mono;
+    font-size: $font-size-sm;
+}
+
+.deployment-detail-metadata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-sm $spacing-lg;
+    margin-top: $spacing-sm;
+    color: $color-text-secondary;
+    font-size: $font-size-sm;
+}
+
+.deployment-detail-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: $spacing-md;
+
+    .deployment-actions {
+        margin-right: auto;
+    }
+}
+
 .deployment-section {
     margin-bottom: 1rem;
 
@@ -144,8 +187,45 @@
     }
 }
 
+.deployment-component-list {
+    overflow: hidden;
+    background: $color-bg-secondary;
+    border: 1px solid $color-border-primary;
+    border-radius: $border-radius-lg;
+}
+
+.deployment-component-card {
+    padding: $spacing-md;
+
+    & + & {
+        border-top: 1px solid $color-border-primary;
+    }
+
+    > header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: $spacing-md;
+        margin-bottom: $spacing-sm;
+    }
+
+    .component-name {
+        font-family: $font-family-mono;
+        font-weight: 600;
+    }
+
+    .component-link {
+        flex: none;
+        font-size: $font-size-sm;
+    }
+
+    .component-empty-state {
+        margin: 0;
+    }
+}
+
 .deployment-executions {
-    margin: 1rem 0;
+    max-width: none;
 }
 
 .deployment-section-heading {
@@ -164,24 +244,45 @@
 }
 
 .deployment-execution-summary {
-    border-collapse: collapse;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: $spacing-sm;
+}
 
-    th,
-    td {
-        border-bottom: 1px solid $color-border-primary;
-        padding: 0.35rem 1rem 0.35rem 0;
-    }
+.execution-metric {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-xs;
+    padding: $spacing-md;
+    background: $color-bg-secondary;
+    border: 1px solid $color-border-primary;
+    border-radius: $border-radius-lg;
 
-    th {
+    > span {
         color: $color-text-secondary;
-        font-weight: normal;
-        text-align: left;
+        font-size: $font-size-sm;
     }
 
-    td.number {
-        min-width: 4rem;
-        text-align: right;
+    strong {
+        font-size: $font-size-lg;
+        line-height: 1;
     }
+
+    &.empty {
+        opacity: 0.5;
+    }
+}
+
+.deployment-detail-tabs {
+    margin-top: 0;
+}
+
+.deployment-tab-content {
+    min-height: 12rem;
+}
+
+.secondary-text {
+    color: $color-text-secondary;
 }
 
 .component-config {
@@ -206,6 +307,25 @@
             font-weight: normal;
             opacity: 0.8;
         }
+    }
+
+    > h5 {
+        margin: $spacing-md 0 $spacing-xs;
+    }
+}
+
+.component-exports {
+    h6 {
+        margin: $spacing-sm 0 $spacing-xs;
+        color: $color-text-secondary;
+        font-family: $font-family-mono;
+        font-size: $font-size-sm;
+        font-weight: 500;
+    }
+
+    ul {
+        margin: 0;
+        padding-left: $spacing-lg;
     }
 }
 
