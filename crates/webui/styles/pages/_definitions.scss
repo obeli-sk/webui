@@ -3,6 +3,7 @@
 // ============================================
 // Used by:
 //   - src/components/component_list_page.rs
+//   - src/components/deployment_config_view.rs
 // ============================================
 @use '../base/variables' as *;
 
@@ -60,4 +61,106 @@
 
 .component-detail-tab-content {
   min-height: 10rem;
+}
+
+.component-sources {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  margin-top: $spacing-md;
+}
+
+.source-block {
+  overflow: hidden;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-lg;
+  background: $color-bg-primary;
+
+  > summary {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    min-height: 2.5rem;
+    padding: $spacing-sm $spacing-md;
+    cursor: pointer;
+    list-style: none;
+    background: $color-bg-secondary;
+    font-family: $font-family-mono;
+    font-size: $font-size-sm;
+    font-weight: 600;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: '▸';
+      flex: none;
+      color: $color-text-secondary;
+      transition: transform $transition-fast;
+    }
+
+    &:hover {
+      background: $color-bg-tertiary;
+    }
+
+    &:focus-visible {
+      outline: 2px solid $color-accent-cyan;
+      outline-offset: -2px;
+    }
+  }
+
+  &[open] {
+    > summary {
+      border-bottom: 1px solid $color-border-primary;
+
+      &::before {
+        transform: rotate(90deg);
+      }
+    }
+  }
+
+  .source-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  > p {
+    margin: 0;
+    padding: $spacing-md;
+    color: $color-text-secondary;
+
+    &.error {
+      color: $color-accent-red;
+    }
+  }
+
+  .source-code {
+    position: relative;
+
+    .copy-button {
+      position: absolute;
+      top: $spacing-sm;
+      right: $spacing-sm;
+      z-index: 1;
+      padding: 2px 8px;
+      font-size: $font-size-sm;
+    }
+
+    .code-block-container {
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+    }
+
+    .code-scroll-area {
+      padding: $spacing-sm 0;
+      background: $color-bg-primary;
+    }
+
+    td.line-number {
+      background: $color-bg-tertiary;
+    }
+  }
 }

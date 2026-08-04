@@ -4,6 +4,7 @@ use crate::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
         component_list_page::ComponentQuery,
         copy_button::CopyButton,
+        execution_list_page::ExecutionQuery,
         ffqn_with_links::FfqnWithLinks,
         function_signature::FunctionSignature,
     },
@@ -143,12 +144,17 @@ fn backtrace_sources(table: &Value) -> Vec<SourceView> {
 
 /// The script source of a JS/exec component: inline `content`, or its `location`
 /// resolved to an OCI image, a CAS blob (by `content_digest`), or an external path.
-fn script_source(table: &Value) -> Option<SourceView> {
+fn script_source(table: &Value, inline_extension: Option<&str>) -> Option<SourceView> {
     if let Some(content) = table.get("content").and_then(Value::as_str) {
-        let file_name = table
-            .get("location")
-            .and_then(Value::as_str)
-            .map_or_else(|| "inline source".to_string(), file_name_of);
+        let file_name = table.get("location").and_then(Value::as_str).map_or_else(
+            || {
+                inline_extension.map_or_else(
+                    || "inline source".to_string(),
+                    |extension| format!("inline source.{extension}"),
+                )
+            },
+            file_name_of,
+        );
         return Some(SourceView {
             file_name,
             content: SourceContent::Inline(content.to_string()),
@@ -207,7 +213,8 @@ pub fn build_sections_from_manifest(manifest: &Value) -> Vec<SectionView> {
                 let mut config = table.clone();
                 let mut sources = Vec::new();
                 if has_script {
-                    if let Some(source) = script_source(table) {
+                    let inline_extension = toml_key.ends_with("_js").then_some("js");
+                    if let Some(source) = script_source(table, inline_extension) {
                         sources.push(source);
                     }
                     strip_path(&mut config, &["content"]);
@@ -322,6 +329,11 @@ pub struct CollapsibleSourceProps {
     pub component_id: Option<grpc_client::ComponentId>,
 }
 
+struct PreparedSource {
+    content: String,
+    highlighted: Rc<[(Html, usize)]>,
+}
+
 /// A `<details>` block that renders (and for `Fetch` sources downloads) the
 /// source code lazily on first expansion.
 #[component(CollapsibleSource)]
@@ -332,13 +344,18 @@ pub fn collapsible_source(
     }: &CollapsibleSourceProps,
 ) -> Html {
     let opened = use_state(|| false);
-    let fetched = use_state(|| None::<Result<String, String>>);
+    let has_opened = use_state(|| false);
+    let fetched = use_state(|| None::<Rc<Result<String, String>>>);
 
     let ontoggle = {
         let opened = opened.clone();
+        let has_opened = has_opened.clone();
         Callback::from(move |event: Event| {
             let details: web_sys::HtmlElement = event.target_unchecked_into();
             let is_open = details.has_attribute("open");
+            if is_open {
+                has_opened.set(true);
+            }
             opened.set(is_open);
         })
     };
@@ -355,9 +372,9 @@ pub fn collapsible_source(
             match &source.content {
                 SourceContent::Fetch { file } => {
                     let Some(component_id) = component_id else {
-                        fetched.set(Some(Err(
+                        fetched.set(Some(Rc::new(Err(
                             "component not found in this deployment".to_string()
-                        )));
+                        ))));
                         return;
                     };
                     let file = file.clone();
@@ -372,11 +389,11 @@ pub fn collapsible_source(
                                 file,
                             })
                             .await;
-                        fetched.set(Some(
+                        fetched.set(Some(Rc::new(
                             response
                                 .map(|resp| resp.into_inner().content)
                                 .map_err(|err| err.message().to_string()),
-                        ));
+                        )));
                     });
                 }
                 SourceContent::FetchFile { digest } => {
@@ -389,13 +406,13 @@ pub fn collapsible_source(
                         let response = client
                             .get_file(grpc_client::GetFileRequest { digest })
                             .await;
-                        fetched.set(Some(
+                        fetched.set(Some(Rc::new(
                             response
                                 .map(|resp| {
                                     String::from_utf8_lossy(&resp.into_inner().content).into_owned()
                                 })
                                 .map_err(|err| err.message().to_string()),
-                        ));
+                        )));
                     });
                 }
                 _ => {}
@@ -403,15 +420,41 @@ pub fn collapsible_source(
         });
     }
 
+    // Preparing syntax-highlighted lines is relatively expensive. Keep the result
+    // after the first expansion so reopening a fetched file is immediate.
+    let prepared_source = use_memo(
+        (source.clone(), fetched.as_ref().cloned(), *has_opened),
+        |(source, fetched, has_opened)| {
+            if !has_opened {
+                return None;
+            }
+            let content = match &source.content {
+                SourceContent::Inline(content) => Some(content.clone()),
+                SourceContent::Fetch { .. } | SourceContent::FetchFile { .. } => fetched
+                    .as_ref()
+                    .and_then(|result| result.as_ref().as_ref().ok())
+                    .cloned(),
+                SourceContent::Oci { .. } | SourceContent::ExternalPath { .. } => None,
+            }?;
+            let language = PathBuf::from(&source.file_name)
+                .extension()
+                .map(|extension| extension.to_string_lossy().to_string());
+            Some(PreparedSource {
+                highlighted: Rc::from(highlight_code_line_by_line(&content, language.as_deref())),
+                content,
+            })
+        },
+    );
+
     let body = if !*opened {
         html! {}
     } else {
-        let inline_content = match &source.content {
-            SourceContent::Inline(content) => Some(content.clone()),
+        let source_available = match &source.content {
+            SourceContent::Inline(_) => true,
             SourceContent::Oci { image } => {
                 return html! {
                     <details {ontoggle} class="source-block">
-                        <summary>{ &source.file_name }</summary>
+                        <summary><span class="source-file-name">{ &source.file_name }</span></summary>
                         <p>{ format!("Source is stored in the OCI image `{image}`.") }</p>
                     </details>
                 };
@@ -419,19 +462,19 @@ pub fn collapsible_source(
             SourceContent::ExternalPath { path } => {
                 return html! {
                     <details {ontoggle} class="source-block">
-                        <summary>{ &source.file_name }</summary>
+                        <summary><span class="source-file-name">{ &source.file_name }</span></summary>
                         <p>{ format!("Source is read at runtime from the external path `{path}`.") }</p>
                     </details>
                 };
             }
             SourceContent::Fetch { .. } | SourceContent::FetchFile { .. } => {
-                match fetched.as_ref() {
-                    None => None,
-                    Some(Ok(content)) => Some(content.clone()),
+                match fetched.as_ref().map(Rc::as_ref) {
+                    None => false,
+                    Some(Ok(_)) => true,
                     Some(Err(err)) => {
                         return html! {
                             <details {ontoggle} class="source-block">
-                                <summary>{ &source.file_name }</summary>
+                                <summary><span class="source-file-name">{ &source.file_name }</span></summary>
                                 <p class="error">{ format!("Cannot fetch source: {err}") }</p>
                             </details>
                         };
@@ -439,33 +482,32 @@ pub fn collapsible_source(
                 }
             }
         };
-        match inline_content {
-            None => html! { <p>{"Loading..."}</p> },
-            Some(content) => {
-                let language = PathBuf::from(&source.file_name)
-                    .extension()
-                    .map(|e| e.to_string_lossy().to_string());
-                let highlighted: Rc<[(Html, usize)]> =
-                    Rc::from(highlight_code_line_by_line(&content, language.as_deref()));
-                html! {
-                    <div class="source-code">
-                        <CopyButton text={content} />
-                        <SyntectCodeBlock
-                            source={highlighted}
-                            focus_line={None}
-                            lines_above={0}
-                            lines_below={0}
-                            on_expand={Callback::from(|_| {})}
-                        />
-                    </div>
+        if source_available {
+            match prepared_source.as_ref() {
+                None => html! { <p>{"Loading..."}</p> },
+                Some(prepared) => {
+                    html! {
+                        <div class="source-code">
+                            <CopyButton text={prepared.content.clone()} />
+                            <SyntectCodeBlock
+                                source={prepared.highlighted.clone()}
+                                focus_line={None}
+                                lines_above={0}
+                                lines_below={0}
+                                on_expand={Callback::from(|_| {})}
+                            />
+                        </div>
+                    }
                 }
             }
+        } else {
+            html! { <p>{"Loading..."}</p> }
         }
     };
 
     html! {
         <details {ontoggle} class="source-block">
-            <summary>{ &source.file_name }</summary>
+            <summary><span class="source-file-name">{ &source.file_name }</span></summary>
             { body }
         </details>
     }
@@ -527,30 +569,45 @@ pub fn deployment_config_view(
                                     }
                                     </header>
                                 if !exports.is_empty() {
-                                    { for exports.iter().map(|(interface, functions)| html! {
-                                        <div class="component-exports">
-                                            <h6>{interface.to_string()}</h6>
-                                            <ul>
-                                                { for functions.iter().map(|function| {
-                                                    let ffqn = FunctionFqn::from_fn_detail(function)
-                                                        .expect("exported function must be parseable");
-                                                    html! {
-                                                        <li>
-                                                            <FfqnWithLinks
-                                                                {ffqn}
-                                                                hide_submit={!*allow_submit || !function.submittable}
-                                                            />
-                                                            {": "}
-                                                            <FunctionSignature
-                                                                params={function.params.clone()}
-                                                                return_type={function.return_type.clone()}
-                                                            />
-                                                        </li>
-                                                    }
-                                                }) }
-                                            </ul>
-                                        </div>
-                                    }) }
+                                    <div class="deployment-component-exports">
+                                        { for exports.iter().map(|(interface, functions)| html! {
+                                            <section class="types-interface">
+                                                <h4>
+                                                    <Link<Route, ExecutionQuery>
+                                                        to={Route::ExecutionList}
+                                                        query={ExecutionQuery {
+                                                            ffqn_prefix: Some(interface.to_string()),
+                                                            show_derived: true,
+                                                            ..Default::default()
+                                                        }}
+                                                    >
+                                                        {interface.to_string()}
+                                                    </Link<Route, ExecutionQuery>>
+                                                </h4>
+                                                <ul>
+                                                    { for functions.iter().map(|function| {
+                                                        let ffqn = FunctionFqn::from_fn_detail(function)
+                                                            .expect("exported function must be parseable");
+                                                        html! {
+                                                            <li>
+                                                                <FfqnWithLinks
+                                                                    {ffqn}
+                                                                    hide_submit={!*allow_submit || !function.submittable}
+                                                                />
+                                                                {": "}
+                                                                <span>
+                                                                    <FunctionSignature
+                                                                        params={function.params.clone()}
+                                                                        return_type={function.return_type.clone()}
+                                                                    />
+                                                                </span>
+                                                            </li>
+                                                        }
+                                                    }) }
+                                                </ul>
+                                            </section>
+                                        }) }
+                                    </div>
                                 } else {
                                     <p class="component-empty-state">{"No exported functions."}</p>
                                 }

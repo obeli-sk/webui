@@ -22,7 +22,10 @@ use std::ops::Deref;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
-use yew_router::prelude::*;
+use yew_router::{
+    history::{BrowserHistory, History},
+    prelude::*,
+};
 
 #[derive(Properties, PartialEq)]
 pub struct DeploymentDetailPageProps {
@@ -35,6 +38,24 @@ enum DeploymentTab {
     Overview,
     Components,
     Toml,
+}
+
+impl DeploymentTab {
+    fn from_hash(hash: &str) -> Self {
+        match hash.strip_prefix('#').unwrap_or(hash) {
+            "components" => Self::Components,
+            "toml" => Self::Toml,
+            _ => Self::Overview,
+        }
+    }
+
+    fn fragment(self) -> &'static str {
+        match self {
+            Self::Overview => "overview",
+            Self::Components => "components",
+            Self::Toml => "toml",
+        }
+    }
 }
 
 fn status_badge(status: DeploymentStatus) -> Html {
@@ -66,8 +87,9 @@ pub fn deployment_detail_page(
     let components_by_name = use_state(HashMap::<String, grpc_client::Component>::new);
     // Bumped after a successful switch action to refetch the deployment.
     let refresh = use_state(|| 0u32);
-    let active_tab = use_state(DeploymentTab::default);
     let show_derived = use_state(|| false);
+    let location = use_location().expect("location must be available inside a router");
+    let active_tab = DeploymentTab::from_hash(location.hash());
 
     {
         let deployment_state = deployment_state.clone();
@@ -325,11 +347,20 @@ pub fn deployment_detail_page(
     };
 
     let tab_button = |label: &'static str, tab: DeploymentTab| {
-        let active_tab = active_tab.clone();
+        let tab_url = format!(
+            "{}{}#{}",
+            location.path(),
+            location.query_str(),
+            tab.fragment()
+        );
         html! {
             <button
-                class={classes!((*active_tab == tab).then_some("active"))}
-                onclick={Callback::from(move |_| active_tab.set(tab))}
+                class={classes!((active_tab == tab).then_some("active"))}
+                onclick={Callback::from(move |_| {
+                    if active_tab != tab {
+                        BrowserHistory::new().push(&tab_url);
+                    }
+                })}
             >
                 {label}
             </button>
@@ -361,7 +392,7 @@ pub fn deployment_detail_page(
         </section>
     };
 
-    let tab_content = match *active_tab {
+    let tab_content = match active_tab {
         DeploymentTab::Overview => overview_html,
         DeploymentTab::Components => components_html,
         DeploymentTab::Toml => toml_html,

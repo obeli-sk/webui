@@ -27,6 +27,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew_router::{
+    history::{BrowserHistory, History},
     hooks::{use_location, use_navigator},
     prelude::Link,
 };
@@ -51,6 +52,28 @@ enum ComponentDetailTab {
     Imports,
     Wit,
     Toml,
+}
+
+impl ComponentDetailTab {
+    fn from_hash(hash: &str) -> Self {
+        match hash.strip_prefix('#').unwrap_or(hash) {
+            "sources" => Self::Sources,
+            "imports" => Self::Imports,
+            "wit" => Self::Wit,
+            "toml" => Self::Toml,
+            _ => Self::Exports,
+        }
+    }
+
+    fn fragment(self) -> &'static str {
+        match self {
+            Self::Exports => "exports",
+            Self::Sources => "sources",
+            Self::Imports => "imports",
+            Self::Wit => "wit",
+            Self::Toml => "toml",
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -87,7 +110,7 @@ pub fn component_list_page(
 
     let wit_state = use_state(|| None);
     let wit_loaded = use_state(|| false);
-    let selected_tab = use_state(|| ComponentDetailTab::Exports);
+    let selected_tab = ComponentDetailTab::from_hash(location.hash());
     let deployment_config = use_state(|| None::<Result<Option<ComponentDeploymentConfig>, String>>);
 
     // Resolve the selected component. Prefer the active deployment's already-loaded
@@ -156,10 +179,8 @@ pub fn component_list_page(
         {
             let wit_state = wit_state.clone();
             let wit_loaded = wit_loaded.clone();
-            let selected_tab = selected_tab.clone();
             let notifications = notifications.clone();
             move |(component, deployment_id, is_active_deployment)| {
-                selected_tab.set(ComponentDetailTab::Exports);
                 wit_state.set(None);
                 wit_loaded.set(false);
                 let Some(component) = component.clone() else {
@@ -415,17 +436,26 @@ pub fn component_list_page(
                 },
             );
             let tab_button = |label: &'static str, tab: ComponentDetailTab| {
-                let selected_tab = selected_tab.clone();
+                let tab_url = format!(
+                    "{}{}#{}",
+                    location.path(),
+                    location.query_str(),
+                    tab.fragment()
+                );
                 html! {
                     <button
-                        class={classes!((*selected_tab == tab).then_some("active"))}
-                        onclick={Callback::from(move |_| selected_tab.set(tab))}
+                        class={classes!((selected_tab == tab).then_some("active"))}
+                        onclick={Callback::from(move |_| {
+                            if selected_tab != tab {
+                                BrowserHistory::new().push(&tab_url);
+                            }
+                        })}
                     >
                         {label}
                     </button>
                 }
             };
-            let tab_content = match *selected_tab {
+            let tab_content = match selected_tab {
                 ComponentDetailTab::Exports => exported_functions,
                 ComponentDetailTab::Sources => match deployment_config.as_ref() {
                     None => html! { <p class="component-empty-state">{"Loading sources..."}</p> },
