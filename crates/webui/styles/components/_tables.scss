@@ -3,7 +3,6 @@
 // ============================================
 // Used by:
 //   - src/components/execution_list_page.rs   (table.execution_list)
-//   - src/components/deployment_list_page.rs  (table.deployment_list)
 // ============================================
 @use '../base/variables' as *;
 
@@ -16,9 +15,8 @@
   }
 }
 
-// Execution & Deployment List Tables
-table.execution_list,
-table.deployment_list {
+// Execution List Table
+table.execution_list {
   width: 100%;
   border-collapse: collapse;
 
@@ -31,23 +29,5 @@ table.deployment_list {
 
   th {
     background-color: $color-border-primary;
-  }
-}
-
-table.deployment_list {
-  th.number,
-  td.number {
-    text-align: right;
-    width: 100px;
-  }
-
-  .description {
-    margin-top: 0.25rem;
-    color: $color-text-secondary;
-    font-size: $font-size-sm;
-    max-width: 28rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }

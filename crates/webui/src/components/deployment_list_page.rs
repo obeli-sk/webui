@@ -1,7 +1,7 @@
 use crate::{
     app::{AppState, Route},
     components::{
-        execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
+        execution_list_page::{ExecutionQuery, StatusFilterList},
         notification::{Notification, NotificationContext},
     },
     grpc::grpc_client::{
@@ -9,7 +9,9 @@ use crate::{
         deployment_repository_client::DeploymentRepositoryClient,
         list_deployments_request::{NewerThan, OlderThan, Pagination},
     },
+    util::time::{RelativeAgo, format_date},
 };
+use chrono::DateTime;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -25,9 +27,6 @@ pub struct DeploymentQuery {
     pub direction: Option<Direction>,
     #[serde(default)]
     pub include_cursor: bool,
-    /// Count (and link to) child executions as well; top-level only by default.
-    #[serde(default)]
-    pub show_derived: bool,
 }
 
 impl DeploymentQuery {
@@ -149,7 +148,7 @@ pub fn deployment_list_page() -> Html {
             spawn_local(async move {
                 let mut deployment_client = DeploymentRepositoryClient::new(crate::auth::client());
 
-                let page_size = 20;
+                let page_size = 10;
 
                 let cursor = query_params
                     .cursor
@@ -174,7 +173,7 @@ pub fn deployment_list_page() -> Html {
                 let req = grpc_client::ListDeploymentsRequest {
                     pagination,
                     include_deployment_toml: false,
-                    include_derived: query_params.show_derived,
+                    include_derived: false,
                     include_execution_counts: true,
                     include_component_summary: true,
                 };
@@ -194,17 +193,6 @@ pub fn deployment_list_page() -> Html {
             })
         });
     }
-
-    let on_toggle_derived = {
-        let navigator = navigator.clone();
-        let query = query.clone();
-        Callback::from(move |e: Event| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            let mut new_query = query.clone();
-            new_query.show_derived = input.checked();
-            let _ = navigator.push_with_query(&Route::DeploymentList, &new_query);
-        })
-    };
 
     // Clicked on "Latest" - reset to default query
     let on_latest = {
@@ -278,28 +266,21 @@ pub fn deployment_list_page() -> Html {
                     html! {}
                 };
 
-                // Cell linking to the execution list filtered by this deployment and status.
-                // The links inherit `show_derived` so the list matches the count.
-                let show_derived = query.show_derived;
-                let count_cell = |count: u32, status: Option<StatusFilterList>| {
-                    let query = ExecutionQuery {
-                        deployment_id: Some(deployment_id.clone()),
-                        status,
-                        show_derived,
-                        ..Default::default()
-                    };
-                    html! {
-                        <td class="number">
-                            if count > 0 {
-                                <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={query}>
-                                    {count}
-                                </Link<Route, ExecutionQuery>>
-                            } else {
-                                {count}
-                            }
-                        </td>
-                    }
+                let deployed_at = deployment.last_active_at.map(DateTime::from);
+                let deployment_age = match (deployment.status(), deployed_at) {
+                    (DeploymentStatus::Active, Some(deployed_at)) => html! {
+                        <span title={format!("Deployed: {} UTC", format_date(deployed_at))}>
+                            {"Deployed "}<RelativeAgo target={deployed_at} />
+                        </span>
+                    },
+                    (_, Some(deployed_at)) => html! {
+                        <span title={format!("Last deployed: {} UTC", format_date(deployed_at))}>
+                            {"Last deployed "}<RelativeAgo target={deployed_at} />
+                        </span>
+                    },
+                    _ => html! { <span class="not-deployed">{"Not deployed yet"}</span> },
                 };
+
                 let execution_summary = deployment_summary.execution_summary.as_ref();
                 let locked = execution_summary.map_or(0, |summary| summary.locked);
                 let pending = execution_summary.map_or(0, |summary| summary.pending);
@@ -322,6 +303,15 @@ pub fn deployment_list_page() -> Html {
                     + finished_ok
                     + finished_error
                     + finished_execution_failure;
+                let all_executions_query = ExecutionQuery {
+                    deployment_id: Some(deployment_id.clone()),
+                    ..Default::default()
+                };
+                let in_progress_query = ExecutionQuery {
+                    deployment_id: Some(deployment_id.clone()),
+                    status: Some(StatusFilterList::in_progress()),
+                    ..Default::default()
+                };
 
                 let on_diff_toggle = {
                     let selected_for_diff = selected_for_diff.clone();
@@ -339,58 +329,59 @@ pub fn deployment_list_page() -> Html {
                 };
 
                 html! {
-                    <tr key={deployment_id.clone()}>
-                        <td>
+                    <article
+                        key={deployment_id.clone()}
+                        class="deployment-list-item"
+                    >
+                        <label class="deployment-compare" title="Select for comparison">
                             <input
                                 type="checkbox"
-                                title="Select for diff"
                                 checked={selected_for_diff.contains(&deployment_id)}
                                 onchange={on_diff_toggle}
                             />
-                        </td>
-                        <td>
-                            <Link<Route> to={Route::DeploymentDetail {
-                                deployment_id: DeploymentId { id: deployment_id.clone() },
-                            }}>
-                                {&deployment_id}
-                            </Link<Route>>
-                            {" "}
-                            {status_badge}
-                            {" "}
-                            {exec_badge}
-                            {" "}
-                            {empty_badge}
-                            if let Some(description) = description {
-                                <div class="description">{ description }</div>
+                        </label>
+                        <div class="deployment-summary">
+                            <div class="deployment-title">
+                                <Link<Route> to={Route::DeploymentDetail {
+                                    deployment_id: DeploymentId { id: deployment_id.clone() },
+                                }}>
+                                    if let Some(description) = description {
+                                        <span class="deployment-name">{ description }</span>
+                                    } else {
+                                        <span class="deployment-name deployment-id-primary">{&deployment_id}</span>
+                                    }
+                                </Link<Route>>
+                                {status_badge}
+                                {exec_badge}
+                                {empty_badge}
+                            </div>
+                            if description.is_some() {
+                                <div class="deployment-id">{ &deployment_id }</div>
                             }
-                        </td>
-                        { count_cell(total, None) }
-                        { count_cell(in_progress, Some(StatusFilterList::in_progress())) }
-                        { count_cell(
-                            scheduled,
-                            Some(StatusFilterList::single(StatusFilter::Scheduled)),
-                        ) }
-                        { count_cell(
-                            paused,
-                            Some(StatusFilterList::single(StatusFilter::Paused)),
-                        ) }
-                        { count_cell(
-                            cancelling,
-                            Some(StatusFilterList::single(StatusFilter::Cancelling)),
-                        ) }
-                        { count_cell(
-                            finished_ok,
-                            Some(StatusFilterList::single(StatusFilter::FinishedOk)),
-                        ) }
-                        { count_cell(
-                            finished_error,
-                            Some(StatusFilterList::single(StatusFilter::FinishedError)),
-                        ) }
-                        { count_cell(
-                            finished_execution_failure,
-                            Some(StatusFilterList::single(StatusFilter::FinishedExecutionFailure)),
-                        ) }
-                    </tr>
+                        </div>
+                        <div class="deployment-activity">{ deployment_age }</div>
+                        <div class="deployment-execution-counts">
+                            if total > 0 {
+                                <Link<Route, ExecutionQuery>
+                                    to={Route::ExecutionList}
+                                    query={all_executions_query}
+                                >
+                                    {total}{if total == 1 { " execution" } else { " executions" }}
+                                </Link<Route, ExecutionQuery>>
+                            } else {
+                                <span class="zero-executions">{"0 executions"}</span>
+                            }
+                            if in_progress > 0 {
+                                <Link<Route, ExecutionQuery>
+                                    classes="in-progress-count"
+                                    to={Route::ExecutionList}
+                                    query={in_progress_query}
+                                >
+                                    {in_progress}{" in progress"}
+                                </Link<Route, ExecutionQuery>>
+                            }
+                        </div>
+                    </article>
                 }
             })
             .collect::<Vec<_>>();
@@ -453,38 +444,7 @@ pub fn deployment_list_page() -> Html {
             <>
                 <h3>{"Deployments"}</h3>
 
-                <div class="executions-filter">
-                    <div class="checkboxes">
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={query.show_derived}
-                                onchange={on_toggle_derived}
-                            />
-                            {" Show Derived Executions"}
-                        </label>
-                    </div>
-                </div>
-
-                <table class="deployment_list">
-                    <thead>
-                        <tr>
-                            <th title="Select two deployments to compare">{"Diff"}</th>
-                            <th>{"Deployment ID"}</th>
-                            <th class="number" title="All executions of this deployment">{"Executions"}</th>
-                            <th class="number" title="Locked, pending or blocked">{"In progress"}</th>
-                            <th class="number" title="Pending with the scheduled time in the future">{"Scheduled"}</th>
-                            <th class="number" title="Paused, regardless of the underlying state">{"Paused"}</th>
-                            <th class="number" title="Cancellation requested; teardown in progress">{"Cancelling"}</th>
-                            <th class="number" title="Finished successfully">{"OK"}</th>
-                            <th class="number" title="Finished with the err variant of the result type">{"Errors"}</th>
-                            <th class="number" title="Execution failures: traps, timeouts, nondeterminism, cancellations">{"Failures"}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        { rows }
-                    </tbody>
-                </table>
+                <div class="deployment-list">{ rows }</div>
 
                 <div class="pagination">
                     if let Some(diff_route) = diff_route {
@@ -497,7 +457,7 @@ pub fn deployment_list_page() -> Html {
                         </button>
                     }
                     <button onclick={&on_latest}>
-                        {"<< Latest"}
+                        {"Latest"}
                     </button>
 
                     if let Some(query) = newer_page_query {
@@ -505,11 +465,11 @@ pub fn deployment_list_page() -> Html {
                             let on_page_change = on_page_change.clone();
                             move |_| on_page_change.emit(query.clone())
                         }>
-                            {"< Newer"}
+                            {"← Newer"}
                         </button>
                     } else {
                         <button disabled={true}>
-                            {"< Newer"}
+                            {"← Newer"}
                         </button>
                     }
 
@@ -518,11 +478,11 @@ pub fn deployment_list_page() -> Html {
                             let on_page_change = on_page_change.clone();
                             move |_| on_page_change.emit(query.clone())
                         }>
-                            {"Older >"}
+                            {"Older →"}
                         </button>
                     } else {
                         <button disabled={true}>
-                            {"Older >"}
+                            {"Older →"}
                         </button>
                     }
                 </div>

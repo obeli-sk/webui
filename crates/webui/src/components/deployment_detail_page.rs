@@ -3,13 +3,14 @@ use crate::{
     components::{
         deployment_actions::DeploymentActions,
         deployment_config_view::{DeploymentConfigView, build_sections_from_manifest, toml_block},
-        execution_list_page::ExecutionQuery,
+        execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
         notification::{Notification, NotificationContext},
     },
     grpc::grpc_client::{
-        self, DeploymentId, DeploymentStatus,
+        self, DeploymentExecutionSummary, DeploymentId, DeploymentStatus,
         deployment_repository_client::DeploymentRepositoryClient,
         function_repository_client::FunctionRepositoryClient,
+        list_deployments_request::{OlderThan, Pagination},
     },
     util::time::format_date,
 };
@@ -19,6 +20,7 @@ use log::error;
 use serde_json::Value;
 use std::ops::Deref;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
@@ -52,11 +54,13 @@ pub fn deployment_detail_page(
     let app_state = use_context::<AppState>().expect("AppState context must be provided");
 
     let deployment_state = use_state(|| None::<grpc_client::Deployment>);
+    let execution_summary = use_state(|| None::<DeploymentExecutionSummary>);
     let components_by_name = use_state(HashMap::<String, grpc_client::ComponentId>::new);
     // Bumped after a successful switch action to refetch the deployment.
     let refresh = use_state(|| 0u32);
     // Whether to show the configuration as one TOML document instead of per-component sections.
     let show_toml = use_state(|| false);
+    let show_derived = use_state(|| false);
 
     {
         let deployment_state = deployment_state.clone();
@@ -109,6 +113,59 @@ pub fn deployment_detail_page(
                         Err(e) => {
                             // Components may be unavailable for old deployments; not fatal.
                             error!("Failed to list components of the deployment: {e:?}");
+                        }
+                    }
+                });
+            },
+        );
+    }
+
+    {
+        let deployment_id = deployment_id.clone();
+        let execution_summary = execution_summary.clone();
+        let notifications = notifications.clone();
+        use_effect_with(
+            (deployment_id.clone(), *show_derived, *refresh),
+            move |(deployment_id, show_derived, _)| {
+                let deployment_id = deployment_id.clone();
+                let show_derived = *show_derived;
+                execution_summary.set(None);
+                spawn_local(async move {
+                    let mut client = DeploymentRepositoryClient::new(crate::auth::client());
+                    let response = client
+                        .list_deployments(grpc_client::ListDeploymentsRequest {
+                            pagination: Some(Pagination::OlderThan(OlderThan {
+                                length: 1,
+                                cursor: Some(deployment_id.clone()),
+                                including_cursor: true,
+                            })),
+                            include_deployment_toml: false,
+                            include_derived: show_derived,
+                            include_execution_counts: true,
+                            include_component_summary: false,
+                        })
+                        .await;
+                    match response {
+                        Ok(response) => {
+                            let summary =
+                                response
+                                    .into_inner()
+                                    .deployments
+                                    .into_iter()
+                                    .find(|summary| {
+                                        summary.deployment.as_ref().and_then(|deployment| {
+                                            deployment.deployment_id.as_ref()
+                                        }) == Some(&deployment_id)
+                                    })
+                                    .and_then(|summary| summary.execution_summary);
+                            execution_summary.set(summary);
+                        }
+                        Err(e) => {
+                            error!("Failed to load deployment execution summary: {e:?}");
+                            notifications.push(Notification::error(format!(
+                                "Failed to load deployment execution summary: {}",
+                                e.message()
+                            )));
                         }
                     }
                 });
@@ -217,9 +274,64 @@ pub fn deployment_detail_page(
         Callback::from(move |()| refresh.set(*refresh + 1))
     };
 
-    let execution_link_query = ExecutionQuery {
-        deployment_id: Some(deployment_id.id.clone()),
-        ..Default::default()
+    let execution_summary_html = execution_summary.as_ref().map(|summary| {
+        let total = summary.locked
+            + summary.pending
+            + summary.scheduled
+            + summary.blocked
+            + summary.paused
+            + summary.cancelling
+            + summary.finished_ok
+            + summary.finished_error
+            + summary.finished_execution_failure;
+        let count_row = |label: &'static str,
+                         count: u32,
+                         status: Option<StatusFilterList>| {
+            let query = ExecutionQuery {
+                deployment_id: Some(deployment_id.id.clone()),
+                status,
+                show_derived: *show_derived,
+                ..Default::default()
+            };
+            html! {
+                <tr>
+                    <th>{label}</th>
+                    <td class="number">
+                        if count > 0 {
+                            <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={query}>
+                                {count}
+                            </Link<Route, ExecutionQuery>>
+                        } else {
+                            {count}
+                        }
+                    </td>
+                </tr>
+            }
+        };
+        html! {
+            <table class="deployment-execution-summary">
+                <tbody>
+                    { count_row("All executions", total, None) }
+                    { count_row("Locked", summary.locked, Some(StatusFilterList::single(StatusFilter::Locked))) }
+                    { count_row("Pending", summary.pending, Some(StatusFilterList::single(StatusFilter::Pending))) }
+                    { count_row("Scheduled", summary.scheduled, Some(StatusFilterList::single(StatusFilter::Scheduled))) }
+                    { count_row("Blocked", summary.blocked, Some(StatusFilterList::single(StatusFilter::Blocked))) }
+                    { count_row("Paused", summary.paused, Some(StatusFilterList::single(StatusFilter::Paused))) }
+                    { count_row("Cancelling", summary.cancelling, Some(StatusFilterList::single(StatusFilter::Cancelling))) }
+                    { count_row("Finished successfully", summary.finished_ok, Some(StatusFilterList::single(StatusFilter::FinishedOk))) }
+                    { count_row("Finished with error", summary.finished_error, Some(StatusFilterList::single(StatusFilter::FinishedError))) }
+                    { count_row("Execution failures", summary.finished_execution_failure, Some(StatusFilterList::single(StatusFilter::FinishedExecutionFailure))) }
+                </tbody>
+            </table>
+        }
+    });
+
+    let on_toggle_derived = {
+        let show_derived = show_derived.clone();
+        Callback::from(move |event: Event| {
+            let input: HtmlInputElement = event.target_unchecked_into();
+            show_derived.set(input.checked());
+        })
     };
 
     html! {
@@ -239,24 +351,18 @@ pub fn deployment_detail_page(
             }
             <p>
                 if let Some(created_at) = deployment.created_at {
-                    {"Created: "}{ format_date(DateTime::from(created_at)) }
+                    {"Created: "}{ format_date(DateTime::from(created_at)) }{" UTC"}
                 }
                 if let Some(last_active_at) = deployment.last_active_at {
-                    {" | Last active: "}{ format_date(DateTime::from(last_active_at)) }
+                    {" | Last deployed: "}{ format_date(DateTime::from(last_active_at)) }{" UTC"}
+                } else {
+                    {" | Last deployed: Never"}
                 }
             </p>
             <p>
-                if !is_empty {
-                    <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={execution_link_query}>
-                        {"Executions of this deployment"}
-                    </Link<Route, ExecutionQuery>>
-                }
                 if let Some(current_id) = &app_state.current_deployment_id
                     && !is_current
                 {
-                    if !is_empty {
-                        {" | "}
-                    }
                     <Link<Route> to={Route::DeploymentDiff {
                         from: current_id.clone(),
                         to: deployment_id.clone(),
@@ -270,6 +376,26 @@ pub fn deployment_detail_page(
                 status={status}
                 on_switched={on_switched}
             />
+            if !is_empty {
+                <section class="deployment-executions">
+                    <div class="deployment-section-heading">
+                        <h4>{"Executions"}</h4>
+                        <label>
+                            <input
+                                type="checkbox"
+                                checked={*show_derived}
+                                onchange={on_toggle_derived}
+                            />
+                            {" Include derived executions"}
+                        </label>
+                    </div>
+                    if let Some(execution_summary_html) = execution_summary_html {
+                        { execution_summary_html }
+                    } else {
+                        <p>{"Loading execution summary..."}</p>
+                    }
+                </section>
+            }
             { config_html }
         </>
     }

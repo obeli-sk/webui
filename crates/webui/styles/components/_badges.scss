@@ -2,14 +2,14 @@
 // Badges & Labels
 // ============================================
 // Used by:
-//   - src/components/deployment_list_page.rs  (.badge.current inside table.deployment_list)
+//   - src/components/deployment_list_page.rs  (.badge.current inside .deployment-list)
 //   - src/components/component_list_page.rs   (.component-type-label)
 // Note: header-scoped .badge styles live in _header.scss
 // ============================================
 @use '../base/variables' as *;
 
 // Deployment status badge — scoped to deployment_list_page.rs
-table.deployment_list {
+.deployment-list {
   .badge {
     display: inline-block;
     padding: 2px 8px;
