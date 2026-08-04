@@ -722,7 +722,7 @@ pub fn execution_list_page() -> Html {
 
                 let mut execution_client = ExecutionRepositoryClient::new(crate::auth::client());
 
-                let page_size = 20;
+                let page_size = 10;
 
                 let cursor = query_params
                     .cursor
@@ -921,12 +921,14 @@ pub fn execution_list_page() -> Html {
 
             let play = if app_state.ffqns_to_details.contains_key(&ffqn) {
                 html!{
-                    <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
-                        { Html::from(Icon::Play) }
-                    </Link<Route>>
+                    <span class="execution-run" title="Run this function">
+                        <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
+                            { Html::from(Icon::Play) }
+                        </Link<Route>>
+                    </span>
                 }
             } else {
-                Html::from(".")
+                Html::default()
             };
 
             let created_at: DateTime<Utc> = execution.created_at.expect("`created_at` is sent").into();
@@ -939,68 +941,76 @@ pub fn execution_list_page() -> Html {
                 None
             };
             html! {
-                <tr key={execution_id.id.clone()}>
-                    <td>
-                        // Execution id column
-                        <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
-                            {execution_id.to_string()}
-                        </Link<Route>>
-                        if query.show_details {
-                            <div title="Deployment ID">
-                                { deployment_id }
-                            </div>
-                            <div title="Component Digest">
-                                { component_digest }
-                            </div>
-                        }
-                    </td>
-                    <td>
-                        // FFQN column
-                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
-                            let mut q = query.clone();
-                            q.ffqn_prefix = Some(ffqn.ifc_fqn.to_string());
-                            q.cursor = None;
-                            q
-                        }>
-                            { ffqn.ifc_fqn.to_string() }
-                        </Link<Route, ExecutionQuery>>
-
-                        {play}
-
-                        <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
-                            let mut q = query.clone();
-                            q.ffqn_prefix = Some(ffqn.to_string());
-                            q.cursor = None;
-                            q
-                        }>
-                            { &ffqn.function_name }
-                        </Link<Route, ExecutionQuery>>
-                    </td>
-                    <td>
-                        // Status column
-                        <ExecutionStatus {status} {execution_id} />
-                    </td>
-                    <td>
-                        // Created At column
-                        <div title={created_at.to_string()}>
-                            {"Created "}
-                            if query.show_details {
-                                { created_at }
-                            } else {
-                                <RelativeAgo target={created_at} />
+                <article key={execution_id.id.clone()} class="execution-list-item">
+                    <div class="execution-summary">
+                        <div class="execution-title">
+                            <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
+                                <span class="execution-id">{execution_id.to_string()}</span>
+                            </Link<Route>>
+                        </div>
+                        <div class="execution-function">
+                            <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
+                                let mut q = query.clone();
+                                q.ffqn_prefix = Some(ffqn.ifc_fqn.to_string());
+                                q.cursor = None;
+                                q
+                            }>
+                                <span class="execution-interface">{ ffqn.ifc_fqn.to_string() }</span>
+                            </Link<Route, ExecutionQuery>>
+                            <span class="execution-function-separator">{" / "}</span>
+                            <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
+                                let mut q = query.clone();
+                                q.ffqn_prefix = Some(ffqn.to_string());
+                                q.cursor = None;
+                                q
+                            }>
+                                <span class="execution-function-name">{ &ffqn.function_name }</span>
+                            </Link<Route, ExecutionQuery>>
+                            {play}
+                        </div>
+                    </div>
+                    <div class="execution-aside">
+                        <div class="execution-status">
+                            <ExecutionStatus status={status} execution_id={execution_id.clone()} />
+                        </div>
+                        <div class="execution-timing">
+                            <span title={created_at.to_string()}>
+                                if query.show_details {
+                                    { format!("Created {created_at}") }
+                                } else {
+                                    {"Created "}<RelativeAgo target={created_at} />
+                                }
+                            </span>
+                            if let Some(durated) = durated {
+                                <span class="execution-duration" title={durated.to_string()}>
+                                    {"Took "}
+                                    {human_formatted_timedelta(durated, TimeGranularity::Fine)}
+                                </span>
                             }
                         </div>
-                        // Duration
-                        if let Some(durated) = durated {
-                            <div title={durated.to_string()}>
-                                {"Took "}
-                                {human_formatted_timedelta(durated, TimeGranularity::Fine)}
-                            </div>
-                        }
-                    </td>
-                </tr>
+                    </div>
+                    if query.show_details {
+                        <div class="execution-identifiers">
+                            <span class="execution-detail-id" title={format!("Deployment ID: {deployment_id}")}>
+                                {"Deployment "}{ deployment_id }
+                            </span>
+                            <span class="execution-detail-id" title={format!("Component digest: {component_digest}")}>
+                                {"Component "}{ component_digest }
+                            </span>
+                        </div>
+                    }
+                </article>
             }
         }).collect::<Vec<_>>();
+
+        let active_filter_count = usize::from(query.show_derived)
+            + usize::from(query.hide_finished)
+            + usize::from(query.show_details)
+            + usize::from(query.execution_id_prefix.is_some())
+            + usize::from(query.ffqn_prefix.is_some())
+            + usize::from(query.component_digest.is_some())
+            + usize::from(query.deployment_id.is_some())
+            + usize::from(query.status.is_some());
 
         // Calculate cursors for pagination
         let cursor_type = query
@@ -1047,40 +1057,50 @@ pub fn execution_list_page() -> Html {
         };
         html! {
             <ContextProvider<StatusCacheContext> context={status_cache}>
-                <h3>{"Executions"}</h3>
+                <div class="execution-list-header">
+                    <h3>{"Executions"}</h3>
+                </div>
 
-                <div class="executions-filter">
-                    <div class="checkboxes">
-                        <label>
+                <details class="executions-filter" open={active_filter_count > 0}>
+                    <summary>
+                        <span>{"Filters and display"}</span>
+                        if active_filter_count > 0 {
+                            <span class="filter-count">
+                                {active_filter_count}{" active"}
+                            </span>
+                        }
+                    </summary>
+                    <div class="execution-filter-options">
+                        <label class="filter-toggle">
                             <input
                                 type="checkbox"
                                 checked={query.show_derived}
                                 onchange={on_toggle_derived}
                             />
-                            {" Show Derived Executions"}
+                            <span>{"Include derived"}</span>
                         </label>
-                        <label>
+                        <label class="filter-toggle">
                             <input
                                 type="checkbox"
                                 checked={query.hide_finished}
                                 onchange={on_toggle_hide_finished}
                             />
-                            {" Hide Finished"}
+                            <span>{"Hide finished"}</span>
                         </label>
-                        <label>
+                        <label class="filter-toggle">
                             <input
                                 type="checkbox"
                                 checked={query.show_details}
                                 onchange={on_toggle_show_details}
                             />
-                            {" Show Details"}
+                            <span>{"Show IDs"}</span>
                         </label>
                     </div>
-                    <div class="inputs">
+                    <div class="execution-filter-fields">
                         <input
                             type="text"
                             ref={prefix_ref.clone()}
-                            placeholder="Execution ID Prefix..."
+                            placeholder="Execution ID prefix"
                             value={(query.execution_id_prefix).clone()}
                         />
                         <FunctionPrefixInput
@@ -1090,13 +1110,13 @@ pub fn execution_list_page() -> Html {
                         <input
                             type="text"
                             ref={deployment_id_ref.clone()}
-                            placeholder="Deployment ID..."
+                            placeholder="Deployment ID"
                             value={(query.deployment_id).clone()}
                         />
                         <input
                             type="text"
                             ref={component_digest_ref.clone()}
-                            placeholder="Component Digest..."
+                            placeholder="Component digest"
                             value={(query.component_digest).clone()}
                         />
                         <select onchange={on_status_change} title="Filter by execution status">
@@ -1124,29 +1144,26 @@ pub fn execution_list_page() -> Html {
                             }}
                         </select>
 
-                        <button onclick={&on_apply_filters}>{"Filter / Refresh"}</button>
-
-                        if query != ExecutionQuery::default() {
+                    </div>
+                    <div class="execution-filter-actions">
+                        <button class="filter-apply" onclick={&on_apply_filters}>{"Apply filters"}</button>
+                        if active_filter_count > 0 {
                             <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={Some(ExecutionQuery::default())}>
-                                {"Clear Filters"}
+                                {"Clear"}
                             </Link<Route, ExecutionQuery>>
                         }
                     </div>
-                </div>
+                </details>
 
-                <table class="execution_list">
-                    <tr>
-                        <th>{"Execution ID"}</th>
-                        <th>{"Function"}</th>
-                        <th>{"Status"}</th>
-                        <th>{"Timing"}</th>
-                    </tr>
-                    { rows }
-                </table>
+                if rows.is_empty() {
+                    <div class="execution-list-empty">{"No executions match these filters."}</div>
+                } else {
+                    <div class="execution-list">{ rows }</div>
+                }
 
                 <div class="pagination">
                     <button onclick={&on_apply_filters}>
-                        {"<< Latest"}
+                        {"Latest"}
                     </button>
 
                     if let Some(query) = newer_page_query {
@@ -1154,11 +1171,11 @@ pub fn execution_list_page() -> Html {
                             let on_page_change = on_page_change.clone();
                             move |_| on_page_change.emit(query.clone())
                         }>
-                            {"< Newer"}
+                            {"← Newer"}
                         </button>
                     } else {
                         <button disabled={true}>
-                            {"< Newer"}
+                            {"← Newer"}
                         </button>
                     }
 
@@ -1167,11 +1184,11 @@ pub fn execution_list_page() -> Html {
                             let on_page_change = on_page_change.clone();
                             move |_| on_page_change.emit(query.clone())
                         }>
-                            {"Older >"}
+                            {"Older →"}
                         </button>
                     } else {
                         <button disabled={true}>
-                            {"Older >"}
+                            {"Older →"}
                         </button>
                     }
                 </div>

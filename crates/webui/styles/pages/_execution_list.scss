@@ -1,0 +1,297 @@
+// Execution list page
+@use '../base/variables' as *;
+
+.execution-list-header {
+  display: flex;
+  align-items: baseline;
+  gap: $spacing-sm;
+
+  h3 {
+    margin-bottom: $spacing-sm;
+  }
+}
+
+.executions-filter {
+  margin-bottom: $spacing-md;
+  border-bottom: 1px solid $color-border-primary;
+
+  > summary {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    margin-bottom: $spacing-sm;
+    padding: $spacing-xs $spacing-sm;
+    border-radius: $border-radius-md;
+    color: $color-text-secondary;
+    cursor: pointer;
+    font-size: $font-size-sm;
+    list-style: none;
+    transition: color $transition-fast, background-color $transition-fast;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: '▸';
+      width: 1rem;
+      color: $color-text-muted;
+    }
+
+    &:hover {
+      background-color: $color-bg-tertiary;
+      color: $color-text-primary;
+    }
+  }
+
+  &[open] > summary::before {
+    content: '▾';
+  }
+
+  .filter-count {
+    margin-left: $spacing-sm;
+    padding: 0.05rem $spacing-sm;
+    border-radius: 999px;
+    background-color: rgba($color-accent-cyan, 0.12);
+    color: $color-accent-cyan;
+    font-size: $font-size-xs;
+  }
+}
+
+.execution-filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-sm;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
+  padding: $spacing-xs $spacing-sm;
+  border: 1px solid $color-border-primary;
+  border-radius: 999px;
+  color: $color-text-secondary;
+  cursor: pointer;
+  font-size: $font-size-sm;
+
+  &:has(input:checked) {
+    border-color: $color-border-secondary;
+    background-color: rgba($color-accent-cyan, 0.08);
+    color: $color-text-primary;
+  }
+
+  input {
+    margin: 0;
+    accent-color: $color-accent-cyan;
+  }
+}
+
+.execution-filter-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(14rem, 1fr)) minmax(10rem, auto);
+  gap: $spacing-sm;
+
+  input,
+  select,
+  button {
+    min-width: 0;
+    padding: 0.55rem 0.7rem;
+    background-color: $color-bg-primary;
+    border: 1px solid $color-border-primary;
+    border-radius: $border-radius-md;
+    color: $color-text-primary;
+    font-size: $font-size-sm;
+
+    &:focus {
+      outline: none;
+      border-color: $color-accent-cyan;
+    }
+  }
+
+  input,
+  .function-prefix-trigger {
+    font-family: $font-family-mono;
+  }
+
+  .function-prefix-trigger {
+    cursor: pointer;
+    text-align: left;
+  }
+}
+
+.execution-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  padding: $spacing-sm 0 $spacing-md;
+
+  .filter-apply {
+    padding: $spacing-sm $spacing-md;
+    background-color: $color-border-primary;
+    border: 1px solid $color-border-secondary;
+    border-radius: $border-radius-md;
+    color: $color-text-primary;
+    cursor: pointer;
+
+    &:hover {
+      background-color: $color-border-secondary;
+    }
+  }
+}
+
+.execution-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.execution-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: $spacing-xs $spacing-lg;
+  padding: $spacing-sm $spacing-md;
+  background-color: $color-bg-secondary;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-lg;
+  box-shadow: $shadow-sm;
+  transition: background-color $transition-fast, border-color $transition-fast;
+
+  &:hover {
+    background-color: $color-bg-tertiary;
+    border-color: $color-border-secondary;
+  }
+}
+
+.execution-summary {
+  min-width: 0;
+}
+
+.execution-title {
+  min-width: 0;
+  overflow: hidden;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-id {
+  color: $color-accent-cyan;
+}
+
+.execution-function {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-top: 0.1rem;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  white-space: nowrap;
+
+  a {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.execution-interface {
+  color: $color-text-secondary;
+}
+
+.execution-function-separator {
+  flex: 0 0 auto;
+  color: $color-text-muted;
+}
+
+.execution-function-name {
+  color: $color-accent-cyan;
+  font-weight: 600;
+}
+
+.execution-run {
+  flex: 0 0 auto;
+  margin-left: $spacing-sm;
+  font-size: $font-size-xs;
+  opacity: 0.65;
+
+  &:hover {
+    opacity: 1;
+  }
+}
+
+.execution-timing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-top: 0.1rem;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  white-space: nowrap;
+}
+
+.execution-aside {
+  align-self: center;
+  text-align: right;
+}
+
+.execution-status {
+  color: $color-text-primary;
+  font-size: $font-size-sm;
+  white-space: nowrap;
+}
+
+.execution-identifiers {
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  gap: $spacing-md;
+  padding-top: $spacing-xs;
+  border-top: 1px solid rgba($color-border-primary, 0.6);
+  font-family: $font-family-mono;
+  font-size: $font-size-xs;
+}
+
+.execution-detail-id {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-detail-id {
+  color: $color-text-muted;
+}
+
+.execution-list-empty {
+  padding: $spacing-xl;
+  border: 1px dashed $color-border-primary;
+  border-radius: $border-radius-lg;
+  color: $color-text-secondary;
+  text-align: center;
+}
+
+@media (max-width: 800px) {
+  .execution-filter-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .execution-list-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .execution-aside {
+    grid-row: 2;
+    text-align: left;
+  }
+
+  .execution-timing {
+    align-items: flex-start;
+  }
+
+  .execution-identifiers {
+    grid-column: 1;
+  }
+}

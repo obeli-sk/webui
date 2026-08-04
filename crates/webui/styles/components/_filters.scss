@@ -2,35 +2,14 @@
 // Filters
 // ============================================
 // Used by:
-//   - src/components/execution_list_page.rs   (.executions-filter)
 //   - src/components/deployment_list_page.rs  (.deployments-filter)
 // ============================================
 @use '../base/variables' as *;
 
-.executions-filter,
 .deployments-filter {
   margin-bottom: 1em;
   padding: 1em;
   border: 1px solid #ccc;
-}
-
-.executions-filter {
-  .checkboxes {
-    margin-bottom: 0.5em;
-
-    > * {
-      margin-right: 1em;
-    }
-  }
-
-  .inputs > * {
-    margin-right: 1em;
-  }
-
-  .function-prefix-trigger {
-    min-width: 22rem;
-    cursor: pointer;
-  }
 }
 
 .deployments-filter > * {

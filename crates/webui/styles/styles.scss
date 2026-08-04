@@ -21,7 +21,6 @@
 // Components
 @use 'components/header';
 @use 'components/badges';
-@use 'components/tables';
 @use 'components/buttons';
 @use 'components/forms';
 @use 'components/filters';
@@ -38,4 +37,5 @@
 @use 'pages/logs';
 @use 'pages/definitions';
 @use 'pages/execution_new';
+@use 'pages/execution_list';
 @use 'pages/deployment';
