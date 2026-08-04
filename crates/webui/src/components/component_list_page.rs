@@ -27,6 +27,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew_router::{
+    Routable,
     history::{BrowserHistory, History},
     hooks::{use_location, use_navigator},
     prelude::Link,
@@ -427,12 +428,26 @@ pub fn component_list_page(
                 || html! {
                     <Link<Route> to={Route::ComponentList}>{"Components"}</Link<Route>>
                 },
-                |deployment_id| html! {
-                    <Link<Route> to={Route::DeploymentDetail {
-                        deployment_id: deployment_id.clone(),
-                    }}>
-                        {"← "}{ &deployment_id.id }
-                    </Link<Route>>
+                |deployment_id| {
+                    let deployment_url = format!(
+                        "{}#components",
+                        Route::DeploymentDetail {
+                            deployment_id: deployment_id.clone(),
+                        }
+                        .to_path()
+                    );
+                    let target_url = deployment_url.clone();
+                    html! {
+                        <a
+                            href={deployment_url}
+                            onclick={Callback::from(move |event: MouseEvent| {
+                                event.prevent_default();
+                                BrowserHistory::new().push(&target_url);
+                            })}
+                        >
+                            {"← "}{ &deployment_id.id }
+                        </a>
+                    }
                 },
             );
             let tab_button = |label: &'static str, tab: ComponentDetailTab| {
