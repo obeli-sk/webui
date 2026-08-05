@@ -1,6 +1,7 @@
 use super::data::TraceData;
 use crate::grpc::version::VersionType;
 use chrono::{DateTime, Utc};
+use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 /// Toggle the linked-highlight class on every tree node and detail-side event in a
@@ -24,6 +25,26 @@ pub fn set_linked_highlight(versions: &[VersionType], on: bool) {
             }
         }
     }
+}
+
+pub fn scroll_linked_item(pane_id: &str, item_id: &str) {
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+    let Some(pane) = document
+        .get_element_by_id(pane_id)
+        .and_then(|element| element.dyn_into::<web_sys::HtmlElement>().ok())
+    else {
+        return;
+    };
+    let Some(item) = document
+        .get_element_by_id(item_id)
+        .and_then(|element| element.dyn_into::<web_sys::HtmlElement>().ok())
+    else {
+        return;
+    };
+    let centered_offset = (pane.client_height() - item.offset_height()) / 2;
+    pane.set_scroll_top(item.offset_top() - centered_offset);
 }
 
 #[derive(Properties, PartialEq)]
@@ -107,7 +128,14 @@ pub fn execution_trace(props: &ExecutionStepProps) -> Html {
     let row_id = link.map(|link| format!("trace-node-{}", link.version));
     let on_row_enter = link.map(|link| {
         let group = link.group.clone();
-        Callback::from(move |_: MouseEvent| set_linked_highlight(&group, true))
+        let starting_version = link.version;
+        Callback::from(move |_: MouseEvent| {
+            set_linked_highlight(&group, true);
+            scroll_linked_item(
+                "trace-detail-pane",
+                &format!("trace-event-{starting_version}"),
+            );
+        })
     });
     let on_row_leave = link.map(|link| {
         let group = link.group.clone();

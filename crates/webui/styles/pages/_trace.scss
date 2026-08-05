@@ -12,6 +12,9 @@
   display: flex;
   gap: $spacing-lg;
   margin-top: $spacing-lg;
+  height: 70vh;
+  min-height: 20rem;
+  overflow: hidden;
 }
 
 .trace-view {
@@ -21,8 +24,11 @@
   // Sizing
   min-width: 400px;
   max-width: 900px;
+  height: 100%;
+  min-height: 0;
   resize: horizontal;
   overflow: auto;
+  position: relative;
   
   // Visual
   padding: $spacing-md;
@@ -98,11 +104,14 @@
   flex-shrink: 1;
   flex-basis: 0;
   min-width: 300px;
+  height: 100%;
+  min-height: 0;
   padding: $spacing-md;
   border: 1px solid $color-border-primary;
   border-radius: $border-radius-md;
   background-color: $color-bg-tertiary;
   overflow-y: auto;
+  position: relative;
 
   > .bp3-tree {
     margin-bottom: 1.25rem;

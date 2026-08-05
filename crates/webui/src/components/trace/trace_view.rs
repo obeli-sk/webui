@@ -8,7 +8,7 @@ use crate::{
         notification::{Notification, NotificationContext},
         trace::{
             data::{BusyInterval, TraceDataChild, TraceDataRoot, TraceLink},
-            execution_trace::{ExecutionTrace, set_linked_highlight},
+            execution_trace::{ExecutionTrace, scroll_linked_item, set_linked_highlight},
         },
     },
     grpc::{
@@ -336,7 +336,16 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                     let version = event.version;
                     let on_enter = {
                         let group = group.clone();
-                        Callback::from(move |_: MouseEvent| set_linked_highlight(&group, true))
+                        let starting_version = group.first().copied();
+                        Callback::from(move |_: MouseEvent| {
+                            set_linked_highlight(&group, true);
+                            if let Some(starting_version) = starting_version {
+                                scroll_linked_item(
+                                    "trace-tree-pane",
+                                    &format!("trace-node-{starting_version}"),
+                                );
+                            }
+                        })
                     };
                     let on_leave = {
                         let group = group.clone();
@@ -397,7 +406,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
 
         <div class="trace-layout-container">
-            <div class="trace-view">
+            <div id="trace-tree-pane" class="trace-view">
                 <div class="trace-controls" style="margin-bottom: 10px; display: flex; gap: 15px;">
                     <label style="cursor: pointer; user-select: none;">
                         <input
@@ -429,7 +438,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                     {"Loading..."}
                 }
             </div>
-            <div class="trace-detail">
+            <div id="trace-detail-pane" class="trace-detail">
                 {execution_log}
             </div>
         </div>
