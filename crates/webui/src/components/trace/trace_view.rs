@@ -82,7 +82,7 @@ enum TraceviewStateAction {
     SetShowDelays(bool),
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct TraceViewState {
     execution_ids_to_fetch_state: HashMap<ExecutionId, ExecutionFetchState>,
     events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
@@ -91,6 +91,19 @@ struct TraceViewState {
     expanded_nodes: HashMap<String, bool>,
     hide_finished: bool,
     show_delays: bool,
+}
+impl Default for TraceViewState {
+    fn default() -> Self {
+        Self {
+            execution_ids_to_fetch_state: HashMap::default(),
+            events: HashMap::default(),
+            responses: HashMap::default(),
+            statuses: HashMap::default(),
+            expanded_nodes: HashMap::default(),
+            hide_finished: false,
+            show_delays: true,
+        }
+    }
 }
 impl Reducible for TraceViewState {
     type Action = TraceviewStateAction;

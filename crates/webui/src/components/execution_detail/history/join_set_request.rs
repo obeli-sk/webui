@@ -133,13 +133,8 @@ impl HistoryJoinSetRequestEventProps {
                 let expires_at = DateTime::from(*expires_at);
                 tree.insert(
                     Node::new(NodeData {
-                        icon: Icon::Time,
-                        label: html! {
-                            <>
-                                {"Delay Request: "}
-                                {&delay_id.id}
-                            </>
-                        },
+                        icon: Icon::IdNumber,
+                        label: html! { {&delay_id.id} },
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&join_set_node),
@@ -244,10 +239,7 @@ impl HistoryJoinSetRequestEventProps {
                     Node::new(NodeData {
                         icon: Icon::IdNumber,
                         label: html! {
-                            <>
-                                {"Execution: "}
-                                { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
-                            </>
+                            { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
                         },
                         ..Default::default()
                     }),

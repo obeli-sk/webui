@@ -1,5 +1,6 @@
 use crate::app::query::BacktraceVersionsPath;
 use crate::components::execution_header::ExecutionLink;
+use crate::components::ffqn_with_links::FfqnWithLinks;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::grpc_client::join_set_response_event::{ChildExecutionFinished, DelayFinished};
 use crate::grpc::version::VersionType;
@@ -134,28 +135,11 @@ impl HistoryJoinNextEventProps {
                         },
                     )),
             }) => {
-                let success = matches!(
-                    result_detail.value,
-                    Some(grpc_client::supported_function_result::Value::Ok(_))
-                );
-                let icon = if success {
-                    Icon::Flows
-                } else if child_failure_is_cancelled(result_detail) {
-                    Icon::Cross
-                } else {
-                    Icon::Error
-                };
-
                 let child_node = tree.insert(
                         Node::new(NodeData {
-                            icon,
+                            icon: Icon::IdNumber,
                             label: html! {
-                                <>
-                                    {"Matched Child "}
-                                    { if success { "Finished" } else { "Failed" } }
-                                    {": "}
-                                    { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
-                                </>
+                                { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
                             },
                             has_caret: true,
                             ..Default::default()
@@ -192,15 +176,8 @@ impl HistoryJoinNextEventProps {
                 let delay_node = tree
                     .insert(
                         Node::new(NodeData {
-                            icon,
-                            label: html! {
-                                <>
-                                    {"Matched Delay "}
-                                    { if success { "Finished" } else {"Cancelled"} }
-                                    {": "}
-                                    {&delay_id.id}
-                                </>
-                            },
+                            icon: Icon::IdNumber,
+                            label: html! { {&delay_id.id} },
                             has_caret: true,
                             ..Default::default()
                         }),
@@ -237,7 +214,9 @@ impl HistoryJoinNextEventProps {
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::Function,
-                    label: format!("Function: {}", ffqn.short()).into(),
+                    label: html! {
+                        <FfqnWithLinks ffqn={ffqn} fully_qualified={true} />
+                    },
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&join_next_node),
