@@ -243,7 +243,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             .responses
             .get(execution_id)
             .unwrap_or(&dummy_responses);
-        compute_version_to_group(events, responses)
+        compute_submit_await_version_groups(events, responses)
     };
 
     let root_trace = {
@@ -553,7 +553,7 @@ fn on_state_change(
 /// Group each correlated `Submit`/`JoinNext` version pair (keyed by both versions) so a
 /// direct child/delay node and both of its detail events can highlight together on hover.
 /// A submit without an unambiguous join-next maps to a singleton group of just itself.
-fn compute_version_to_group(
+pub(crate) fn compute_submit_await_version_groups(
     events: &[ExecutionEvent],
     responses: &HashMap<JoinSetId, Vec<JoinSetResponseEvent>>,
 ) -> HashMap<VersionType, Vec<VersionType>> {
@@ -1279,7 +1279,7 @@ mod tests {
             join_next(2, &join_set_id),
         ];
 
-        let groups = compute_version_to_group(&events, &HashMap::new());
+        let groups = compute_submit_await_version_groups(&events, &HashMap::new());
 
         assert_eq!(groups[&1], vec![1, 2]);
         assert_eq!(groups[&2], vec![1, 2]);
@@ -1294,7 +1294,7 @@ mod tests {
             join_next(3, &join_set_id),
         ];
 
-        let groups = compute_version_to_group(&events, &HashMap::new());
+        let groups = compute_submit_await_version_groups(&events, &HashMap::new());
 
         assert_eq!(groups[&1], vec![1]);
         assert_eq!(groups[&2], vec![2]);

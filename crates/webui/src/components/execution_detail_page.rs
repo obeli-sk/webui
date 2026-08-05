@@ -1,7 +1,9 @@
 use crate::components::execution_detail::utils::{compute_join_next_to_response, event_to_detail};
 use crate::components::execution_header::{ExecutionHeader, ExecutionLink};
 use crate::components::notification::{Notification, NotificationContext};
-use crate::components::trace::trace_view::{PAGE, SLEEP_MILLIS};
+use crate::components::trace::trace_view::{
+    PAGE, SLEEP_MILLIS, compute_submit_await_version_groups,
+};
 use crate::grpc::grpc_client::{
     self, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
     execution_event,
@@ -9,7 +11,6 @@ use crate::grpc::grpc_client::{
         Event as HistoryEventEnum, JoinNext, JoinNextTooMany, JoinNextTry, JoinSetCreated,
         JoinSetRequest, join_set_request,
     },
-    join_set_response_event,
 };
 use crate::util::time::{
     TimeGranularity, format_date, human_formatted_timedelta, relative_time_if_significant,
@@ -163,15 +164,6 @@ impl Reducible for ExecutionLogState {
     }
 }
 
-// Execution ID or Delay ID metadata
-#[derive(Debug)]
-struct IdMetadata {
-    start_version: u32,
-    end_version: u32,
-    color: String,
-    is_completed: bool,
-}
-
 #[component(ExecutionLogPage)]
 pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogPageProps) -> Html {
     let log_state = use_reducer_eq(ExecutionLogState::default);
@@ -230,6 +222,7 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
         .unwrap_or(&dummy_response_map);
 
     let join_next_version_to_response = compute_join_next_to_response(events, responses);
+    let submit_await_version_groups = compute_submit_await_version_groups(events, responses);
 
     // Build map of child execution ID -> Created event from the child-created cache.
     let child_created_events: HashMap<grpc_client::ExecutionId, execution_event::Created> =
@@ -244,6 +237,7 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
             execution_id,
             events,
             &join_next_version_to_response,
+            &submit_await_version_groups,
             &child_created_events,
         )
     } else {
@@ -395,6 +389,7 @@ fn render_execution_details(
     current_execution_id: &ExecutionId,
     events: &[ExecutionEvent],
     join_next_version_to_response: &HashMap<u32, &JoinSetResponseEvent>,
+    submit_await_version_groups: &HashMap<u32, Vec<u32>>,
     child_created_events: &HashMap<ExecutionId, execution_event::Created>,
 ) -> Html {
     let create_event = events.first().expect("not found");
@@ -410,75 +405,46 @@ fn render_execution_details(
     let initial_scheduling_duration =
         relative_time_if_significant(execution_created_at, initially_scheduled_at);
 
-    let last_known_version = events.last().map(|e| e.version).unwrap_or(0);
-
-    // Support for "Go to" buttons
-    let mut ids: HashMap<String /* execution or delay id */, IdMetadata> = HashMap::new();
+    let mut submit_version_to_color = HashMap::new();
     for event in events {
         let event_inner = event.event.as_ref().unwrap();
 
-        if let execution_event::Event::HistoryVariant(h) = event_inner {
-            match &h.event {
-                Some(HistoryEventEnum::JoinSetRequest(JoinSetRequest {
-                    join_set_request: Some(inner_req),
-                    ..
-                })) => {
-                    let (task_id, color) = match inner_req {
-                        join_set_request::JoinSetRequest::ChildExecutionRequest(req) => {
-                            let exe_id =
-                                req.child_execution_id.as_ref().expect("id is always sent");
-                            (exe_id.to_string(), exe_id.color())
-                        }
-                        join_set_request::JoinSetRequest::DelayRequest(req) => {
-                            let delay_id = req.delay_id.as_ref().expect("id is always sent");
-                            (delay_id.to_string(), delay_id.color())
-                        }
-                    };
-                    ids.insert(
-                        task_id,
-                        IdMetadata {
-                            start_version: event.version,
-                            end_version: last_known_version,
-                            color,
-                            is_completed: false,
-                        },
-                    );
+        if let execution_event::Event::HistoryVariant(h) = event_inner
+            && let Some(HistoryEventEnum::JoinSetRequest(JoinSetRequest {
+                join_set_request: Some(inner_req),
+                ..
+            })) = &h.event
+        {
+            let color = match inner_req {
+                join_set_request::JoinSetRequest::ChildExecutionRequest(req) => {
+                    let exe_id = req.child_execution_id.as_ref().expect("id is always sent");
+                    exe_id.color()
                 }
-                Some(HistoryEventEnum::JoinNext(_)) => {
-                    if let Some(resp) = join_next_version_to_response.get(&event.version)
-                        && let Some(response_enum) = &resp.response
-                    {
-                        let completed_task_id = match response_enum {
-                            join_set_response_event::Response::ChildExecutionFinished(c) => c
-                                .child_execution_id
-                                .as_ref()
-                                .expect("id is always sent")
-                                .to_string(),
-                            join_set_response_event::Response::DelayFinished(d) => {
-                                d.delay_id.as_ref().expect("id is always sent").to_string()
-                            }
-                        };
-                        if let Some(meta) = ids.get_mut(&completed_task_id) {
-                            meta.end_version = event.version;
-                            meta.is_completed = true;
-                        }
-                    }
+                join_set_request::JoinSetRequest::DelayRequest(req) => {
+                    let delay_id = req.delay_id.as_ref().expect("id is always sent");
+                    delay_id.color()
                 }
-                _ => {}
-            }
+            };
+            submit_version_to_color.insert(event.version, color);
         }
     }
 
-    // Build Links Map for Navigation ---
     let mut event_links: HashMap<
         u32, /* start or end version */
         (u32 /* oposite version */, String /* color */),
     > = HashMap::new();
-    for meta in ids.values() {
-        if meta.is_completed {
-            event_links.insert(meta.start_version, (meta.end_version, meta.color.clone()));
-            event_links.insert(meta.end_version, (meta.start_version, meta.color.clone()));
+    for (submit_version, group) in submit_await_version_groups {
+        let [group_submit_version, await_version] = group.as_slice() else {
+            continue;
+        };
+        if submit_version != group_submit_version {
+            continue;
         }
+        let Some(color) = submit_version_to_color.get(submit_version) else {
+            continue;
+        };
+        event_links.insert(*submit_version, (*await_version, color.clone()));
+        event_links.insert(*await_version, (*submit_version, color.clone()));
     }
 
     let rows: Vec<_> = events
