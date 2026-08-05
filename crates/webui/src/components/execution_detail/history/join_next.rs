@@ -7,7 +7,9 @@ use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
     app::Route,
-    components::execution_detail::{finished::attach_result_detail, tree_component::TreeComponent},
+    components::execution_detail::{
+        finished::attach_result_detail, tree_component::TreeComponent, utils::id_suffix,
+    },
     grpc::grpc_client::{
         self, JoinSetResponseEvent, SupportedFunctionResult, join_set_response_event,
     },
@@ -103,6 +105,28 @@ impl HistoryJoinNextEventProps {
             None => Icon::Search,
         };
 
+        let id_suffix = match &self.response {
+            Some(JoinSetResponseEvent {
+                response:
+                    Some(join_set_response_event::Response::ChildExecutionFinished(
+                        ChildExecutionFinished {
+                            child_execution_id: Some(child_execution_id),
+                            ..
+                        },
+                    )),
+                ..
+            }) => Some(id_suffix(&child_execution_id.id)),
+            Some(JoinSetResponseEvent {
+                response:
+                    Some(join_set_response_event::Response::DelayFinished(DelayFinished {
+                        delay_id: Some(delay_id),
+                        ..
+                    })),
+                ..
+            }) => Some(id_suffix(&delay_id.id)),
+            _ => None,
+        };
+
         let join_next_node = tree
             .insert(
                 Node::new(NodeData {
@@ -110,9 +134,10 @@ impl HistoryJoinNextEventProps {
                     label: html! {
                         <>
                             {self.version}
-                            {". Join Next: `"}
-                            {join_set_id}
-                            {"`"}
+                            { match &id_suffix {
+                                Some(id_suffix) => format!(". Join `{id_suffix}`"),
+                                None => format!(". Join `{join_set_id}`"),
+                            } }
                         </>
                     },
                     has_caret: true,

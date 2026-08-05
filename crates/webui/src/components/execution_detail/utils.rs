@@ -25,6 +25,13 @@ use crate::grpc::grpc_client::{
 use hashbrown::HashMap;
 use yew::prelude::*;
 
+/// Identifying suffix of a direct child's derived id relative to its parent execution:
+/// the trailing `{join_set_id}_{idx}` segment.
+/// E.g. `E_01ABC.g:1_1.o:1-current-deployment-id_1` -> `o:1-current-deployment-id_1`.
+pub fn id_suffix(id: &str) -> &str {
+    id.rsplit_once('.').map_or(id, |(_, rest)| rest)
+}
+
 pub fn compute_join_next_to_response<'a>(
     events: impl IntoIterator<Item = &'a ExecutionEvent>,
     responses: &'a HashMap<JoinSetId, Vec<JoinSetResponseEvent>>,

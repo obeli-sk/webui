@@ -4,6 +4,7 @@ use crate::components::execution_actions::{
     CancelDelayButton, PauseDelayButton, UnpauseDelayButton,
 };
 use crate::components::execution_detail::tree_component::TreeComponent;
+use crate::components::execution_detail::utils::id_suffix;
 use crate::components::execution_header::ExecutionLink;
 use crate::components::ffqn_with_links::FfqnWithLinks;
 use crate::components::json_tree::{JsonValue, insert_json_into_tree};
@@ -39,11 +40,6 @@ impl HistoryJoinSetRequestEventProps {
             .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
             .unwrap();
 
-        let join_set_id = self
-            .event
-            .join_set_id
-            .as_ref()
-            .expect("JoinSetRequest.join_set_id is sent");
         let join_set_request = self
             .event
             .join_set_request
@@ -93,15 +89,21 @@ impl HistoryJoinSetRequestEventProps {
             join_set_request::JoinSetRequest::DelayRequest(_) => None,
         };
 
-        let (join_set_icon, submit_what) = match join_set_request {
-            join_set_request::JoinSetRequest::DelayRequest(_) => (Icon::Time, "delay".to_string()),
-            join_set_request::JoinSetRequest::ChildExecutionRequest(_) => (
-                Icon::Function,
-                child_info
+        let (join_set_icon, id_suffix) = match join_set_request {
+            join_set_request::JoinSetRequest::DelayRequest(delay_req) => {
+                let delay_id = delay_req
+                    .delay_id
                     .as_ref()
-                    .map(|(ffqn, _)| ffqn.function_name.clone())
-                    .unwrap_or_else(|| "child".to_string()),
-            ),
+                    .expect("`delay_id` is sent in `DelayRequest`");
+                (Icon::Time, id_suffix(&delay_id.id))
+            }
+            join_set_request::JoinSetRequest::ChildExecutionRequest(child_req) => {
+                let child_execution_id = child_req
+                    .child_execution_id
+                    .as_ref()
+                    .expect("`child_execution_id` is sent in `ChildExecutionRequest`");
+                (Icon::Function, id_suffix(&child_execution_id.id))
+            }
         };
         let join_set_node = tree
             .insert(
@@ -110,9 +112,7 @@ impl HistoryJoinSetRequestEventProps {
                     label: html! {
                         <>
                             {self.version}
-                            {format!(". Submit {submit_what} to `")}
-                            {join_set_id}
-                            {"`"}
+                            {format!(". Submit `{id_suffix}`")}
                         </>
                     },
                     has_caret: true,
