@@ -135,20 +135,19 @@ impl HistoryJoinNextEventProps {
                         },
                     )),
             }) => {
-                let child_node = tree.insert(
-                        Node::new(NodeData {
-                            icon: Icon::IdNumber,
-                            label: html! {
-                                { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
-                            },
-                            has_caret: true,
-                            ..Default::default()
-                        }),
-                        InsertBehavior::UnderNode(&join_next_node),
-                    )
-                    .unwrap();
+                tree.insert(
+                    Node::new(NodeData {
+                        icon: Icon::IdNumber,
+                        label: html! {
+                            { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
+                        },
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&join_next_node),
+                )
+                .unwrap();
 
-                attach_result_detail(&mut tree, &child_node, result_detail, None, false);
+                attach_result_detail(&mut tree, &join_next_node, result_detail, None, false);
 
                 let finished_at = DateTime::from(*finished_at);
                 tree.insert(
@@ -157,7 +156,7 @@ impl HistoryJoinNextEventProps {
                         label: format!("Finished At: {finished_at}").into(),
                         ..Default::default()
                     }),
-                    InsertBehavior::UnderNode(&child_node),
+                    InsertBehavior::UnderNode(&join_next_node),
                 )
                 .unwrap();
             }
