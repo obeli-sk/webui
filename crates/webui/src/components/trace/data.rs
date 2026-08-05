@@ -1,4 +1,7 @@
-use crate::{components::execution_status::status_to_string, grpc::grpc_client};
+use crate::{
+    components::execution_status::status_to_string,
+    grpc::{finished_result_kind::FinishedResultKind, grpc_client},
+};
 use chrono::{DateTime, TimeDelta, Utc};
 use std::time::Duration;
 use yew::Html;
@@ -99,18 +102,12 @@ pub enum BusyIntervalStatus {
     HttpTraceError,
     #[display("Temporary timeout")]
     ExecutionTimeoutTemporary,
-    #[display("Execution timeout")]
-    ExecutionTimeoutPermanent,
     #[display("Temporary error")]
     ExecutionErrorTemporary,
-    #[display("Execution error")]
-    ExecutionErrorPermanent,
     #[display("Locked")]
     ExecutionLocked,
-    #[display("Finished OK")]
-    ExecutionFinishedOk,
-    #[display("Finished with error")]
-    ExecutionReturnedErrorVariant,
+    #[display("{_0}")]
+    ExecutionFinished(FinishedResultKind),
     #[display("Unfinished")]
     ExecutionUnfinishedWithoutPendingState,
     #[display("Since scheduled")]
@@ -197,28 +194,21 @@ pub struct TraceDataChild {
 
 mod grpc {
     use super::BusyIntervalStatus;
-    use crate::grpc::grpc_client::ExecutionFailureKind;
+    use crate::grpc::finished_result_kind::FinishedResultKind;
     use crate::grpc::grpc_client::supported_function_result;
 
     impl From<&supported_function_result::Value> for BusyIntervalStatus {
         fn from(supported_function_result_value: &supported_function_result::Value) -> Self {
-            match supported_function_result_value {
-                supported_function_result::Value::Ok(_) => BusyIntervalStatus::ExecutionFinishedOk,
-                supported_function_result::Value::Error(_) => {
-                    BusyIntervalStatus::ExecutionReturnedErrorVariant
-                }
-                supported_function_result::Value::ExecutionFailure(failure) => match failure.kind()
-                {
-                    ExecutionFailureKind::TimedOut => BusyIntervalStatus::ExecutionTimeoutPermanent,
-                    _ => BusyIntervalStatus::ExecutionErrorPermanent,
-                },
-            }
+            BusyIntervalStatus::ExecutionFinished(FinishedResultKind::from(
+                supported_function_result_value,
+            ))
         }
     }
 }
 
 mod css {
     use super::BusyIntervalStatus;
+    use crate::grpc::finished_result_kind::FinishedResultKind;
 
     impl BusyIntervalStatus {
         pub fn get_css_class(&self) -> &'static str {
@@ -227,13 +217,16 @@ mod css {
                 BusyIntervalStatus::HttpTraceNotResponded => "busy-http-trace-unfinished",
                 BusyIntervalStatus::HttpTraceError => "busy-http-trace-error",
                 BusyIntervalStatus::ExecutionTimeoutTemporary => "busy-execution-timeout-temporary",
-                BusyIntervalStatus::ExecutionTimeoutPermanent => "busy-execution-timeout-permanent",
                 BusyIntervalStatus::ExecutionErrorTemporary => "busy-execution-error-temporary",
-                BusyIntervalStatus::ExecutionErrorPermanent => "busy-execution-error-permanent",
                 BusyIntervalStatus::ExecutionLocked => "busy-execution-locked",
-                BusyIntervalStatus::ExecutionFinishedOk => "busy-execution-finished",
-                BusyIntervalStatus::ExecutionReturnedErrorVariant => {
+                BusyIntervalStatus::ExecutionFinished(FinishedResultKind::Ok) => {
+                    "busy-execution-finished"
+                }
+                BusyIntervalStatus::ExecutionFinished(FinishedResultKind::Error) => {
                     "busy-execution-returned-error-variant"
+                }
+                BusyIntervalStatus::ExecutionFinished(FinishedResultKind::Failed) => {
+                    "busy-execution-error-permanent"
                 }
                 BusyIntervalStatus::ExecutionUnfinishedWithoutPendingState => {
                     "busy-execution-unfinished"

@@ -1,5 +1,6 @@
 use crate::{
     components::execution_detail::finished::FinishedEvent,
+    grpc::finished_result_kind::FinishedResultKind,
     grpc::grpc_client::{
         self, ExecutionStatus as GExecutionStatus, ExecutionSummary, FinishedStatus,
         execution_status::{Finished, Locked, PendingAt},
@@ -396,37 +397,7 @@ pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html 
                 .as_ref()
                 .expect("ResultKind must be present for Finished status");
             match &result_kind.value {
-                Some(grpc_client::result_kind::Value::Ok(_)) => html! {"Finished OK"},
-                Some(grpc_client::result_kind::Value::Error(_)) => {
-                    html! {"Finished with error"}
-                }
-                Some(grpc_client::result_kind::Value::ExecutionFailureKind(kind_i32)) => {
-                    match grpc_client::ExecutionFailureKind::try_from(*kind_i32) {
-                        Ok(kind) => match kind {
-                            grpc_client::ExecutionFailureKind::TimedOut => {
-                                html! {"Timeout"}
-                            }
-                            grpc_client::ExecutionFailureKind::NondeterminismDetected => {
-                                html! { "Nondeterminism detected" }
-                            }
-                            grpc_client::ExecutionFailureKind::OutOfFuel => {
-                                html! { "Out of fuel" }
-                            }
-                            grpc_client::ExecutionFailureKind::Cancelled => {
-                                html! { "Cancelled" }
-                            }
-                            grpc_client::ExecutionFailureKind::Uncategorized => {
-                                html! { "Execution failure" }
-                            }
-                            grpc_client::ExecutionFailureKind::Unspecified => {
-                                html! { "Unspecified"}
-                            }
-                        },
-                        Err(_) => {
-                            html! { format!("Execution failure: Unknown variant ({})", kind_i32) }
-                        }
-                    }
-                }
+                Some(value) => Html::from(FinishedResultKind::from(value).to_string()),
                 None => html! {"Finished with unknown result"},
             }
         }

@@ -9,6 +9,7 @@ pub mod delay_id;
 pub mod deployment_id;
 pub mod execution_id;
 pub mod ffqn;
+pub mod finished_result_kind;
 pub mod function_detail;
 pub mod grpc_client;
 pub mod ifc_fqn;
