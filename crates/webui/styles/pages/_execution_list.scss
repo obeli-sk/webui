@@ -195,30 +195,23 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-}
 
-.execution-interface {
-  color: $color-text-secondary;
-}
+  .ffqn-interface {
+    color: $color-text-secondary;
+  }
 
-.execution-function-separator {
-  flex: 0 0 auto;
-  color: $color-text-muted;
-}
+  .ffqn-function-name {
+    color: $color-accent-cyan;
+    font-weight: 600;
+  }
 
-.execution-function-name {
-  color: $color-accent-cyan;
-  font-weight: 600;
-}
+  .ffqn-submit {
+    font-size: $font-size-xs;
+    opacity: 0.65;
 
-.execution-run {
-  flex: 0 0 auto;
-  margin-left: $spacing-sm;
-  font-size: $font-size-xs;
-  opacity: 0.65;
-
-  &:hover {
-    opacity: 1;
+    &:hover {
+      opacity: 1;
+    }
   }
 }
 

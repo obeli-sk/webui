@@ -1,8 +1,8 @@
-use crate::tree::Icon;
 use crate::{
     app::{AppState, Route},
     components::{
         execution_status::{ExecutionStatus, StatusCacheContext, StatusState},
+        ffqn_with_links::FfqnWithLinks,
         notification::{Notification, NotificationContext},
     },
     grpc::{
@@ -919,17 +919,7 @@ pub fn execution_list_page() -> Html {
             let deployment_id = execution.deployment_id.clone().expect("deployment_id missing").id;
             let component_digest = execution.component_digest.as_ref().expect("component_digest missing").digest.as_str();
 
-            let play = if app_state.ffqns_to_details.contains_key(&ffqn) {
-                html!{
-                    <span class="execution-run" title="Run this function">
-                        <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
-                            { Html::from(Icon::Play) }
-                        </Link<Route>>
-                    </span>
-                }
-            } else {
-                Html::default()
-            };
+            let hide_submit = !app_state.ffqns_to_details.contains_key(&ffqn);
 
             let created_at: DateTime<Utc> = execution.created_at.expect("`created_at` is sent").into();
             let durated = if let Some( grpc_client::ExecutionStatus{ status: Some(status),..}) = &execution.current_status
@@ -949,24 +939,7 @@ pub fn execution_list_page() -> Html {
                             </Link<Route>>
                         </div>
                         <div class="execution-function">
-                            <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
-                                let mut q = query.clone();
-                                q.ffqn_prefix = Some(ffqn.ifc_fqn.to_string());
-                                q.cursor = None;
-                                q
-                            }>
-                                <span class="execution-interface">{ ffqn.ifc_fqn.to_string() }</span>
-                            </Link<Route, ExecutionQuery>>
-                            <span class="execution-function-separator">{" / "}</span>
-                            <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={
-                                let mut q = query.clone();
-                                q.ffqn_prefix = Some(ffqn.to_string());
-                                q.cursor = None;
-                                q
-                            }>
-                                <span class="execution-function-name">{ &ffqn.function_name }</span>
-                            </Link<Route, ExecutionQuery>>
-                            {play}
+                            <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} {hide_submit} />
                         </div>
                     </div>
                     <div class="execution-aside">

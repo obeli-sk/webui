@@ -21,32 +21,35 @@ pub fn ffqn_with_links(
 ) -> Html {
     let ext = ffqn.ifc_fqn.pkg_fqn.is_extension();
     html! {
-        <div style="display: inline-flex;">
-            if !ext && *fully_qualified {
-                // show searchable interface link
-                <Link<Route, ExecutionQuery>
-                    to={Route::ExecutionList}
-                    query={ExecutionQuery { ffqn_prefix: Some(ffqn.ifc_fqn.to_string()), show_derived: true, ..Default::default() }}
-                >
-                    {ffqn.ifc_fqn.to_string()}
-                </Link<Route, ExecutionQuery>>
-            } else if *fully_qualified {
-                // show unlclickabe interface
-                {ffqn.ifc_fqn.to_string()}
-            }
-            if !hide_submit {
-                <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
-                    { Html::from(Icon::Play) }
-                </Link<Route>>
-            } else if *fully_qualified {
-                {"."}
+        <span class="ffqn">
+            if *fully_qualified {
+                if !ext {
+                    // searchable interface link
+                    <Link<Route, ExecutionQuery>
+                        to={Route::ExecutionList}
+                        query={ExecutionQuery { ffqn_prefix: Some(ffqn.ifc_fqn.to_string()), show_derived: true, ..Default::default() }}
+                    >
+                        <span class="ffqn-interface">{ffqn.ifc_fqn.to_string()}</span>
+                    </Link<Route, ExecutionQuery>>
+                } else {
+                    // extension interface, not searchable
+                    <span class="ffqn-interface">{ffqn.ifc_fqn.to_string()}</span>
+                }
+                <span class="ffqn-separator">{"."}</span>
             }
             <Link<Route, ExecutionQuery>
-                    to={Route::ExecutionList}
-                    query={ExecutionQuery { ffqn_prefix: Some(ffqn.to_string()), show_derived: true, ..Default::default() }}
-                >
-                {ffqn.function_name.to_string()}
+                to={Route::ExecutionList}
+                query={ExecutionQuery { ffqn_prefix: Some(ffqn.to_string()), show_derived: true, ..Default::default() }}
+            >
+                <span class="ffqn-function-name">{ffqn.function_name.to_string()}</span>
             </Link<Route, ExecutionQuery>>
-        </div>
+            if !hide_submit {
+                <span class="ffqn-submit" title="Run this function">
+                    <Link<Route> to={Route::ExecutionSubmit { ffqn: ffqn.clone() } }>
+                        { Html::from(Icon::Play) }
+                    </Link<Route>>
+                </span>
+            }
+        </span>
     }
 }

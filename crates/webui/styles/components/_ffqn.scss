@@ -1,0 +1,20 @@
+// Shared FFQN rendering — src/components/ffqn_with_links.rs (FfqnWithLinks).
+// Every FFQN in the UI is rendered through this component so the layout and
+// the `interface.function` separator stay consistent.
+@use '../base/variables' as *;
+
+.ffqn {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.ffqn-separator {
+  flex: 0 0 auto;
+  color: $color-text-muted;
+}
+
+.ffqn-submit {
+  flex: 0 0 auto;
+  margin-left: $spacing-xs;
+}
