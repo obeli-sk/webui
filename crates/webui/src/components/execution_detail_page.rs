@@ -54,6 +54,13 @@ enum ExecutionLogAction {
         execution_id: ExecutionId,
         cursors: Cursors,
     },
+    /// Mark a direct child execution's `Created` event as being fetched.
+    RequestChildCreated(ExecutionId),
+    /// Store a fetched child execution's `Created` event.
+    SaveChildCreated {
+        execution_id: ExecutionId,
+        created: execution_event::Created,
+    },
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -61,6 +68,10 @@ struct ExecutionLogState {
     execution_ids_to_fetch_state: HashMap<ExecutionId, ExecutionFetchState>,
     events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
     responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
+    /// Cache of direct child executions' `Created` (version 0) events, used to show the
+    /// function name and parameters on the "Submit child" rows. Kept separate from `events`
+    /// so that navigating into a child still performs a full fetch. `None` = fetch in-flight.
+    child_created: HashMap<ExecutionId, Option<execution_event::Created>>,
 }
 
 impl Reducible for ExecutionLogState {
@@ -131,6 +142,23 @@ impl Reducible for ExecutionLogState {
                     .insert(execution_id, new_fetch_state);
                 Rc::from(this)
             }
+            ExecutionLogAction::RequestChildCreated(execution_id) => {
+                if self.child_created.contains_key(&execution_id) {
+                    self
+                } else {
+                    let mut this = self.as_ref().clone();
+                    this.child_created.insert(execution_id, None);
+                    Rc::from(this)
+                }
+            }
+            ExecutionLogAction::SaveChildCreated {
+                execution_id,
+                created,
+            } => {
+                let mut this = self.as_ref().clone();
+                this.child_created.insert(execution_id, Some(created));
+                Rc::from(this)
+            }
         }
     }
 }
@@ -157,11 +185,20 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
         }
     });
 
-    // Fetch direct child executions so the "Submit child" rows can show the child's
-    // function name and parameters, matching the detail shown in the trace view.
+    // Fetch each direct child execution's Created (version 0) event so the "Submit child"
+    // rows can show the child's function name and parameters, matching the trace view. This
+    // is cached separately from `events` so navigating into a child still fetches its full log.
     use_effect_with(
-        (log_state.clone(), execution_id.clone()),
-        |(log_state, execution_id): &(UseReducerHandle<ExecutionLogState>, ExecutionId)| {
+        (
+            log_state.clone(),
+            execution_id.clone(),
+            notifications.clone(),
+        ),
+        |(log_state, execution_id, notifications): &(
+            UseReducerHandle<ExecutionLogState>,
+            ExecutionId,
+            NotificationContext,
+        )| {
             let dummy = Vec::new();
             let events = log_state.events.get(execution_id).unwrap_or(&dummy);
             for event in events {
@@ -172,24 +209,16 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
                         ..
                     })) = &h.event
                     && let Some(child_id) = &req.child_execution_id
-                    && !log_state
-                        .execution_ids_to_fetch_state
-                        .contains_key(child_id)
+                    && !log_state.child_created.contains_key(child_id)
                 {
-                    log_state.dispatch(ExecutionLogAction::AddExecutionId(child_id.clone()));
+                    log_state.dispatch(ExecutionLogAction::RequestChildCreated(child_id.clone()));
+                    fetch_child_created(log_state.clone(), child_id.clone(), notifications.clone());
                 }
             }
         },
     );
 
-    use_effect_with(
-        (
-            log_state.clone(),
-            execution_id.clone(),
-            notifications.clone(),
-        ),
-        on_state_change,
-    );
+    use_effect_with((log_state.clone(), notifications.clone()), on_state_change);
 
     let dummy_events = Vec::new();
     let events = log_state.events.get(execution_id).unwrap_or(&dummy_events);
@@ -202,20 +231,12 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
 
     let join_next_version_to_response = compute_join_next_to_response(events, responses);
 
-    // Build map of child execution ID -> Created event from any fetched child events
+    // Build map of child execution ID -> Created event from the child-created cache.
     let child_created_events: HashMap<grpc_client::ExecutionId, execution_event::Created> =
         log_state
-            .events
+            .child_created
             .iter()
-            .filter(|(id, _)| *id != execution_id)
-            .filter_map(|(id, evts)| {
-                evts.first().and_then(|e| match &e.event {
-                    Some(execution_event::Event::Created(created)) => {
-                        Some((id.clone(), created.clone()))
-                    }
-                    _ => None,
-                })
-            })
+            .filter_map(|(id, created)| created.clone().map(|created| (id.clone(), created)))
             .collect();
 
     let details_html = if !events.is_empty() {
@@ -239,12 +260,59 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
     }
 }
 
+/// Fetch a single direct child execution's `Created` (version 0) event and store it in the
+/// child-created cache. Unlike the main fetch loop this grabs one event and never polls.
+fn fetch_child_created(
+    log_state: UseReducerHandle<ExecutionLogState>,
+    child_execution_id: ExecutionId,
+    notifications: NotificationContext,
+) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let mut execution_client =
+            grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
+                crate::auth::client(),
+            );
+        let response = execution_client
+            .list_execution_events_and_responses(
+                grpc_client::ListExecutionEventsAndResponsesRequest {
+                    execution_id: Some(child_execution_id.clone()),
+                    version_from: 0,
+                    events_length: 1,
+                    responses_cursor_from: 0,
+                    responses_length: 0,
+                    responses_including_cursor: false,
+                    include_backtrace_id: false,
+                },
+            )
+            .await;
+        match response {
+            Ok(resp) => {
+                if let Some(execution_event::Event::Created(created)) = resp
+                    .into_inner()
+                    .events
+                    .into_iter()
+                    .next()
+                    .and_then(|e| e.event)
+                {
+                    log_state.dispatch(ExecutionLogAction::SaveChildCreated {
+                        execution_id: child_execution_id,
+                        created,
+                    });
+                }
+            }
+            Err(e) => {
+                error!("Failed to list child execution created event: {:?}", e);
+                notifications.push(Notification::error(format!(
+                    "Failed to load child execution: {}",
+                    e.message()
+                )));
+            }
+        }
+    });
+}
+
 fn on_state_change(
-    (log_state, root_execution_id, notifications): &(
-        UseReducerHandle<ExecutionLogState>,
-        ExecutionId,
-        NotificationContext,
-    ),
+    (log_state, notifications): &(UseReducerHandle<ExecutionLogState>, NotificationContext),
 ) {
     trace!("Triggered on_state_change");
     for (execution_id, cursors) in
@@ -257,10 +325,6 @@ fn on_state_change(
             })
     {
         log_state.dispatch(ExecutionLogAction::SetPending(execution_id.clone()));
-        // Child executions are fetched only for their `Created` (version 0) event, which
-        // supplies the function name and parameters for the "Submit child" rows. There is
-        // no need to page through the rest of a child's log or keep polling it.
-        let created_only = *execution_id != *root_execution_id;
         let execution_id = execution_id.clone();
         let log_state = log_state.clone();
         let notifications = notifications.clone();
@@ -274,12 +338,11 @@ fn on_state_change(
                     grpc_client::ListExecutionEventsAndResponsesRequest {
                         execution_id: Some(execution_id.clone()),
                         version_from: cursors.version_from,
-                        events_length: if created_only { 1 } else { PAGE },
+                        events_length: PAGE,
                         responses_cursor_from: cursors.responses_cursor_from,
-                        responses_length: if created_only { 0 } else { PAGE },
-                        responses_including_cursor: !created_only
-                            && cursors.responses_cursor_from == 0,
-                        include_backtrace_id: !created_only,
+                        responses_length: PAGE,
+                        responses_including_cursor: cursors.responses_cursor_from == 0,
+                        include_backtrace_id: true,
                     },
                 )
                 .await;
@@ -288,12 +351,10 @@ fn on_state_change(
                 Ok(resp) => {
                     let server_resp = resp.into_inner();
                     let last_event = server_resp.events.last();
-                    // A child fetch grabs only the Created event and is then done; never poll.
-                    let is_finished = created_only
-                        || matches!(
-                            last_event.and_then(|e| e.event.as_ref()),
-                            Some(execution_event::Event::Finished(_))
-                        );
+                    let is_finished = matches!(
+                        last_event.and_then(|e| e.event.as_ref()),
+                        Some(execution_event::Event::Finished(_))
+                    );
                     let cursors = Cursors {
                         version_from: last_event
                             .map(|e| e.version + 1)
