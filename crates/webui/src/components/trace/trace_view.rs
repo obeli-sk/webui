@@ -552,33 +552,48 @@ fn on_state_change(
 
 /// Group each correlated `Submit`/`JoinNext` version pair (keyed by both versions) so a
 /// direct child/delay node and both of its detail events can highlight together on hover.
-/// A submit without a resolved join-next maps to a singleton group of just itself.
+/// A submit without an unambiguous join-next maps to a singleton group of just itself.
 fn compute_version_to_group(
     events: &[ExecutionEvent],
     responses: &HashMap<JoinSetId, Vec<JoinSetResponseEvent>>,
 ) -> HashMap<VersionType, Vec<VersionType>> {
     let mut submit_of_child: HashMap<&ExecutionId, VersionType> = HashMap::new();
     let mut submit_of_delay: HashMap<&grpc_client::DelayId, VersionType> = HashMap::new();
+    let mut submits_by_join_set: HashMap<&JoinSetId, Vec<VersionType>> = HashMap::new();
     for event in events {
         if let Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
             event:
                 Some(execution_event::history_event::Event::JoinSetRequest(JoinSetRequest {
+                    join_set_id,
                     join_set_request: Some(join_set_request),
-                    ..
                 })),
         })) = &event.event
         {
-            match join_set_request {
+            let submit_version = match join_set_request {
                 join_set_request::JoinSetRequest::ChildExecutionRequest(child_req) => {
                     if let Some(child_execution_id) = &child_req.child_execution_id {
                         submit_of_child.insert(child_execution_id, event.version);
+                        Some(event.version)
+                    } else {
+                        None
                     }
                 }
                 join_set_request::JoinSetRequest::DelayRequest(delay_req) => {
                     if let Some(delay_id) = &delay_req.delay_id {
                         submit_of_delay.insert(delay_id, event.version);
+                        Some(event.version)
+                    } else {
+                        None
                     }
                 }
+            };
+            if let (Some(join_set_id), Some(submit_version)) =
+                (join_set_id.as_ref(), submit_version)
+            {
+                submits_by_join_set
+                    .entry(join_set_id)
+                    .or_default()
+                    .push(submit_version);
             }
         }
     }
@@ -606,7 +621,37 @@ fn compute_version_to_group(
             groups.insert(join_next_version, group);
         }
     }
-    // Submits still waiting on their join-next self-highlight only.
+
+    for event in events {
+        let Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+            event: Some(execution_event::history_event::Event::JoinNext(join_next)),
+        })) = &event.event
+        else {
+            continue;
+        };
+        if groups.contains_key(&event.version) {
+            continue;
+        }
+        let Some(join_set_id) = join_next.join_set_id.as_ref() else {
+            continue;
+        };
+        let mut unmatched_submits = submits_by_join_set
+            .get(join_set_id)
+            .into_iter()
+            .flatten()
+            .filter(|submit_version| **submit_version < event.version)
+            .filter(|submit_version| !groups.contains_key(*submit_version));
+        let Some(submit_version) = unmatched_submits.next().copied() else {
+            continue;
+        };
+        if unmatched_submits.next().is_none() {
+            let group = vec![submit_version, event.version];
+            groups.insert(submit_version, group.clone());
+            groups.insert(event.version, group);
+        }
+    }
+
+    // Submits without an unambiguous join-next self-highlight only.
     for submit_version in submit_of_child
         .values()
         .chain(submit_of_delay.values())
@@ -1171,5 +1216,88 @@ fn compute_last_event_at(
             .max()
             .expect("chained with last_event so cannot be empty"),
         _ => candidate,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grpc_client::execution_event::{Event, HistoryEvent, history_event};
+
+    fn join_set(name: &str) -> JoinSetId {
+        JoinSetId {
+            kind: grpc_client::join_set_id::JoinSetKind::Named as i32,
+            name: name.to_string(),
+        }
+    }
+
+    fn child_submit(
+        version: VersionType,
+        join_set_id: &JoinSetId,
+        child_id: &str,
+    ) -> ExecutionEvent {
+        let request = history_event::join_set_request::ChildExecutionRequest {
+            child_execution_id: Some(ExecutionId {
+                id: child_id.to_string(),
+            }),
+            ..Default::default()
+        };
+        history_event(
+            version,
+            history_event::Event::JoinSetRequest(history_event::JoinSetRequest {
+                join_set_id: Some(join_set_id.clone()),
+                join_set_request: Some(
+                    history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(request),
+                ),
+            }),
+        )
+    }
+
+    fn join_next(version: VersionType, join_set_id: &JoinSetId) -> ExecutionEvent {
+        history_event(
+            version,
+            history_event::Event::JoinNext(history_event::JoinNext {
+                join_set_id: Some(join_set_id.clone()),
+                ..Default::default()
+            }),
+        )
+    }
+
+    fn history_event(version: VersionType, event: history_event::Event) -> ExecutionEvent {
+        ExecutionEvent {
+            version,
+            event: Some(Event::HistoryVariant(HistoryEvent { event: Some(event) })),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn pending_join_next_pairs_with_only_unconsumed_submit() {
+        let join_set_id = join_set("pending");
+        let events = vec![
+            child_submit(1, &join_set_id, "child"),
+            join_next(2, &join_set_id),
+        ];
+
+        let groups = compute_version_to_group(&events, &HashMap::new());
+
+        assert_eq!(groups[&1], vec![1, 2]);
+        assert_eq!(groups[&2], vec![1, 2]);
+    }
+
+    #[test]
+    fn pending_join_next_does_not_guess_between_submits() {
+        let join_set_id = join_set("ambiguous");
+        let events = vec![
+            child_submit(1, &join_set_id, "first"),
+            child_submit(2, &join_set_id, "second"),
+            join_next(3, &join_set_id),
+        ];
+
+        let groups = compute_version_to_group(&events, &HashMap::new());
+
+        assert_eq!(groups[&1], vec![1]);
+        assert_eq!(groups[&2], vec![2]);
+        assert!(!groups.contains_key(&3));
     }
 }
