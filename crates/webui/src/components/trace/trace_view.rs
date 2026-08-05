@@ -402,11 +402,20 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         })
     };
 
+    let clear_linked_highlights = {
+        let versions = version_to_group.keys().copied().collect::<Vec<_>>();
+        Callback::from(move |_: MouseEvent| set_linked_highlight(&versions, false))
+    };
+
     html! {<>
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
 
         <div class="trace-layout-container">
-            <div id="trace-tree-pane" class="trace-view">
+            <div
+                id="trace-tree-pane"
+                class="trace-view"
+                onmouseleave={clear_linked_highlights.clone()}
+            >
                 <div class="trace-controls" style="margin-bottom: 10px; display: flex; gap: 15px;">
                     <label style="cursor: pointer; user-select: none;">
                         <input
@@ -438,7 +447,11 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                     {"Loading..."}
                 }
             </div>
-            <div id="trace-detail-pane" class="trace-detail">
+            <div
+                id="trace-detail-pane"
+                class="trace-detail"
+                onmouseleave={clear_linked_highlights}
+            >
                 {execution_log}
             </div>
         </div>
