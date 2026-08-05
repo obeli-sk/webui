@@ -59,7 +59,7 @@ enum ExecutionLogAction {
     /// Store a fetched child execution's `Created` event.
     SaveChildCreated {
         execution_id: ExecutionId,
-        created: execution_event::Created,
+        created: Box<execution_event::Created>,
     },
 }
 
@@ -156,7 +156,7 @@ impl Reducible for ExecutionLogState {
                 created,
             } => {
                 let mut this = self.as_ref().clone();
-                this.child_created.insert(execution_id, Some(created));
+                this.child_created.insert(execution_id, Some(*created));
                 Rc::from(this)
             }
         }
@@ -296,7 +296,7 @@ fn fetch_child_created(
                 {
                     log_state.dispatch(ExecutionLogAction::SaveChildCreated {
                         execution_id: child_execution_id,
-                        created,
+                        created: Box::new(created),
                     });
                 }
             }
