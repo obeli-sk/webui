@@ -9,9 +9,18 @@
   min-width: 0;
 }
 
+.ffqn-interface {
+  color: $color-text-secondary;
+}
+
 .ffqn-separator {
   flex: 0 0 auto;
   color: $color-text-muted;
+}
+
+.ffqn-function-name {
+  color: $color-accent-cyan;
+  font-weight: 600;
 }
 
 .ffqn-submit {

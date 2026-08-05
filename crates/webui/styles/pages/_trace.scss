@@ -135,11 +135,21 @@
 }
 
 .step-name {
+  display: flex;
+  flex-direction: column;
   flex-grow: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   min-width: 0;
+
+  .step-execution-id,
+  .step-ffqn {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .step-ffqn {
+    font-size: $font-size-sm;
+  }
 
   a {
     color: $color-accent-cyan;

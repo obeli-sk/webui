@@ -4,6 +4,7 @@ use crate::{
     components::{
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
+        ffqn_with_links::FfqnWithLinks,
         notification::{Notification, NotificationContext},
         trace::{
             data::{BusyInterval, TraceDataChild, TraceDataRoot},
@@ -769,11 +770,15 @@ fn compute_root_trace(
 
     let name = html! {
         <>
-            {execution_id.render_execution_parts(true, ExecutionLink::Trace)}
-            {format!(" {} ", ffqn.short())}
-            if is_stub {
-                <span class="stub-indicator">{"(stub)"}</span>
-            }
+            <span class="step-execution-id">
+                {execution_id.render_execution_parts(true, ExecutionLink::Trace)}
+            </span>
+            <span class="step-ffqn">
+                <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} hide_submit={true} />
+                if is_stub {
+                    {" "}<span class="stub-indicator">{"(stub)"}</span>
+                }
+            </span>
         </>
     };
     Some(TraceDataRoot {
