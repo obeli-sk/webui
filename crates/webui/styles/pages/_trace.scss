@@ -141,7 +141,8 @@
   min-width: 0;
 
   .step-execution-id,
-  .step-ffqn {
+  .step-ffqn,
+  .step-delay-name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -149,6 +150,11 @@
 
   .step-ffqn {
     font-size: $font-size-sm;
+  }
+
+  .step-type-icon {
+    margin-right: $spacing-xs;
+    color: $color-text-secondary;
   }
 
   a {
@@ -219,6 +225,22 @@
 
 .busy-execution-since-scheduled {
   background-color: $color-exec-scheduled;
+}
+
+.busy-execution-delay {
+  background-color: $color-exec-delay;
+}
+
+.busy-execution-delay-ok {
+  background-color: $color-exec-delay-ok;
+}
+
+.busy-execution-delay-paused {
+  background-color: $color-exec-delay-paused;
+}
+
+.busy-execution-delay-cancelled {
+  background-color: $color-exec-delay-cancelled;
 }
 
 .indented-children {

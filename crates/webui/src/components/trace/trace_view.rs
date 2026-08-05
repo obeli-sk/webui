@@ -24,6 +24,7 @@ use crate::{
             http_client_trace, join_set_response_event, supported_function_result,
         },
     },
+    tree::Icon,
 };
 use assert_matches::assert_matches;
 use chrono::{DateTime, Utc};
@@ -78,6 +79,7 @@ enum TraceviewStateAction {
         cursors: Cursors,
     },
     SetHideFinished(bool),
+    SetShowDelays(bool),
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -88,6 +90,7 @@ struct TraceViewState {
     statuses: HashMap<ExecutionId, grpc_client::execution_status::Status>,
     expanded_nodes: HashMap<String, bool>,
     hide_finished: bool,
+    show_delays: bool,
 }
 impl Reducible for TraceViewState {
     type Action = TraceviewStateAction;
@@ -176,6 +179,11 @@ impl Reducible for TraceViewState {
                 this.hide_finished = hide;
                 Rc::from(this)
             }
+            TraceviewStateAction::SetShowDelays(show) => {
+                let mut this = self.as_ref().clone();
+                this.show_delays = show;
+                Rc::from(this)
+            }
         }
     }
 }
@@ -214,6 +222,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     let root_trace = {
         compute_root_trace(
             execution_id,
+            true,
             &trace_view.events,
             &trace_view.responses,
             &trace_view.statuses,
@@ -301,7 +310,15 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         let trace_view_state = trace_view_state.clone();
         Callback::from(move |e: Event| {
             let target: HtmlInputElement = e.target_unchecked_into();
-            trace_view_state.dispatch(TraceviewStateAction::SetHideFinished(target.checked()));
+            trace_view_state.dispatch(TraceviewStateAction::SetHideFinished(!target.checked()));
+        })
+    };
+
+    let on_show_delays_change = {
+        let trace_view_state = trace_view_state.clone();
+        Callback::from(move |e: Event| {
+            let target: HtmlInputElement = e.target_unchecked_into();
+            trace_view_state.dispatch(TraceviewStateAction::SetShowDelays(target.checked()));
         })
     };
 
@@ -332,11 +349,20 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                     <label style="cursor: pointer; user-select: none;">
                         <input
                             type="checkbox"
-                            checked={trace_view.hide_finished}
+                            checked={!trace_view.hide_finished}
                             onchange={on_hide_finished_change}
                             style="margin-right: 5px;"
                         />
-                        {"Hide finished"}
+                        {"Show finished"}
+                    </label>
+                    <label style="cursor: pointer; user-select: none;">
+                        <input
+                            type="checkbox"
+                            checked={trace_view.show_delays}
+                            onchange={on_show_delays_change}
+                            style="margin-right: 5px;"
+                        />
+                        {"Show delays"}
                     </label>
                 </div>
                 if let Some(root_trace) = root_trace {
@@ -450,8 +476,10 @@ fn on_state_change(
 }
 
 /// Return `None` if there are no events yet associated with the requested execution.
+#[allow(clippy::too_many_arguments)]
 fn compute_root_trace(
     execution_id: &ExecutionId,
+    is_root: bool,
     events_map: &HashMap<ExecutionId, Vec<ExecutionEvent>>,
     responses_map: &HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
     statuses_map: &HashMap<ExecutionId, grpc_client::execution_status::Status>,
@@ -493,6 +521,7 @@ fn compute_root_trace(
 
     let node_key = execution_id.to_string();
     let child_ids_to_results = compute_child_execution_id_to_child_execution_finished(responses);
+    let delay_ids_to_finished = compute_delay_id_to_finished(responses);
 
     let is_expanded = is_trace_node_expanded(trace_view_state, &node_key, false);
 
@@ -619,6 +648,7 @@ fn compute_root_trace(
 
                         if let Some(child_root) = compute_root_trace(
                             child_execution_id,
+                            false,
                             events_map,
                             responses_map,
                             statuses_map,
@@ -662,6 +692,88 @@ fn compute_root_trace(
                                 })
                             ])
                         }
+                    },
+                    // Add persistent delays
+                    execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+                        event:
+                            Some(execution_event::history_event::Event::JoinSetRequest(
+                                JoinSetRequest {
+                                    join_set_request: Some(join_set_request::JoinSetRequest::DelayRequest(delay_req)),
+                                    ..
+                                },
+                            )),
+                    }) => {
+                        if !trace_view_state.show_delays {
+                            return None;
+                        }
+                        let delay_id = delay_req.delay_id.as_ref().expect("`delay_id` is sent in `DelayRequest`");
+                        let expires_at = DateTime::from(delay_req.expires_at.expect("`expires_at` is sent in `DelayRequest`"));
+                        let started_at = event_created_at;
+
+                        // "Show finished" governs finished (OK/cancelled) delays too.
+                        let delay_finished = delay_ids_to_finished.get(delay_id);
+                        if trace_view_state.hide_finished && delay_finished.is_some() {
+                            return None;
+                        }
+
+                        let (status, finished_at, interval_title) = match delay_finished {
+                            Some((success, finished_at)) => {
+                                let status = if *success {
+                                    BusyIntervalStatus::DelayOk
+                                } else {
+                                    BusyIntervalStatus::DelayCancelled
+                                };
+                                // A delay's recorded finish (its expiry) can predate the
+                                // request event's persisted timestamp for zero/near-zero
+                                // delays; clamp to keep the interval non-negative.
+                                let finished_at = (*finished_at).max(started_at);
+                                let duration = (finished_at - started_at).to_std().expect("clamped to be >= started_at");
+                                let title = format!("{status} in {duration:?}");
+                                (status, Some(finished_at), title)
+                            }
+                            // Not finished yet: paused, or still counting down to expiry.
+                            None if delay_req.paused => (
+                                BusyIntervalStatus::DelayPaused,
+                                None,
+                                BusyIntervalStatus::DelayPaused.to_string(),
+                            ),
+                            None => (
+                                BusyIntervalStatus::DelayInProgress,
+                                None,
+                                format!("{} until {expires_at}", BusyIntervalStatus::DelayInProgress),
+                            ),
+                        };
+
+                        // Shorten the delay id like child executions: keep only the trailing
+                        // join-set part after the owning execution prefix.
+                        let short_name = delay_id
+                            .id
+                            .rsplit_once(EXECUTION_ID_INFIX)
+                            .map(|(_, suffix)| suffix)
+                            .unwrap_or(delay_id.id.as_str());
+                        let node_key = format!("{execution_id}:delay:{}", delay_id.id);
+                        Some(vec![
+                            TraceData::Child(TraceDataChild {
+                                node_key,
+                                is_expanded: false,
+                                can_expand: false,
+                                name: html!{
+                                    <span class="step-delay-name">
+                                        <span class="step-type-icon">{Html::from(Icon::Time)}</span>
+                                        {short_name}
+                                    </span>
+                                },
+                                title: delay_id.id.clone(),
+                                busy: vec![BusyInterval {
+                                    started_at,
+                                    finished_at,
+                                    title: Some(interval_title),
+                                    status,
+                                }],
+                                children: Vec::new(),
+                                load_button: None,
+                            })
+                        ])
                     },
                     _ => None,
                 }
@@ -771,6 +883,9 @@ fn compute_root_trace(
     let name = html! {
         <>
             <span class="step-execution-id">
+                if !is_root {
+                    <span class="step-type-icon">{Html::from(Icon::Function)}</span>
+                }
                 {execution_id.render_execution_parts(true, ExecutionLink::Trace)}
             </span>
             <span class="step-ffqn">
@@ -836,6 +951,35 @@ fn compute_child_execution_id_to_child_execution_finished(
                         child_execution_id.clone(),
                         (result_detail_value.clone(), created_at),
                     ))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
+fn compute_delay_id_to_finished(
+    responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
+) -> HashMap<grpc_client::DelayId, (bool, DateTime<Utc>)> {
+    responses
+        .into_iter()
+        .flat_map(|map| {
+            map.values().flatten().filter_map(|resp| {
+                if let JoinSetResponseEvent {
+                    response:
+                        Some(join_set_response_event::Response::DelayFinished(
+                            join_set_response_event::DelayFinished {
+                                delay_id: Some(delay_id),
+                                success,
+                            },
+                        )),
+                    ..
+                } = resp
+                {
+                    let created_at =
+                        DateTime::from(resp.created_at.expect("response.created_at is sent"));
+                    Some((delay_id.clone(), (*success, created_at)))
                 } else {
                     None
                 }

@@ -106,6 +106,14 @@ pub enum BusyIntervalStatus {
     ExecutionErrorTemporary,
     #[display("Locked")]
     ExecutionLocked,
+    #[display("In progress")]
+    DelayInProgress,
+    #[display("Paused")]
+    DelayPaused,
+    #[display("OK")]
+    DelayOk,
+    #[display("Cancelled")]
+    DelayCancelled,
     #[display("{_0}")]
     ExecutionFinished(FinishedResultKind),
     #[display("Unfinished")]
@@ -219,6 +227,10 @@ mod css {
                 BusyIntervalStatus::ExecutionTimeoutTemporary => "busy-execution-timeout-temporary",
                 BusyIntervalStatus::ExecutionErrorTemporary => "busy-execution-error-temporary",
                 BusyIntervalStatus::ExecutionLocked => "busy-execution-locked",
+                BusyIntervalStatus::DelayInProgress => "busy-execution-delay",
+                BusyIntervalStatus::DelayPaused => "busy-execution-delay-paused",
+                BusyIntervalStatus::DelayOk => "busy-execution-delay-ok",
+                BusyIntervalStatus::DelayCancelled => "busy-execution-delay-cancelled",
                 BusyIntervalStatus::ExecutionFinished(FinishedResultKind::Ok) => {
                     "busy-execution-finished"
                 }
