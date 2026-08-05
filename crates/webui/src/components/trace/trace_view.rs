@@ -7,8 +7,8 @@ use crate::{
         ffqn_with_links::FfqnWithLinks,
         notification::{Notification, NotificationContext},
         trace::{
-            data::{BusyInterval, TraceDataChild, TraceDataRoot},
-            execution_trace::ExecutionTrace,
+            data::{BusyInterval, TraceDataChild, TraceDataRoot, TraceLink},
+            execution_trace::{ExecutionTrace, set_linked_highlight},
         },
     },
     grpc::{
@@ -23,6 +23,7 @@ use crate::{
             },
             http_client_trace, join_set_response_event, supported_function_result,
         },
+        version::VersionType,
     },
     tree::Icon,
 };
@@ -232,6 +233,19 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     missing_executions.borrow_mut().clear();
     expandable_missing_children.borrow_mut().clear();
 
+    // Correlate each root submit with the join-next that consumed its result so both the
+    // tree node and both detail events can highlight together on hover.
+    let version_to_group = {
+        let dummy_events = Vec::new();
+        let dummy_responses = HashMap::new();
+        let events = trace_view.events.get(execution_id).unwrap_or(&dummy_events);
+        let responses = trace_view
+            .responses
+            .get(execution_id)
+            .unwrap_or(&dummy_responses);
+        compute_version_to_group(events, responses)
+    };
+
     let root_trace = {
         compute_root_trace(
             execution_id,
@@ -242,6 +256,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             &trace_view_state,
             &mut missing_executions.borrow_mut(),
             &mut expandable_missing_children.borrow_mut(),
+            &version_to_group,
         )
     };
 
@@ -307,14 +322,39 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                 )
             })
             .map(|event| {
-                event_to_detail(
+                let detail = event_to_detail(
                     execution_id,
                     event,
                     &join_next_version_to_response,
                     &child_created_events,
                     ExecutionLink::Trace,
                     false,
-                )
+                );
+                // A submit (JoinSetRequest) and its consuming JoinNext both get an id +
+                // hover handlers linking them to the node in the trace tree on the left.
+                if let Some(group) = version_to_group.get(&event.version) {
+                    let version = event.version;
+                    let on_enter = {
+                        let group = group.clone();
+                        Callback::from(move |_: MouseEvent| set_linked_highlight(&group, true))
+                    };
+                    let on_leave = {
+                        let group = group.clone();
+                        Callback::from(move |_: MouseEvent| set_linked_highlight(&group, false))
+                    };
+                    html! {
+                        <div
+                            id={format!("trace-event-{version}")}
+                            class="trace-detail-event"
+                            onmouseenter={on_enter}
+                            onmouseleave={on_leave}
+                        >
+                            {detail}
+                        </div>
+                    }
+                } else {
+                    detail
+                }
             })
             .collect::<Vec<_>>()
     };
@@ -488,6 +528,75 @@ fn on_state_change(
     }
 }
 
+/// Group each correlated `Submit`/`JoinNext` version pair (keyed by both versions) so a
+/// direct child/delay node and both of its detail events can highlight together on hover.
+/// A submit without a resolved join-next maps to a singleton group of just itself.
+fn compute_version_to_group(
+    events: &[ExecutionEvent],
+    responses: &HashMap<JoinSetId, Vec<JoinSetResponseEvent>>,
+) -> HashMap<VersionType, Vec<VersionType>> {
+    let mut submit_of_child: HashMap<&ExecutionId, VersionType> = HashMap::new();
+    let mut submit_of_delay: HashMap<&grpc_client::DelayId, VersionType> = HashMap::new();
+    for event in events {
+        if let Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+            event:
+                Some(execution_event::history_event::Event::JoinSetRequest(JoinSetRequest {
+                    join_set_request: Some(join_set_request),
+                    ..
+                })),
+        })) = &event.event
+        {
+            match join_set_request {
+                join_set_request::JoinSetRequest::ChildExecutionRequest(child_req) => {
+                    if let Some(child_execution_id) = &child_req.child_execution_id {
+                        submit_of_child.insert(child_execution_id, event.version);
+                    }
+                }
+                join_set_request::JoinSetRequest::DelayRequest(delay_req) => {
+                    if let Some(delay_id) = &delay_req.delay_id {
+                        submit_of_delay.insert(delay_id, event.version);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut groups: HashMap<VersionType, Vec<VersionType>> = HashMap::new();
+    for (join_next_version, response) in compute_join_next_to_response(events, responses) {
+        let submit_version = match response.response.as_ref() {
+            Some(join_set_response_event::Response::ChildExecutionFinished(
+                join_set_response_event::ChildExecutionFinished {
+                    child_execution_id: Some(child_execution_id),
+                    ..
+                },
+            )) => submit_of_child.get(child_execution_id).copied(),
+            Some(join_set_response_event::Response::DelayFinished(
+                join_set_response_event::DelayFinished {
+                    delay_id: Some(delay_id),
+                    ..
+                },
+            )) => submit_of_delay.get(delay_id).copied(),
+            _ => None,
+        };
+        if let Some(submit_version) = submit_version {
+            let group = vec![submit_version, join_next_version];
+            groups.insert(submit_version, group.clone());
+            groups.insert(join_next_version, group);
+        }
+    }
+    // Submits still waiting on their join-next self-highlight only.
+    for submit_version in submit_of_child
+        .values()
+        .chain(submit_of_delay.values())
+        .copied()
+    {
+        groups
+            .entry(submit_version)
+            .or_insert_with(|| vec![submit_version]);
+    }
+    groups
+}
+
 /// Return `None` if there are no events yet associated with the requested execution.
 #[allow(clippy::too_many_arguments)]
 fn compute_root_trace(
@@ -499,10 +608,25 @@ fn compute_root_trace(
     trace_view_state: &UseReducerHandle<TraceViewState>,
     missing_ids: &mut Vec<ExecutionId>,
     expandable_missing_children: &mut HashMap<String, Vec<ExecutionId>>,
+    version_to_group: &HashMap<VersionType, Vec<VersionType>>,
 ) -> Option<TraceDataRoot> {
     let events = match events_map.get(execution_id) {
         Some(events) if !events.is_empty() => events,
         _ => return None,
+    };
+
+    // Only the root's direct children link to the detail panel: deeper descendants belong
+    // to a child execution whose events are not shown on the right, and their versions
+    // would collide with the root's.
+    let make_link = |version: VersionType| -> Option<TraceLink> {
+        if is_root {
+            version_to_group.get(&version).map(|group| TraceLink {
+                version,
+                group: group.clone(),
+            })
+        } else {
+            None
+        }
     };
 
     let last_event = events.last().expect("not found is sent as an error");
@@ -596,6 +720,7 @@ fn compute_root_trace(
                                                     busy: vec![],
                                                     children: vec![],
                                                     load_button: None,
+                                                    link: None,
                                                 })
                                             ]
                                         },
@@ -611,6 +736,7 @@ fn compute_root_trace(
                                                     busy: vec![],
                                                     children: vec![],
                                                     load_button: None,
+                                                    link: None,
                                                 })
                                             ]
                                         },
@@ -619,6 +745,7 @@ fn compute_root_trace(
                                         }
                                     },
                                     load_button: None,
+                                    link: None,
                                 })
                             })
                             .collect();
@@ -659,7 +786,7 @@ fn compute_root_trace(
                                 .push(child_execution_id.clone());
                         }
 
-                        if let Some(child_root) = compute_root_trace(
+                        if let Some(mut child_root) = compute_root_trace(
                             child_execution_id,
                             false,
                             events_map,
@@ -668,8 +795,10 @@ fn compute_root_trace(
                             trace_view_state,
                             missing_ids,
                             expandable_missing_children,
+                            version_to_group,
                         ) {
                             last_event_at = last_event_at.max(child_root.last_event_at);
+                            child_root.link = make_link(event.version);
                             Some(vec![TraceData::Root(child_root)])
                         } else {
                             // Child execution has no events loaded yet.
@@ -702,6 +831,7 @@ fn compute_root_trace(
                                     }],
                                     children: Vec::new(),
                                     load_button: None,
+                                    link: make_link(event.version),
                                 })
                             ])
                         }
@@ -785,6 +915,7 @@ fn compute_root_trace(
                                 }],
                                 children: Vec::new(),
                                 load_button: None,
+                                link: make_link(event.version),
                             })
                         ])
                     },
@@ -921,6 +1052,7 @@ fn compute_root_trace(
         children,
         load_button: None,
         current_status: statuses_map.get(execution_id).cloned(),
+        link: None,
     })
 }
 

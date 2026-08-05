@@ -1,10 +1,20 @@
 use crate::{
     components::execution_status::status_to_string,
-    grpc::{finished_result_kind::FinishedResultKind, grpc_client},
+    grpc::{finished_result_kind::FinishedResultKind, grpc_client, version::VersionType},
 };
 use chrono::{DateTime, TimeDelta, Utc};
 use std::time::Duration;
 use yew::Html;
+
+/// Links a direct child-execution/delay node to its correlated events in the detail
+/// panel: the `Submit` (`JoinSetRequest`) that spawned it and, once resolved, the
+/// `JoinNext` that consumed its result. `version` (the submit) drives the node's badge
+/// and DOM id; `group` is every version that should highlight together on hover.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraceLink {
+    pub version: VersionType,
+    pub group: Vec<VersionType>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TraceData {
@@ -60,6 +70,14 @@ impl TraceData {
         match self {
             TraceData::Root(root) => &root.node_key,
             TraceData::Child(child) => &child.node_key,
+        }
+    }
+
+    /// Link between a child-execution/delay node and its events on the detail side.
+    pub fn link(&self) -> Option<&TraceLink> {
+        match self {
+            TraceData::Root(root) => root.link.as_ref(),
+            TraceData::Child(child) => child.link.as_ref(),
         }
     }
 
@@ -177,6 +195,7 @@ pub struct TraceDataRoot {
     pub children: Vec<TraceData>,
     pub load_button: Option<Html>,
     pub current_status: Option<grpc_client::execution_status::Status>,
+    pub link: Option<TraceLink>,
 }
 impl TraceDataRoot {
     pub fn total_duration(&self) -> Duration {
@@ -198,6 +217,7 @@ pub struct TraceDataChild {
     pub busy: Vec<BusyInterval>,
     pub children: Vec<TraceData>,
     pub load_button: Option<Html>,
+    pub link: Option<TraceLink>,
 }
 
 mod grpc {

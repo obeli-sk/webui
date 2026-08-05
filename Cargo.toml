@@ -36,6 +36,7 @@ wasm-bindgen-test = "=0.3.71" # Must match wasm-bindgen
 web-sys = { version = "=0.3.98", features = [
     "Clipboard",
     "CssStyleDeclaration",
+    "DomTokenList",
     "HtmlElement",
     "HtmlInputElement",
     "HtmlSelectElement",
