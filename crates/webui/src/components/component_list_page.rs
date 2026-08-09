@@ -4,8 +4,8 @@ use crate::{
         code::code_block::CodeBlock,
         component_tree::{ComponentTree, ComponentTreeConfig},
         deployment_config_view::{
-            CollapsibleSource, MANIFEST_SECTIONS, SourceView, build_sections_from_manifest,
-            component_display_name, component_to_toml, toml_block,
+            CollapsibleSource, MANIFEST_SECTIONS, SourceContent, SourceMetadata, SourceView,
+            build_sections_from_manifest, component_display_name, component_to_toml, toml_block,
         },
         execution_list_page::ExecutionQuery,
         ffqn_with_links::FfqnWithLinks,
@@ -15,7 +15,7 @@ use crate::{
     grpc::{
         ffqn::FunctionFqn,
         function_detail::{InterfaceFilter, map_interfaces_to_fn_details},
-        grpc_client::{self, ComponentId, FunctionDetail},
+        grpc_client::{self, ComponentFileRole, ComponentId, FunctionDetail},
         ifc_fqn::IfcFqn,
     },
     util::wit_highlighter,
@@ -81,6 +81,39 @@ impl ComponentDetailTab {
 struct ComponentDeploymentConfig {
     toml: String,
     sources: Vec<SourceView>,
+}
+
+fn component_file_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<SourceView> {
+    let mut sources = files
+        .iter()
+        .map(|file_ref| {
+            let file = file_ref.file.as_ref().expect("`file` is sent");
+            let role = ComponentFileRole::try_from(file_ref.role)
+                .unwrap_or(ComponentFileRole::Unspecified);
+            SourceView {
+                file_name: file.path.clone(),
+                content: SourceContent::FetchFile {
+                    digest: file.digest.clone(),
+                },
+                metadata: Some(SourceMetadata {
+                    role: component_file_role_label(role),
+                }),
+            }
+        })
+        .collect::<Vec<_>>();
+    sources.sort_by(|a, b| a.file_name.cmp(&b.file_name));
+    sources
+}
+
+fn component_file_role_label(role: ComponentFileRole) -> &'static str {
+    match role {
+        ComponentFileRole::WasmComponent => "WASM component",
+        ComponentFileRole::ExecProgram => "exec program",
+        ComponentFileRole::JsEntrypoint => "JS entrypoint",
+        ComponentFileRole::JsModule => "JS module",
+        ComponentFileRole::BacktraceSource => "backtrace source",
+        ComponentFileRole::Unspecified => "unspecified",
+    }
 }
 
 #[component(ComponentListPage)]
@@ -170,20 +203,24 @@ pub fn component_list_page(
         );
     }
 
-    // Fetch the WIT once the component is resolved.
+    // Fetch raw WIT only when its tab is selected.
     use_effect_with(
         (
             (*component_state).clone(),
             deployment_id.clone(),
             is_active_deployment,
+            selected_tab,
         ),
         {
             let wit_state = wit_state.clone();
             let wit_loaded = wit_loaded.clone();
             let notifications = notifications.clone();
-            move |(component, deployment_id, is_active_deployment)| {
+            move |(component, deployment_id, is_active_deployment, selected_tab)| {
                 wit_state.set(None);
                 wit_loaded.set(false);
+                if *selected_tab != ComponentDetailTab::Wit {
+                    return;
+                }
                 let Some(component) = component.clone() else {
                     wit_loaded.set(true);
                     return;
@@ -247,16 +284,24 @@ pub fn component_list_page(
             (*component_state).clone(),
             deployment_id.clone(),
             current_deployment_id.clone(),
+            selected_tab,
         ),
         {
             let deployment_config = deployment_config.clone();
             let notifications = notifications.clone();
-            move |(component, deployment_id, current_deployment_id)| {
+            move |(component, deployment_id, current_deployment_id, selected_tab)| {
                 deployment_config.set(None);
                 let Some(component) = component.clone() else {
                     deployment_config.set(Some(Ok(None)));
                     return;
                 };
+                let needs_toml = *selected_tab == ComponentDetailTab::Toml;
+                // backcompat: 0.41 deployments lack component file refs; delete TOML source fallback in 0.43.
+                let needs_source_fallback =
+                    *selected_tab == ComponentDetailTab::Sources && component.files.is_empty();
+                if !needs_toml && !needs_source_fallback {
+                    return;
+                }
                 let Some(deployment_id) = deployment_id
                     .as_ref()
                     .map(|id| grpc_client::DeploymentId { id: id.clone() })
@@ -418,6 +463,7 @@ pub fn component_list_page(
                 .expect("`component_id` is sent")
                 .name;
             let component_id = component.component_id.clone();
+            let component_sources = component_file_sources(&component.files);
             // Link back to the deployment this component belongs to (from the query,
             // else the active deployment). "Deployments" already lives in the header nav.
             let component_deployment_id = deployment_id
@@ -472,6 +518,16 @@ pub fn component_list_page(
             };
             let tab_content = match selected_tab {
                 ComponentDetailTab::Exports => exported_functions,
+                ComponentDetailTab::Sources if !component_sources.is_empty() => html! {
+                    <div class="component-sources">
+                        { for component_sources.into_iter().map(|source| html! {
+                            <CollapsibleSource
+                                {source}
+                                component_id={component_id.clone()}
+                            />
+                        }) }
+                    </div>
+                },
                 ComponentDetailTab::Sources => match deployment_config.as_ref() {
                     None => html! { <p class="component-empty-state">{"Loading sources..."}</p> },
                     Some(Ok(Some(config))) if config.sources.is_empty() => html! {
@@ -592,5 +648,55 @@ pub fn component_list_page(
                 } />
             </section>
         </>}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn component_files_become_path_sorted_fetchable_sources_with_metadata() {
+        let files = vec![
+            component_file(
+                "src/module.js",
+                "sha256:module",
+                1234,
+                ComponentFileRole::JsModule,
+            ),
+            component_file(
+                "src/entry.js",
+                "sha256:entry",
+                42,
+                ComponentFileRole::JsEntrypoint,
+            ),
+        ];
+
+        let sources = component_file_sources(&files);
+
+        assert_eq!(sources[0].file_name, "src/entry.js");
+        assert!(matches!(
+            &sources[0].content,
+            SourceContent::FetchFile { digest } if digest == "sha256:entry"
+        ));
+        let metadata = sources[0].metadata.as_ref().unwrap();
+        assert_eq!(metadata.role, "JS entrypoint");
+        assert_eq!(sources[1].file_name, "src/module.js");
+    }
+
+    fn component_file(
+        path: &str,
+        digest: &str,
+        size: u64,
+        role: ComponentFileRole,
+    ) -> grpc_client::ComponentFileRef {
+        grpc_client::ComponentFileRef {
+            file: Some(grpc_client::FileRef {
+                path: path.to_string(),
+                digest: digest.to_string(),
+                size,
+            }),
+            role: role as i32,
+        }
     }
 }

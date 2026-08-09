@@ -121,9 +121,20 @@
   }
 
   .source-file-name {
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .source-file-metadata {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    min-width: 0;
+    color: $color-text-secondary;
+    font-size: $font-size-sm;
+    font-weight: 400;
   }
 
   > p {
