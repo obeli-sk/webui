@@ -324,6 +324,7 @@ pub fn component_list_page(
                     let response = client
                         .get_deployment(grpc_client::GetDeploymentRequest {
                             deployment_id: Some(deployment_id),
+                            include_generated_metadata: Some(false),
                         })
                         .await;
                     match response {

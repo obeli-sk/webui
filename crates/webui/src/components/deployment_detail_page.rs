@@ -104,6 +104,7 @@ pub fn deployment_detail_page(
                     match client
                         .get_deployment(grpc_client::GetDeploymentRequest {
                             deployment_id: Some(deployment_id.clone()),
+                            include_generated_metadata: Some(false),
                         })
                         .await
                     {
