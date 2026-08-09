@@ -56,6 +56,12 @@ pub struct ComponentView {
 pub struct SourceView {
     pub file_name: String,
     pub content: SourceContent,
+    pub metadata: Option<SourceMetadata>,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct SourceMetadata {
+    pub role: &'static str,
 }
 
 #[derive(PartialEq, Clone)]
@@ -136,6 +142,7 @@ fn backtrace_sources(table: &Value) -> Vec<SourceView> {
         .map(|file| SourceView {
             file_name: file.clone(),
             content: SourceContent::Fetch { file: file.clone() },
+            metadata: None,
         })
         .collect();
     sources.sort_by(|a, b| a.file_name.cmp(&b.file_name));
@@ -158,6 +165,7 @@ fn script_source(table: &Value, inline_extension: Option<&str>) -> Option<Source
         return Some(SourceView {
             file_name,
             content: SourceContent::Inline(content.to_string()),
+            metadata: None,
         });
     }
     let location = table.get("location").and_then(Value::as_str)?;
@@ -167,6 +175,7 @@ fn script_source(table: &Value, inline_extension: Option<&str>) -> Option<Source
             content: SourceContent::Oci {
                 image: location.to_string(),
             },
+            metadata: None,
         });
     }
     let file_name = file_name_of(location);
@@ -176,12 +185,14 @@ fn script_source(table: &Value, inline_extension: Option<&str>) -> Option<Source
             content: SourceContent::FetchFile {
                 digest: digest.to_string(),
             },
+            metadata: None,
         }),
         None => Some(SourceView {
             file_name,
             content: SourceContent::ExternalPath {
                 path: location.to_string(),
             },
+            metadata: None,
         }),
     }
 }
@@ -454,7 +465,7 @@ pub fn collapsible_source(
             SourceContent::Oci { image } => {
                 return html! {
                     <details {ontoggle} class="source-block">
-                        <summary><span class="source-file-name">{ &source.file_name }</span></summary>
+                        { source_summary(source) }
                         <p>{ format!("Source is stored in the OCI image `{image}`.") }</p>
                     </details>
                 };
@@ -462,7 +473,7 @@ pub fn collapsible_source(
             SourceContent::ExternalPath { path } => {
                 return html! {
                     <details {ontoggle} class="source-block">
-                        <summary><span class="source-file-name">{ &source.file_name }</span></summary>
+                        { source_summary(source) }
                         <p>{ format!("Source is read at runtime from the external path `{path}`.") }</p>
                     </details>
                 };
@@ -474,7 +485,7 @@ pub fn collapsible_source(
                     Some(Err(err)) => {
                         return html! {
                             <details {ontoggle} class="source-block">
-                                <summary><span class="source-file-name">{ &source.file_name }</span></summary>
+                                { source_summary(source) }
                                 <p class="error">{ format!("Cannot fetch source: {err}") }</p>
                             </details>
                         };
@@ -507,9 +518,22 @@ pub fn collapsible_source(
 
     html! {
         <details {ontoggle} class="source-block">
-            <summary><span class="source-file-name">{ &source.file_name }</span></summary>
+            { source_summary(source) }
             { body }
         </details>
+    }
+}
+
+fn source_summary(source: &SourceView) -> Html {
+    html! {
+        <summary>
+            <span class="source-file-name">{ &source.file_name }</span>
+            if let Some(metadata) = &source.metadata {
+                <span class="source-file-metadata">
+                    <span>{metadata.role}</span>
+                </span>
+            }
+        </summary>
     }
 }
 
