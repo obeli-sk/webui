@@ -564,8 +564,10 @@ pub fn deployment_config_view(
         .iter()
         .map(|section| {
             html! {
-                <section class="deployment-section">
-                    <h4>{ section.title } { format!(" ({})", section.components.len()) }</h4>
+                <details class="deployment-section">
+                    <summary>
+                        <h4>{ section.title } { format!(" ({})", section.components.len()) }</h4>
+                    </summary>
                     <div class="deployment-component-list">
                         { for section.components.iter().map(|component| {
                             let component_metadata = components_by_name.get(&component.name);
@@ -639,7 +641,7 @@ pub fn deployment_config_view(
                             }
                         })}
                     </div>
-                </section>
+                </details>
             }
         })
         .collect()
