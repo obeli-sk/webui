@@ -123,8 +123,9 @@
 }
 
 // Wrapper around a child-execution / delay submit event on the detail side, carrying the
-// id + hover target that links it to its node in the trace tree.
+// id + highlight button that links it to its node in the trace tree.
 .trace-detail-event {
+  position: relative;
   transition:
     background-color $transition-normal,
     box-shadow $transition-normal;
@@ -135,6 +136,12 @@
 
   &:last-child > .bp3-tree {
     margin-bottom: 0;
+  }
+
+  > .trace-link-button {
+    position: absolute;
+    top: $spacing-xs;
+    right: $spacing-xs;
   }
 }
 
@@ -163,12 +170,37 @@
   font-variant-numeric: tabular-nums;
 }
 
-// Linked highlight applied (via JS on hover) to a tree node and its matching detail
-// event at the same version, so hovering one reveals its counterpart on the other side.
+// Linked highlight applied (via JS) to a tree node and its matching detail event at the
+// same version when the row's link button is pressed, revealing the two counterparts.
 .trace-linked-highlight {
   background-color: rgba($color-accent-cyan, 0.18);
   box-shadow: inset 0 0 0 1px $color-accent-cyan;
   border-radius: $border-radius-md;
+}
+
+// Dedicated button that toggles the linked highlight between a tree node and its matching
+// detail event, without disturbing the tree's own expand/collapse behavior.
+.trace-link-button {
+  flex-shrink: 0;
+  margin-left: $spacing-sm;
+  padding: 0 $spacing-xs;
+  border: none;
+  border-radius: $border-radius-md;
+  background-color: transparent;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  line-height: 1.4;
+  cursor: pointer;
+
+  &:hover {
+    background-color: rgba($color-accent-cyan, 0.18);
+    color: $color-accent-cyan;
+  }
+}
+
+// Keeps the button's footprint on unlinked rows so duration bars stay aligned.
+.trace-link-button-placeholder {
+  visibility: hidden;
 }
 
 .step-icon {

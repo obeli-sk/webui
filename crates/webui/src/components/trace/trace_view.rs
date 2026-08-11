@@ -8,7 +8,10 @@ use crate::{
         notification::{Notification, NotificationContext},
         trace::{
             data::{BusyInterval, TraceDataChild, TraceDataRoot, TraceLink},
-            execution_trace::{ExecutionTrace, scroll_linked_item, set_linked_highlight},
+            execution_trace::{
+                ExecutionTrace, clear_all_linked_highlights, is_group_highlighted,
+                scroll_linked_item, set_linked_highlight,
+            },
         },
     },
     grpc::{
@@ -234,7 +237,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     expandable_missing_children.borrow_mut().clear();
 
     // Correlate each root submit with the join-next that consumed its result so both the
-    // tree node and both detail events can highlight together on hover.
+    // tree node and both detail events can highlight together on click.
     let version_to_group = {
         let dummy_events = Vec::new();
         let dummy_responses = HashMap::new();
@@ -330,34 +333,40 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                     ExecutionLink::Trace,
                     false,
                 );
-                // A submit (JoinSetRequest) and its consuming JoinNext both get an id +
-                // hover handlers linking them to the node in the trace tree on the left.
+                // A submit (JoinSetRequest) and its consuming JoinNext both get an id + a
+                // dedicated highlight button linking them to the tree node on the left. The
+                // button toggles the highlight without touching the tree's expand behavior.
                 if let Some(group) = version_to_group.get(&event.version) {
                     let version = event.version;
-                    let on_enter = {
+                    let on_highlight = {
                         let group = group.clone();
                         let starting_version = group.first().copied();
-                        Callback::from(move |_: MouseEvent| {
-                            set_linked_highlight(&group, true);
-                            if let Some(starting_version) = starting_version {
-                                scroll_linked_item(
-                                    "trace-tree-pane",
-                                    &format!("trace-node-{starting_version}"),
-                                );
+                        Callback::from(move |e: MouseEvent| {
+                            e.stop_propagation();
+                            let was_highlighted =
+                                starting_version.is_some_and(is_group_highlighted);
+                            clear_all_linked_highlights();
+                            if !was_highlighted {
+                                set_linked_highlight(&group, true);
+                                if let Some(starting_version) = starting_version {
+                                    scroll_linked_item(
+                                        "trace-tree-pane",
+                                        &format!("trace-node-{starting_version}"),
+                                    );
+                                }
                             }
                         })
                     };
-                    let on_leave = {
-                        let group = group.clone();
-                        Callback::from(move |_: MouseEvent| set_linked_highlight(&group, false))
-                    };
                     html! {
-                        <div
-                            id={format!("trace-event-{version}")}
-                            class="trace-detail-event"
-                            onmouseenter={on_enter}
-                            onmouseleave={on_leave}
-                        >
+                        <div id={format!("trace-event-{version}")} class="trace-detail-event">
+                            <button
+                                type="button"
+                                class="trace-link-button"
+                                title="Highlight matching node in the tree pane"
+                                onclick={on_highlight}
+                            >
+                                {"\u{21C4}"}
+                            </button>
                             {detail}
                         </div>
                     }
@@ -402,11 +411,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         })
     };
 
-    let clear_linked_highlights = {
-        let versions = version_to_group.keys().copied().collect::<Vec<_>>();
-        Callback::from(move |_: MouseEvent| set_linked_highlight(&versions, false))
-    };
-
     html! {<>
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
 
@@ -414,7 +418,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             <div
                 id="trace-tree-pane"
                 class="trace-view"
-                onmouseleave={clear_linked_highlights.clone()}
             >
                 <div class="trace-controls" style="margin-bottom: 10px; display: flex; gap: 15px;">
                     <label style="cursor: pointer; user-select: none;">
@@ -450,7 +453,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             <div
                 id="trace-detail-pane"
                 class="trace-detail"
-                onmouseleave={clear_linked_highlights}
             >
                 {execution_log}
             </div>
@@ -551,7 +553,7 @@ fn on_state_change(
 }
 
 /// Group each correlated `Submit`/`JoinNext` version pair (keyed by both versions) so a
-/// direct child/delay node and both of its detail events can highlight together on hover.
+/// direct child/delay node and both of its detail events can highlight together on click.
 /// A submit without an unambiguous join-next maps to a singleton group of just itself.
 pub(crate) fn compute_submit_await_version_groups(
     events: &[ExecutionEvent],

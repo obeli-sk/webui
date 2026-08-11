@@ -5,7 +5,7 @@ use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 /// Toggle the linked-highlight class on every tree node and detail-side event in a
-/// correlation group (submit + its join-next), so hovering any one highlights them all.
+/// correlation group (submit + its join-next), so clicking any one highlights them all.
 pub fn set_linked_highlight(versions: &[VersionType], on: bool) {
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
         return;
@@ -25,6 +25,31 @@ pub fn set_linked_highlight(versions: &[VersionType], on: bool) {
             }
         }
     }
+}
+
+/// Remove the linked-highlight class from every element that currently carries it, so a
+/// new click starts from a clean slate.
+pub fn clear_all_linked_highlights() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let collection = document.get_elements_by_class_name("trace-linked-highlight");
+    // Collect up front: removing the class mutates this live collection.
+    let elements: Vec<_> = (0..collection.length())
+        .filter_map(|i| collection.item(i))
+        .collect();
+    for element in elements {
+        let _ = element.class_list().remove_1("trace-linked-highlight");
+    }
+}
+
+/// Whether the correlation group starting at `version` is currently highlighted, checked
+/// via its tree node so a repeated click can toggle the highlight off.
+pub fn is_group_highlighted(version: VersionType) -> bool {
+    web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id(&format!("trace-node-{version}")))
+        .is_some_and(|element| element.class_list().contains("trace-linked-highlight"))
 }
 
 pub fn scroll_linked_item(pane_id: &str, item_id: &str) {
@@ -126,25 +151,46 @@ pub fn execution_trace(props: &ExecutionStepProps) -> Html {
             .join(",")
     });
     let row_id = link.map(|link| format!("trace-node-{}", link.version));
-    let on_row_enter = link.map(|link| {
-        let group = link.group.clone();
-        let starting_version = link.version;
-        Callback::from(move |_: MouseEvent| {
-            set_linked_highlight(&group, true);
-            scroll_linked_item(
-                "trace-detail-pane",
-                &format!("trace-event-{starting_version}"),
-            );
-        })
-    });
-    let on_row_leave = link.map(|link| {
-        let group = link.group.clone();
-        Callback::from(move |_: MouseEvent| set_linked_highlight(&group, false))
-    });
+    // A dedicated button (not a row click) toggles the linked highlight, so the tree's
+    // own expand/collapse behavior is left untouched. Unlinked rows (the root and leaf
+    // descendants) render an invisible placeholder so every duration bar stays aligned.
+    let highlight_button = match link {
+        Some(link) => {
+            let group = link.group.clone();
+            let starting_version = link.version;
+            let on_highlight = Callback::from(move |e: MouseEvent| {
+                e.stop_propagation();
+                let was_highlighted = is_group_highlighted(starting_version);
+                clear_all_linked_highlights();
+                if !was_highlighted {
+                    set_linked_highlight(&group, true);
+                    scroll_linked_item(
+                        "trace-detail-pane",
+                        &format!("trace-event-{starting_version}"),
+                    );
+                }
+            });
+            html! {
+                <button
+                    type="button"
+                    class="trace-link-button"
+                    title="Highlight matching event in the detail pane"
+                    onclick={on_highlight}
+                >
+                    {"\u{21C4}"}
+                </button>
+            }
+        }
+        None => html! {
+            <span class="trace-link-button trace-link-button-placeholder" aria-hidden="true">
+                {"\u{21C4}"}
+            </span>
+        },
+    };
 
     html! {
         <div class="execution-trace">
-            <div class="step-row" id={row_id} onmouseenter={on_row_enter} onmouseleave={on_row_leave}>
+            <div class="step-row" id={row_id}>
                 <span class="step-icon">
                     if has_children {
                         <span class={caret_class} onclick={toggle}>
@@ -171,6 +217,7 @@ pub fn execution_trace(props: &ExecutionStepProps) -> Html {
                         </div>
                     }
                 </div>
+                { highlight_button }
             </div>
             {children_html}
         </div>

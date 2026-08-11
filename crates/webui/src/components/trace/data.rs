@@ -9,7 +9,7 @@ use yew::Html;
 /// Links a direct child-execution/delay node to its correlated events in the detail
 /// panel: the `Submit` (`JoinSetRequest`) that spawned it and, once resolved, the
 /// `JoinNext` that consumed its result. `version` (the submit) drives the node's badge
-/// and DOM id; `group` is every version that should highlight together on hover.
+/// and DOM id; `group` is every version that should highlight together on click.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceLink {
     pub version: VersionType,
