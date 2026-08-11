@@ -8,7 +8,8 @@ use crate::{
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
         notification::{Notification, NotificationContext},
-        trace::trace_view::{PAGE, SLEEP_MILLIS},
+        trace::highlight::TraceHighlightJump,
+        trace::trace_view::{PAGE, SLEEP_MILLIS, compute_submit_await_version_groups},
     },
     grpc::{
         grpc_client::{
@@ -483,6 +484,8 @@ pub fn debugger_view(
         .get(execution_id)
         .unwrap_or(&dummy_response_map);
     let join_next_version_to_response = compute_join_next_to_response(leaf_events, leaf_responses);
+    let submit_await_version_groups =
+        compute_submit_await_version_groups(leaf_events, leaf_responses);
 
     // Determine highlighting logic for log based on Leaf backtrace
     let leaf_version = versions.last();
@@ -522,7 +525,7 @@ pub fn debugger_view(
             ) || event.backtrace_id.is_some()
         })
         .map(|event| {
-            event_to_detail(
+            let detail = event_to_detail(
                 execution_id,
                 event,
                 &join_next_version_to_response,
@@ -537,7 +540,21 @@ pub fn debugger_view(
                             && b.version_max_excluding > event.version
                     })
                     .unwrap_or_default(),
-            )
+            );
+            // Jump to this event highlighted in the trace view (correlated events only).
+            if submit_await_version_groups.contains_key(&event.version) {
+                html! {
+                    <div class="trace-detail-event">
+                        <TraceHighlightJump
+                            execution_id={execution_id.clone()}
+                            version={event.version}
+                        />
+                        {detail}
+                    </div>
+                }
+            } else {
+                detail
+            }
         })
         .collect::<Vec<_>>();
 

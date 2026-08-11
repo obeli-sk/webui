@@ -8,9 +8,9 @@ use crate::{
         notification::{Notification, NotificationContext},
         trace::{
             data::{BusyInterval, TraceDataChild, TraceDataRoot, TraceLink},
-            execution_trace::{
-                ExecutionTrace, clear_all_linked_highlights, is_group_highlighted,
-                scroll_linked_item, set_linked_highlight,
+            execution_trace::ExecutionTrace,
+            highlight::{
+                apply_highlight_from_hash, highlighted_version_from_hash, set_highlight_hash,
             },
         },
     },
@@ -32,6 +32,7 @@ use crate::{
 };
 use assert_matches::assert_matches;
 use chrono::{DateTime, Utc};
+use gloo::events::EventListener;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
@@ -340,21 +341,11 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                     let version = event.version;
                     let on_highlight = {
                         let group = group.clone();
-                        let starting_version = group.first().copied();
                         Callback::from(move |e: MouseEvent| {
                             e.stop_propagation();
-                            let was_highlighted =
-                                starting_version.is_some_and(is_group_highlighted);
-                            clear_all_linked_highlights();
-                            if !was_highlighted {
-                                set_linked_highlight(&group, true);
-                                if let Some(starting_version) = starting_version {
-                                    scroll_linked_item(
-                                        "trace-tree-pane",
-                                        &format!("trace-node-{starting_version}"),
-                                    );
-                                }
-                            }
+                            let already_active = highlighted_version_from_hash()
+                                .is_some_and(|version| group.contains(&version));
+                            set_highlight_hash((!already_active).then_some(version));
                         })
                     };
                     html! {
@@ -376,6 +367,25 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             })
             .collect::<Vec<_>>()
     };
+
+    // The highlight lives in the URL fragment (`#trace-highlight-<version>`), so it is
+    // bookmarkable and reachable from the log/debugger views. Apply it on mount, whenever
+    // the fragment changes, and whenever newly loaded data grows the correlation groups.
+    let highlight_scrolled = use_mut_ref(|| Option::<VersionType>::None);
+    {
+        let highlight_scrolled = highlight_scrolled.clone();
+        use_effect_with(version_to_group.clone(), move |version_to_group| {
+            apply_highlight_from_hash(version_to_group, &highlight_scrolled);
+            let listener = web_sys::window().map(|window| {
+                let version_to_group = version_to_group.clone();
+                let highlight_scrolled = highlight_scrolled.clone();
+                EventListener::new(&window, "hashchange", move |_| {
+                    apply_highlight_from_hash(&version_to_group, &highlight_scrolled);
+                })
+            });
+            move || drop(listener)
+        });
+    }
 
     let on_hide_finished_change = {
         let trace_view_state = trace_view_state.clone();

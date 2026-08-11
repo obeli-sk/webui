@@ -1,4 +1,5 @@
 use super::data::TraceData;
+use super::highlight::{highlighted_version_from_hash, set_highlight_hash};
 use crate::grpc::version::VersionType;
 use chrono::{DateTime, Utc};
 use wasm_bindgen::JsCast;
@@ -41,15 +42,6 @@ pub fn clear_all_linked_highlights() {
     for element in elements {
         let _ = element.class_list().remove_1("trace-linked-highlight");
     }
-}
-
-/// Whether the correlation group starting at `version` is currently highlighted, checked
-/// via its tree node so a repeated click can toggle the highlight off.
-pub fn is_group_highlighted(version: VersionType) -> bool {
-    web_sys::window()
-        .and_then(|window| window.document())
-        .and_then(|document| document.get_element_by_id(&format!("trace-node-{version}")))
-        .is_some_and(|element| element.class_list().contains("trace-linked-highlight"))
 }
 
 pub fn scroll_linked_item(pane_id: &str, item_id: &str) {
@@ -151,24 +143,19 @@ pub fn execution_trace(props: &ExecutionStepProps) -> Html {
             .join(",")
     });
     let row_id = link.map(|link| format!("trace-node-{}", link.version));
-    // A dedicated button (not a row click) toggles the linked highlight, so the tree's
-    // own expand/collapse behavior is left untouched. Unlinked rows (the root and leaf
-    // descendants) render an invisible placeholder so every duration bar stays aligned.
+    // A dedicated button (not a row click) toggles the linked highlight via the URL
+    // fragment, so the tree's own expand/collapse behavior is left untouched. Unlinked rows
+    // (the root and leaf descendants) render an invisible placeholder so every duration bar
+    // stays aligned.
     let highlight_button = match link {
         Some(link) => {
             let group = link.group.clone();
             let starting_version = link.version;
             let on_highlight = Callback::from(move |e: MouseEvent| {
                 e.stop_propagation();
-                let was_highlighted = is_group_highlighted(starting_version);
-                clear_all_linked_highlights();
-                if !was_highlighted {
-                    set_linked_highlight(&group, true);
-                    scroll_linked_item(
-                        "trace-detail-pane",
-                        &format!("trace-event-{starting_version}"),
-                    );
-                }
+                let already_active =
+                    highlighted_version_from_hash().is_some_and(|version| group.contains(&version));
+                set_highlight_hash((!already_active).then_some(starting_version));
             });
             html! {
                 <button

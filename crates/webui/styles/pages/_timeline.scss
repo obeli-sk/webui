@@ -101,6 +101,13 @@
   padding-bottom: 5px;
 }
 
+// Right-aligned action buttons (scroll-to-counterpart, jump-to-trace) in the meta bar.
+.timeline-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
 .event-duration {
   font-weight: bold;
 }
