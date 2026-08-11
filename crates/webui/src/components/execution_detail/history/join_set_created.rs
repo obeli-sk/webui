@@ -1,22 +1,15 @@
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
-    app::{Route, query::BacktraceVersionsPath},
     components::execution_detail::tree_component::TreeComponent,
-    grpc::{
-        grpc_client::{self, ExecutionId},
-        version::VersionType,
-    },
+    grpc::{grpc_client, version::VersionType},
 };
 use yew::prelude::*;
-use yew_router::prelude::Link;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinSetCreatedEventProps {
     pub event: grpc_client::execution_event::history_event::JoinSetCreated,
     pub version: VersionType,
     pub is_selected: bool,
-    pub execution_id: ExecutionId,
-    pub backtrace_id: Option<VersionType>,
 }
 
 impl HistoryJoinSetCreatedEventProps {
@@ -32,41 +25,23 @@ impl HistoryJoinSetCreatedEventProps {
             .join_set_id
             .as_ref()
             .expect("join_set_id must be sent");
-        let join_set_created_node_id = tree
-            .insert(
-                Node::new(NodeData {
-                    icon: Icon::History,
-                    label: html! {
-                        <>
-                            {self.version}
-                            {". Join Set Created: `"}
-                            {join_set_id}
-                            {"`"}
-                        </>
-                    },
-                    has_caret: self.backtrace_id.is_some(),
-                    is_selected: self.is_selected,
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&root_id),
-            )
-            .unwrap();
-
-        if let Some(backtrace_id) = self.backtrace_id {
-            tree.insert(
-                Node::new(NodeData {
-                    icon: Icon::Flows,
-                    label: html! {
-                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: self.execution_id.clone(), versions: BacktraceVersionsPath::from(backtrace_id) } }>
-                            {"Backtrace"}
-                        </Link<Route>>
-                    },
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&join_set_created_node_id),
-            )
-            .unwrap();
-        }
+        tree.insert(
+            Node::new(NodeData {
+                icon: Icon::History,
+                label: html! {
+                    <>
+                        {self.version}
+                        {". Join Set Created: `"}
+                        {join_set_id}
+                        {"`"}
+                    </>
+                },
+                is_selected: self.is_selected,
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&root_id),
+        )
+        .unwrap();
 
         TreeData::from(tree)
     }

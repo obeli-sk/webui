@@ -1,5 +1,4 @@
 use crate::app::AppState;
-use crate::app::{Route, query::BacktraceVersionsPath};
 use crate::components::execution_actions::{
     CancelDelayButton, PauseDelayButton, UnpauseDelayButton,
 };
@@ -9,21 +8,16 @@ use crate::components::execution_header::ExecutionLink;
 use crate::components::ffqn_with_links::FfqnWithLinks;
 use crate::components::json_tree::{JsonValue, insert_json_into_tree};
 use crate::grpc::ffqn::FunctionFqn;
-use crate::grpc::grpc_client::{
-    self, ExecutionId, execution_event::history_event::join_set_request,
-};
+use crate::grpc::grpc_client::{self, execution_event::history_event::join_set_request};
 use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::util::time::{TimeGranularity, format_date, relative_time, use_relative_now};
 use chrono::{DateTime, Utc};
 use yew::prelude::*;
-use yew_router::prelude::Link;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinSetRequestEventProps {
     pub event: grpc_client::execution_event::history_event::JoinSetRequest,
-    pub execution_id: ExecutionId,
-    pub backtrace_id: Option<VersionType>,
     pub version: VersionType,
     pub link: ExecutionLink,
     pub is_selected: bool,
@@ -313,21 +307,6 @@ impl HistoryJoinSetRequestEventProps {
                     }
                 }
             }
-        }
-        if let Some(backtrace_id) = self.backtrace_id {
-            tree.insert(
-                Node::new(NodeData {
-                    icon: Icon::Flows,
-                    label: html! {
-                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: self.execution_id.clone(), versions: BacktraceVersionsPath::from(backtrace_id) } }>
-                            {"Backtrace"}
-                        </Link<Route>>
-                    },
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&join_set_node),
-            )
-            .unwrap();
         }
         TreeData::from(tree)
     }

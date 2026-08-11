@@ -1,19 +1,12 @@
-use crate::app::query::BacktraceVersionsPath;
-use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::grpc_client::execution_event::history_event::join_next_try::Outcome;
 use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    app::Route, components::execution_detail::tree_component::TreeComponent, grpc::grpc_client,
-};
+use crate::{components::execution_detail::tree_component::TreeComponent, grpc::grpc_client};
 use yew::prelude::*;
-use yew_router::prelude::Link;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinNextTryEventProps {
     pub event: grpc_client::execution_event::history_event::JoinNextTry,
-    pub execution_id: ExecutionId,
-    pub backtrace_id: Option<VersionType>,
     pub version: VersionType,
     pub is_selected: bool,
 }
@@ -38,43 +31,25 @@ impl HistoryJoinNextTryEventProps {
             Outcome::AllProcessed => (Icon::Error, "all processed"),
         };
 
-        let join_next_try_node = tree
-            .insert(
-                Node::new(NodeData {
-                    icon,
-                    label: html! {
-                        <>
-                            {self.version}
-                            {". Join Next Try ("}
-                            {status}
-                            {"): `"}
-                            {join_set_id}
-                            {"`"}
-                        </>
-                    },
-                    has_caret: true,
-                    is_selected: self.is_selected,
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&root_id),
-            )
-            .unwrap();
-
-        if let Some(backtrace_id) = self.backtrace_id {
-            tree.insert(
-                Node::new(NodeData {
-                    icon: Icon::Flows,
-                    label: html! {
-                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: self.execution_id.clone(), versions: BacktraceVersionsPath::from(backtrace_id) } }>
-                            {"Backtrace"}
-                        </Link<Route>>
-                    },
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&join_next_try_node),
-            )
-            .unwrap();
-        }
+        tree.insert(
+            Node::new(NodeData {
+                icon,
+                label: html! {
+                    <>
+                        {self.version}
+                        {". Join Next Try ("}
+                        {status}
+                        {"): `"}
+                        {join_set_id}
+                        {"`"}
+                    </>
+                },
+                is_selected: self.is_selected,
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&root_id),
+        )
+        .unwrap();
         TreeData::from(tree)
     }
 }

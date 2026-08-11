@@ -10,7 +10,8 @@ use crate::{
             data::{BusyInterval, TraceDataChild, TraceDataRoot, TraceLink},
             execution_trace::ExecutionTrace,
             highlight::{
-                apply_highlight_from_hash, highlighted_version_from_hash, set_highlight_hash,
+                BacktraceJump, apply_highlight_from_hash, highlighted_version_from_hash,
+                set_highlight_hash,
             },
         },
     },
@@ -327,17 +328,13 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             })
             .map(|event| {
                 let detail = event_to_detail(
-                    execution_id,
                     event,
                     &join_next_version_to_response,
                     &child_created_events,
                     ExecutionLink::Trace,
                     false,
                 );
-                // A submit (JoinSetRequest) and its consuming JoinNext both get an id + a
-                // dedicated highlight button linking them to the tree node on the left. The
-                // button toggles the highlight without touching the tree's expand behavior.
-                if let Some(group) = version_to_group.get(&event.version) {
+                let trace_jump = version_to_group.get(&event.version).map(|group| {
                     let version = event.version;
                     let on_highlight = {
                         let group = group.clone();
@@ -349,15 +346,27 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                         })
                     };
                     html! {
-                        <div id={format!("trace-event-{version}")} class="trace-detail-event">
-                            <button
-                                type="button"
-                                class="trace-link-button"
-                                title="Highlight matching node in the tree pane"
-                                onclick={on_highlight}
-                            >
-                                {"\u{21C4}"}
-                            </button>
+                        <button
+                            type="button"
+                            class="trace-link-button"
+                            title="Highlight matching node in the tree pane"
+                            onclick={on_highlight}
+                        >
+                            {"\u{21C4}"}
+                        </button>
+                    }
+                });
+                let backtrace_jump = event.backtrace_id.map(|version| html! {
+                    <BacktraceJump execution_id={execution_id.clone()} {version} />
+                });
+
+                if trace_jump.is_some() || backtrace_jump.is_some() {
+                    html! {
+                        <div id={format!("trace-event-{}", event.version)} class="trace-detail-event">
+                            <div class="trace-detail-actions">
+                                {trace_jump}
+                                {backtrace_jump}
+                            </div>
                             {detail}
                         </div>
                     }
@@ -370,21 +379,24 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
 
     // The highlight lives in the URL fragment (`#trace-highlight-<version>`), so it is
     // bookmarkable and reachable from the log/debugger views. Apply it on mount, whenever
-    // the fragment changes, and whenever newly loaded data grows the correlation groups.
+    // the fragment changes, and whenever newly loaded data changes either pane.
     let highlight_scrolled = use_mut_ref(|| Option::<VersionType>::None);
     {
         let highlight_scrolled = highlight_scrolled.clone();
-        use_effect_with(version_to_group.clone(), move |version_to_group| {
-            apply_highlight_from_hash(version_to_group, &highlight_scrolled);
-            let listener = web_sys::window().map(|window| {
-                let version_to_group = version_to_group.clone();
-                let highlight_scrolled = highlight_scrolled.clone();
-                EventListener::new(&window, "hashchange", move |_| {
-                    apply_highlight_from_hash(&version_to_group, &highlight_scrolled);
-                })
-            });
-            move || drop(listener)
-        });
+        use_effect_with(
+            (version_to_group.clone(), root_trace.clone()),
+            move |(version_to_group, _)| {
+                apply_highlight_from_hash(version_to_group, &highlight_scrolled);
+                let listener = web_sys::window().map(|window| {
+                    let version_to_group = version_to_group.clone();
+                    let highlight_scrolled = highlight_scrolled.clone();
+                    EventListener::new(&window, "hashchange", move |_| {
+                        apply_highlight_from_hash(&version_to_group, &highlight_scrolled);
+                    })
+                });
+                move || drop(listener)
+            },
+        );
     }
 
     let on_hide_finished_change = {

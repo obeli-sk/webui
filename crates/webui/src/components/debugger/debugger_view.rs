@@ -8,7 +8,7 @@ use crate::{
         execution_detail::utils::{compute_join_next_to_response, event_to_detail},
         execution_header::{ExecutionHeader, ExecutionLink},
         notification::{Notification, NotificationContext},
-        trace::highlight::TraceHighlightJump,
+        trace::highlight::{BacktraceJump, TraceHighlightJump},
         trace::trace_view::{PAGE, SLEEP_MILLIS, compute_submit_await_version_groups},
     },
     grpc::{
@@ -526,7 +526,6 @@ pub fn debugger_view(
         })
         .map(|event| {
             let detail = event_to_detail(
-                execution_id,
                 event,
                 &join_next_version_to_response,
                 &hashbrown::HashMap::new(),
@@ -541,14 +540,29 @@ pub fn debugger_view(
                     })
                     .unwrap_or_default(),
             );
-            // Jump to this event highlighted in the trace view (correlated events only).
-            if submit_await_version_groups.contains_key(&event.version) {
-                html! {
-                    <div class="trace-detail-event">
+            let trace_jump = submit_await_version_groups
+                .contains_key(&event.version)
+                .then(|| {
+                    html! {
                         <TraceHighlightJump
                             execution_id={execution_id.clone()}
                             version={event.version}
                         />
+                    }
+                });
+            let backtrace_jump = event.backtrace_id.map(|version| {
+                html! {
+                    <BacktraceJump execution_id={execution_id.clone()} {version} />
+                }
+            });
+
+            if trace_jump.is_some() || backtrace_jump.is_some() {
+                html! {
+                    <div class="trace-detail-event">
+                        <div class="trace-detail-actions">
+                            {trace_jump}
+                            {backtrace_jump}
+                        </div>
                         {detail}
                     </div>
                 }
@@ -848,14 +862,13 @@ pub fn debugger_view(
                 .map(|(segment, _id)| segment)
                 .unwrap();
             htmls.push(html! {
-                    <div class="execution-block" style="border: 1px solid #ccc; margin-bottom: 20px; padding: 10px; border-radius: 5px;">
-                        <div class="execution-header" style="padding: 5px; margin-bottom: 10px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                {last_id_segment}
-                                {" | "}<strong>{"Version: "}</strong>{curr_version}
-                            </div>
-                            <div class="step">
+                    <div class="debugger-execution-block">
+                        <div class="debugger-execution-header">
+                            <div class="step debugger-execution-actions">
                                 {step_buttons}
+                            </div>
+                            <div class="debugger-execution-id">
+                                {last_id_segment}
                             </div>
                         </div>
                         {step_buttons_content}

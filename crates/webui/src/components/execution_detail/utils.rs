@@ -61,7 +61,6 @@ pub fn compute_join_next_to_response<'a>(
 }
 
 pub fn event_to_detail(
-    execution_id: &ExecutionId,
     event: &ExecutionEvent,
     join_next_version_to_response: &HashMap<u32, &JoinSetResponseEvent>,
     child_created_events: &HashMap<ExecutionId, execution_event::Created>,
@@ -114,8 +113,6 @@ pub fn event_to_detail(
                 event={inner_event.clone()}
                 version={event.version}
                 {is_selected}
-                execution_id={execution_id.clone()}
-                backtrace_id={event.backtrace_id}
                 />
         },
         execution_event::Event::HistoryVariant(HistoryEvent {
@@ -136,8 +133,6 @@ pub fn event_to_detail(
             html! {
                 <HistoryJoinSetRequestEvent
                     event={join_set_request_event.clone()}
-                    execution_id={execution_id.clone()}
-                    backtrace_id={event.backtrace_id}
                     version={event.version}
                     {link}
                     {is_selected}
@@ -156,8 +151,6 @@ pub fn event_to_detail(
                 <HistoryJoinNextEvent
                     event={join_next.clone()}
                     {response}
-                    execution_id={execution_id.clone()}
-                    backtrace_id={event.backtrace_id}
                     version={event.version}
                     {link}
                     {is_selected}
@@ -170,8 +163,6 @@ pub fn event_to_detail(
             html! {
                 <HistoryJoinNextTryEvent
                     event={join_next_try.clone()}
-                    execution_id={execution_id.clone()}
-                    backtrace_id={event.backtrace_id}
                     version={event.version}
                     {is_selected}
                 />
@@ -183,8 +174,6 @@ pub fn event_to_detail(
             html! {
                 <HistoryJoinNextTooManyEvent
                     event={join_next_too_many.clone()}
-                    execution_id={execution_id.clone()}
-                    backtrace_id={event.backtrace_id}
                     version={event.version}
                     {is_selected}
                 />

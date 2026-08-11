@@ -121,6 +121,36 @@
   }
 }
 
+.debugger-execution-block {
+  margin-bottom: $spacing-lg;
+  padding: $spacing-sm;
+  border: 1px solid $color-border-secondary;
+  border-radius: $border-radius-md;
+}
+
+.debugger-execution-header {
+  margin-bottom: $spacing-sm;
+  padding: $spacing-xs;
+  border-bottom: 1px solid $color-border-secondary;
+}
+
+.trace-view .debugger-execution-actions {
+  display: flex;
+  min-height: 2rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+
+  > a,
+  > span.disabled {
+    margin-bottom: $spacing-xs;
+  }
+}
+
+.debugger-execution-id {
+  margin-top: $spacing-xs;
+  overflow-wrap: anywhere;
+}
+
 // Wrapper around a child-execution / delay submit event on the detail side, carrying the
 // id + highlight button that links it to its node in the trace tree.
 .trace-detail-event {
@@ -137,10 +167,17 @@
     margin-bottom: 0;
   }
 
-  > .trace-link-button {
+  > .trace-detail-actions {
     position: absolute;
     top: $spacing-xs;
     right: $spacing-xs;
+    display: flex;
+    align-items: center;
+    gap: $spacing-xs;
+
+    > .trace-link-button {
+      margin-left: 0;
+    }
   }
 }
 
@@ -180,6 +217,7 @@
 // Dedicated button that toggles the linked highlight between a tree node and its matching
 // detail event, without disturbing the tree's own expand/collapse behavior.
 .trace-link-button {
+  display: inline-block;
   flex-shrink: 0;
   margin-left: $spacing-sm;
   padding: 0 $spacing-xs;
@@ -190,10 +228,12 @@
   font-size: $font-size-sm;
   line-height: 1.4;
   cursor: pointer;
+  text-decoration: none;
 
   &:hover {
     background-color: rgba($color-accent-cyan, 0.18);
     color: $color-accent-cyan;
+    text-decoration: none;
   }
 }
 

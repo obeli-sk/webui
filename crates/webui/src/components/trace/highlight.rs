@@ -6,9 +6,10 @@
 use super::execution_trace::{
     clear_all_linked_highlights, scroll_linked_item, set_linked_highlight,
 };
-use crate::app::Route;
+use crate::app::{Route, query::BacktraceVersionsPath};
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::version::VersionType;
+use crate::tree::Icon;
 use hashbrown::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -96,6 +97,39 @@ pub fn trace_highlight_jump(props: &TraceHighlightJumpProps) -> Html {
             {onclick}
         >
             {"\u{21C4}"}
+        </button>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub struct BacktraceJumpProps {
+    pub execution_id: ExecutionId,
+    pub version: VersionType,
+}
+
+#[component(BacktraceJump)]
+pub fn backtrace_jump(props: &BacktraceJumpProps) -> Html {
+    let navigator = use_navigator().expect("navigator should be available");
+    let onclick = {
+        let execution_id = props.execution_id.clone();
+        let version = props.version;
+        Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            navigator.push(&Route::ExecutionDebuggerWithVersions {
+                execution_id: execution_id.clone(),
+                versions: BacktraceVersionsPath::from(version),
+            });
+        })
+    };
+    html! {
+        <button
+            type="button"
+            class="trace-link-button"
+            title="Show backtrace"
+            aria-label="Show backtrace"
+            {onclick}
+        >
+            {Icon::StackTrace.as_char()}
         </button>
     }
 }

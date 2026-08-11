@@ -602,7 +602,6 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                 })
             };
             let event_details = if is_expanded {
-                let execution_id = &props.execution_id;
                 let write_tree = match &cw.write {
                     Some(captured_write::Write::AppendStubResponse(stub)) => {
                         let tree = stub_response_tree(
@@ -628,7 +627,6 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                         {write_tree}
                         { for events.iter().map(|event| {
                             event_to_detail(
-                                execution_id,
                                 event,
                                 &empty_join_next,
                                 &child_created,
