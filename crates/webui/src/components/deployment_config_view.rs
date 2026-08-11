@@ -23,15 +23,15 @@ use yew_router::prelude::*;
 /// Manifest (`deployment.toml`) section keys, in display order, paired with a human title.
 /// These are the `[[section]]` table-array keys the server stores verbatim.
 pub const MANIFEST_SECTIONS: &[(&str, &str)] = &[
-    ("workflow_wasm", "Workflows (WASM)"),
-    ("workflow_js", "Workflows (JS)"),
-    ("activity_wasm", "Activities (WASM)"),
     ("activity_js", "Activities (JS)"),
+    ("activity_wasm", "Activities (WASM)"),
     ("activity_exec", "Activities (Exec)"),
     ("activity_stub", "Activity Stubs"),
     ("activity_external", "External Activities"),
-    ("webhook_endpoint_wasm", "Webhooks (WASM)"),
+    ("workflow_js", "Workflows (JS)"),
+    ("workflow_wasm", "Workflows (WASM)"),
     ("webhook_endpoint_js", "Webhooks (JS)"),
+    ("webhook_endpoint_wasm", "Webhooks (WASM)"),
     ("cron", "Crons"),
 ];
 
