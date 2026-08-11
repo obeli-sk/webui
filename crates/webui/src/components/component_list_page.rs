@@ -86,11 +86,15 @@ struct ComponentDeploymentConfig {
 fn component_file_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<SourceView> {
     let mut sources = files
         .iter()
-        .map(|file_ref| {
-            let file = file_ref.file.as_ref().expect("`file` is sent");
+        .filter_map(|file_ref| {
             let role = ComponentFileRole::try_from(file_ref.role)
                 .unwrap_or(ComponentFileRole::Unspecified);
-            SourceView {
+            // WIT sources are shown in the dedicated "WIT" tab, not here.
+            if role == ComponentFileRole::WitSource {
+                return None;
+            }
+            let file = file_ref.file.as_ref().expect("`file` is sent");
+            Some(SourceView {
                 file_name: file.path.clone(),
                 content: SourceContent::FetchFile {
                     digest: file.digest.clone(),
@@ -98,7 +102,7 @@ fn component_file_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<Source
                 metadata: Some(SourceMetadata {
                     role: component_file_role_label(role),
                 }),
-            }
+            })
         })
         .collect::<Vec<_>>();
     sources.sort_by(|a, b| a.file_name.cmp(&b.file_name));
@@ -112,6 +116,7 @@ fn component_file_role_label(role: ComponentFileRole) -> &'static str {
         ComponentFileRole::JsEntrypoint => "JS entrypoint",
         ComponentFileRole::JsModule => "JS module",
         ComponentFileRole::BacktraceSource => "backtrace source",
+        ComponentFileRole::WitSource => "WIT source",
         ComponentFileRole::Unspecified => "unspecified",
     }
 }
@@ -296,7 +301,7 @@ pub fn component_list_page(
                     return;
                 };
                 let needs_toml = *selected_tab == ComponentDetailTab::Toml;
-                // backcompat: 0.41 deployments lack component file refs; delete TOML source fallback in 0.43.
+                // backcompat: old deployments in the DB (e.g. 0.41.0) lack component file refs; derive their sources from the deployment manifest instead.
                 let needs_source_fallback =
                     *selected_tab == ComponentDetailTab::Sources && component.files.is_empty();
                 if !needs_toml && !needs_source_fallback {
@@ -529,6 +534,12 @@ pub fn component_list_page(
                         }) }
                     </div>
                 },
+                // The component carries file refs but none are displayable here (e.g.
+                // WIT-only sources, which live in the "WIT" tab). No fallback fetch runs,
+                // so show the empty state directly instead of a perpetual "Loading...".
+                ComponentDetailTab::Sources if !component.files.is_empty() => html! {
+                    <p class="component-empty-state">{"No sources are available for this component."}</p>
+                },
                 ComponentDetailTab::Sources => match deployment_config.as_ref() {
                     None => html! { <p class="component-empty-state">{"Loading sources..."}</p> },
                     Some(Ok(Some(config))) if config.sources.is_empty() => html! {
@@ -671,10 +682,18 @@ mod tests {
                 42,
                 ComponentFileRole::JsEntrypoint,
             ),
+            // WIT sources belong in the "WIT" tab and must be excluded here.
+            component_file(
+                "wit/component.wit",
+                "sha256:wit",
+                7,
+                ComponentFileRole::WitSource,
+            ),
         ];
 
         let sources = component_file_sources(&files);
 
+        assert_eq!(sources.len(), 2);
         assert_eq!(sources[0].file_name, "src/entry.js");
         assert!(matches!(
             &sources[0].content,
