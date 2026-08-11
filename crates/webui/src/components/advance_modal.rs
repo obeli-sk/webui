@@ -87,6 +87,10 @@ fn summarise_write(
             kind: "AppendBatch",
             detail: format!("{} events", b.events.len()),
         },
+        Some(captured_write::Write::AppendBatchWithDelayResponse(b)) => WriteSummary {
+            kind: "AppendBatch+DelayResponse",
+            detail: format!("{} events", b.events.len()),
+        },
         Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => WriteSummary {
             kind: "AppendBatch+Create",
             detail: format!(
@@ -139,6 +143,7 @@ fn iter_events(cw: &CapturedWrite) -> Box<dyn Iterator<Item = &grpc_client::Exec
     match &cw.write {
         Some(captured_write::Write::Append(a)) => Box::new(a.event.iter()),
         Some(captured_write::Write::AppendBatch(b)) => Box::new(b.events.iter()),
+        Some(captured_write::Write::AppendBatchWithDelayResponse(b)) => Box::new(b.events.iter()),
         Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => Box::new(b.events.iter()),
         Some(captured_write::Write::AppendStubResponse(s)) => Box::new(s.events.iter()),
         _ => Box::new(std::iter::empty()),
@@ -197,6 +202,11 @@ fn apply_pause_flags(
                 }
             }
             Some(captured_write::Write::AppendBatch(b)) if pause_delays => {
+                for event in &mut b.events {
+                    set_delay_paused(event);
+                }
+            }
+            Some(captured_write::Write::AppendBatchWithDelayResponse(b)) if pause_delays => {
                 for event in &mut b.events {
                     set_delay_paused(event);
                 }
@@ -592,7 +602,6 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                 })
             };
             let event_details = if is_expanded {
-                let execution_id = &props.execution_id;
                 let write_tree = match &cw.write {
                     Some(captured_write::Write::AppendStubResponse(stub)) => {
                         let tree = stub_response_tree(
@@ -618,7 +627,6 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                         {write_tree}
                         { for events.iter().map(|event| {
                             event_to_detail(
-                                execution_id,
                                 event,
                                 &empty_join_next,
                                 &child_created,

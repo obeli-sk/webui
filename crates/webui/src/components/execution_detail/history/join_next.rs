@@ -1,12 +1,9 @@
-use crate::app::query::BacktraceVersionsPath;
 use crate::components::execution_header::ExecutionLink;
 use crate::components::ffqn_with_links::FfqnWithLinks;
-use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::grpc_client::join_set_response_event::{ChildExecutionFinished, DelayFinished};
 use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
-    app::Route,
     components::execution_detail::{
         finished::attach_result_detail, tree_component::TreeComponent, utils::id_suffix,
     },
@@ -17,7 +14,6 @@ use crate::{
 use chrono::DateTime;
 use log::error;
 use yew::prelude::*;
-use yew_router::prelude::Link;
 
 /// A matched child execution whose result is an `ExecutionFailure` of kind `Cancelled`.
 fn child_failure_is_cancelled(result: &SupportedFunctionResult) -> bool {
@@ -32,8 +28,6 @@ fn child_failure_is_cancelled(result: &SupportedFunctionResult) -> bool {
 pub struct HistoryJoinNextEventProps {
     pub event: grpc_client::execution_event::history_event::JoinNext,
     pub response: Option<JoinSetResponseEvent>,
-    pub execution_id: ExecutionId,
-    pub backtrace_id: Option<VersionType>,
     pub version: VersionType,
     pub link: ExecutionLink,
     pub is_selected: bool,
@@ -258,21 +252,6 @@ impl HistoryJoinNextEventProps {
             InsertBehavior::UnderNode(&join_next_node),
         )
         .unwrap();
-        if let Some(backtrace_id) = self.backtrace_id {
-            tree.insert(
-                Node::new(NodeData {
-                    icon: Icon::Flows,
-                    label: html! {
-                        <Link<Route> to={Route::ExecutionDebuggerWithVersions { execution_id: self.execution_id.clone(), versions: BacktraceVersionsPath::from(backtrace_id) } }>
-                            {"Backtrace"}
-                        </Link<Route>>
-                    },
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&join_next_node),
-            )
-            .unwrap();
-        }
         TreeData::from(tree)
     }
 }

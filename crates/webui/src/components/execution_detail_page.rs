@@ -1,6 +1,7 @@
 use crate::components::execution_detail::utils::{compute_join_next_to_response, event_to_detail};
 use crate::components::execution_header::{ExecutionHeader, ExecutionLink};
 use crate::components::notification::{Notification, NotificationContext};
+use crate::components::trace::highlight::{BacktraceJump, TraceHighlightJump};
 use crate::components::trace::trace_view::{
     PAGE, SLEEP_MILLIS, compute_submit_await_version_groups,
 };
@@ -451,7 +452,6 @@ fn render_execution_details(
         .iter()
         .map(|event| {
             let detail = event_to_detail(
-                current_execution_id,
                 event,
                 join_next_version_to_response,
                 child_created_events,
@@ -540,6 +540,20 @@ fn render_execution_details(
             };
 
 
+            // Jump to this event highlighted in the trace view (correlated events only).
+            let trace_jump_button = submit_await_version_groups
+                .contains_key(&event.version)
+                .then(|| html! {
+                    <TraceHighlightJump
+                        execution_id={current_execution_id.clone()}
+                        version={event.version}
+                    />
+                });
+
+            let backtrace_link = event.backtrace_id.map(|version| html! {
+                <BacktraceJump execution_id={current_execution_id.clone()} {version} />
+            });
+
             let class = format!("{} {}", circle_class, if circle_color_style.is_empty() { ""} else { "is-join" });
             let content_id = format!("event-content-{}", event.version);
 
@@ -593,7 +607,11 @@ fn render_execution_details(
                                     }
                                 }
                             </div>
-                            {scroll_button}
+                            <div class="timeline-meta-actions">
+                                {scroll_button}
+                                {trace_jump_button}
+                                {backtrace_link}
+                            </div>
                         </div>
                         <div class="detail-body">
                             {detail}

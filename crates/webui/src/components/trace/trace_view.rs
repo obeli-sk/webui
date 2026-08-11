@@ -8,7 +8,11 @@ use crate::{
         notification::{Notification, NotificationContext},
         trace::{
             data::{BusyInterval, TraceDataChild, TraceDataRoot, TraceLink},
-            execution_trace::{ExecutionTrace, scroll_linked_item, set_linked_highlight},
+            execution_trace::ExecutionTrace,
+            highlight::{
+                BacktraceJump, apply_highlight_from_hash, highlighted_version_from_hash,
+                set_highlight_hash,
+            },
         },
     },
     grpc::{
@@ -29,6 +33,7 @@ use crate::{
 };
 use assert_matches::assert_matches;
 use chrono::{DateTime, Utc};
+use gloo::events::EventListener;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
@@ -234,7 +239,7 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
     expandable_missing_children.borrow_mut().clear();
 
     // Correlate each root submit with the join-next that consumed its result so both the
-    // tree node and both detail events can highlight together on hover.
+    // tree node and both detail events can highlight together on click.
     let version_to_group = {
         let dummy_events = Vec::new();
         let dummy_responses = HashMap::new();
@@ -323,41 +328,45 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             })
             .map(|event| {
                 let detail = event_to_detail(
-                    execution_id,
                     event,
                     &join_next_version_to_response,
                     &child_created_events,
                     ExecutionLink::Trace,
                     false,
                 );
-                // A submit (JoinSetRequest) and its consuming JoinNext both get an id +
-                // hover handlers linking them to the node in the trace tree on the left.
-                if let Some(group) = version_to_group.get(&event.version) {
+                let trace_jump = version_to_group.get(&event.version).map(|group| {
                     let version = event.version;
-                    let on_enter = {
+                    let on_highlight = {
                         let group = group.clone();
-                        let starting_version = group.first().copied();
-                        Callback::from(move |_: MouseEvent| {
-                            set_linked_highlight(&group, true);
-                            if let Some(starting_version) = starting_version {
-                                scroll_linked_item(
-                                    "trace-tree-pane",
-                                    &format!("trace-node-{starting_version}"),
-                                );
-                            }
+                        Callback::from(move |e: MouseEvent| {
+                            e.stop_propagation();
+                            let already_active = highlighted_version_from_hash()
+                                .is_some_and(|version| group.contains(&version));
+                            set_highlight_hash((!already_active).then_some(version));
                         })
                     };
-                    let on_leave = {
-                        let group = group.clone();
-                        Callback::from(move |_: MouseEvent| set_linked_highlight(&group, false))
-                    };
                     html! {
-                        <div
-                            id={format!("trace-event-{version}")}
-                            class="trace-detail-event"
-                            onmouseenter={on_enter}
-                            onmouseleave={on_leave}
+                        <button
+                            type="button"
+                            class="trace-link-button"
+                            title="Highlight matching node in the tree pane"
+                            onclick={on_highlight}
                         >
+                            {"\u{21C4}"}
+                        </button>
+                    }
+                });
+                let backtrace_jump = event.backtrace_id.map(|version| html! {
+                    <BacktraceJump execution_id={execution_id.clone()} {version} />
+                });
+
+                if trace_jump.is_some() || backtrace_jump.is_some() {
+                    html! {
+                        <div id={format!("trace-event-{}", event.version)} class="trace-detail-event">
+                            <div class="trace-detail-actions">
+                                {trace_jump}
+                                {backtrace_jump}
+                            </div>
                             {detail}
                         </div>
                     }
@@ -367,6 +376,28 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             })
             .collect::<Vec<_>>()
     };
+
+    // The highlight lives in the URL fragment (`#trace-highlight-<version>`), so it is
+    // bookmarkable and reachable from the log/debugger views. Apply it on mount, whenever
+    // the fragment changes, and whenever newly loaded data changes either pane.
+    let highlight_scrolled = use_mut_ref(|| Option::<VersionType>::None);
+    {
+        let highlight_scrolled = highlight_scrolled.clone();
+        use_effect_with(
+            (version_to_group.clone(), root_trace.clone()),
+            move |(version_to_group, _)| {
+                apply_highlight_from_hash(version_to_group, &highlight_scrolled);
+                let listener = web_sys::window().map(|window| {
+                    let version_to_group = version_to_group.clone();
+                    let highlight_scrolled = highlight_scrolled.clone();
+                    EventListener::new(&window, "hashchange", move |_| {
+                        apply_highlight_from_hash(&version_to_group, &highlight_scrolled);
+                    })
+                });
+                move || drop(listener)
+            },
+        );
+    }
 
     let on_hide_finished_change = {
         let trace_view_state = trace_view_state.clone();
@@ -402,11 +433,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         })
     };
 
-    let clear_linked_highlights = {
-        let versions = version_to_group.keys().copied().collect::<Vec<_>>();
-        Callback::from(move |_: MouseEvent| set_linked_highlight(&versions, false))
-    };
-
     html! {<>
         <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Trace} />
 
@@ -414,7 +440,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             <div
                 id="trace-tree-pane"
                 class="trace-view"
-                onmouseleave={clear_linked_highlights.clone()}
             >
                 <div class="trace-controls" style="margin-bottom: 10px; display: flex; gap: 15px;">
                     <label style="cursor: pointer; user-select: none;">
@@ -450,7 +475,6 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
             <div
                 id="trace-detail-pane"
                 class="trace-detail"
-                onmouseleave={clear_linked_highlights}
             >
                 {execution_log}
             </div>
@@ -551,7 +575,7 @@ fn on_state_change(
 }
 
 /// Group each correlated `Submit`/`JoinNext` version pair (keyed by both versions) so a
-/// direct child/delay node and both of its detail events can highlight together on hover.
+/// direct child/delay node and both of its detail events can highlight together on click.
 /// A submit without an unambiguous join-next maps to a singleton group of just itself.
 pub(crate) fn compute_submit_await_version_groups(
     events: &[ExecutionEvent],

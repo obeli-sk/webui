@@ -180,6 +180,17 @@
         margin: 0.5rem 0;
     }
 
+    // Collapsible component-type group (deployment detail view). Diff view keeps
+    // a plain `<section>` with a direct `> h4`, so both selectors coexist.
+    > summary {
+        cursor: pointer;
+
+        > h4 {
+            display: inline;
+            margin: 0.5rem 0;
+        }
+    }
+
     .unchanged-count {
         font-weight: normal;
         font-size: 0.85em;
