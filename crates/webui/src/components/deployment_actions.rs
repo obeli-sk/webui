@@ -93,7 +93,7 @@ pub fn deployment_actions(
                             } else {
                                 RuntimeConfigCheck::Strict as i32
                             },
-                            hot_redeploy: apply,
+                            apply,
                         })
                         .await;
                     in_flight.set(false);
