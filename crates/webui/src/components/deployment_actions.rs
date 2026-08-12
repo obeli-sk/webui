@@ -22,11 +22,11 @@ pub struct DeploymentActionsProps {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ArmedAction {
-    HotRedeploy,
+    Apply,
     Enqueue,
 }
 
-/// Buttons to hot redeploy a deployment or enqueue it for the next server restart.
+/// Buttons to apply a deployment immediately or enqueue it for the next server restart.
 #[component(DeploymentActions)]
 pub fn deployment_actions(
     DeploymentActionsProps {
@@ -67,8 +67,8 @@ pub fn deployment_actions(
         let in_flight = in_flight.clone();
         let armed = armed.clone();
         let disarm_timer = disarm_timer.clone();
-        // `allow_unavailable` only matters for enqueueing; hot redeploy is always strict.
-        move |hot_redeploy: bool, allow_unavailable: bool| {
+        // `allow_unavailable` only matters for enqueueing; apply is always strict.
+        move |apply: bool, allow_unavailable: bool| {
             let deployment_id = deployment_id.clone();
             let notifications = notifications.clone();
             let on_switched = on_switched.clone();
@@ -93,7 +93,7 @@ pub fn deployment_actions(
                             } else {
                                 RuntimeConfigCheck::Strict as i32
                             },
-                            hot_redeploy,
+                            hot_redeploy: apply,
                         })
                         .await;
                     in_flight.set(false);
@@ -102,7 +102,7 @@ pub fn deployment_actions(
                             match resp.into_inner().outcome() {
                                 Outcome::SwitchOutcomeSwitched => {
                                     notifications.push(Notification::success(
-                                        "Hot redeploy succeeded, the deployment is now live",
+                                        "Apply succeeded, the deployment is now live",
                                     ))
                                 }
                                 Outcome::SwitchOutcomeRestartRequired => {
@@ -129,25 +129,25 @@ pub fn deployment_actions(
     };
 
     let enqueue_disabled = *in_flight || *status == DeploymentStatus::Enqueued;
-    let hot_redeploy_armed = *armed == Some(ArmedAction::HotRedeploy);
+    let apply_armed = *armed == Some(ArmedAction::Apply);
     let enqueue_armed = *armed == Some(ArmedAction::Enqueue);
     html! {
         <div class="deployment-actions">
             <button
                 class={classes!(
                     "action-button",
-                    hot_redeploy_armed.then_some("confirm"),
+                    apply_armed.then_some("confirm"),
                 )}
                 onclick={
-                    if hot_redeploy_armed {
+                    if apply_armed {
                         switch(true, false)
                     } else {
-                        arm(ArmedAction::HotRedeploy)
+                        arm(ArmedAction::Apply)
                     }
                 }
                 disabled={*in_flight}
             >
-                { if hot_redeploy_armed { "Confirm hot redeploy" } else { "Hot redeploy" } }
+                { if apply_armed { "Confirm apply" } else { "Apply" } }
             </button>
             if enqueue_armed {
                 <button
