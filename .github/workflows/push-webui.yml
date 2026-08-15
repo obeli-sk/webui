@@ -74,12 +74,16 @@ jobs:
         env:
           TAG: ${{ github.event.inputs.tag }}
 
+      - name: Update embedded asset hash
+        run: ./scripts/update-embedded-assets-hash.sh
+        working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
+
       # Step 3: Push webui version bump to obelisk main
       - name: Push webui version bump to obelisk main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add assets/webui-version.txt
+          git add assets/webui-version.txt flake.nix
           git commit -m "chore: Bump webui to $TAG"
           git push origin main
         env:
