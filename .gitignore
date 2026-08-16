@@ -1,5 +1,4 @@
 /target/
-target-sandbox
 /.direnv/
 /.envrc
 /crates/webui/dist/
