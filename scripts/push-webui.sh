@@ -13,5 +13,5 @@ just build
 if [ "$TAG" != "dry-run" ]; then
     OUTPUT=$(obelisk component push --deployment "deployment-for-push.toml" \
         webui_proxy "oci://docker.io/getobelisk/webui:$TAG")
-    echo -n $OUTPUT > $OUTPUT_FILE
+    printf '%s' "$OUTPUT" > "$OUTPUT_FILE"
 fi

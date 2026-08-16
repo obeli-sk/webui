@@ -62,15 +62,15 @@ jobs:
           DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - id: obelisk-clone
-        run: echo "obelisk_dir=obelisk-clone" >> $GITHUB_OUTPUT
+        run: echo "obelisk_dir=obelisk-clone" >> "$GITHUB_OUTPUT"
 
       - name: Clone obelisk
         run: |
-          git clone https://${{ secrets.WEBUI_TO_OBELISK_PR }}@github.com/obeli-sk/obelisk.git ${{ steps.obelisk-clone.outputs.obelisk_dir }}
+          git clone https://${{ secrets.WEBUI_TO_OBELISK_PR }}@github.com/obeli-sk/obelisk.git "${{ steps.obelisk-clone.outputs.obelisk_dir }}"
 
       - name: Build and push webui
         run: |
-          nix develop .#withObelisk --command ./scripts/push-webui.sh $TAG ${{ steps.obelisk-clone.outputs.obelisk_dir }}/assets/webui-version.txt
+          nix develop .#withObelisk --command ./scripts/push-webui.sh "$TAG" "${{ steps.obelisk-clone.outputs.obelisk_dir }}/crates/embedded-assets/webui-version.txt"
         env:
           TAG: ${{ github.event.inputs.tag }}
 
@@ -83,7 +83,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add assets/webui-version.txt flake.nix
+          git add crates/embedded-assets/webui-version.txt flake.nix
           git commit -m "chore: Bump webui to $TAG"
           git push origin main
         env:
