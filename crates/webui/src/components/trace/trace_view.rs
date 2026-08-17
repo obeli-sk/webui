@@ -595,7 +595,7 @@ pub(crate) fn compute_submit_await_version_groups(
         {
             let submit_version = match join_set_request {
                 join_set_request::JoinSetRequest::ChildExecutionRequest(child_req) => {
-                    if let Some(child_execution_id) = &child_req.child_execution_id {
+                    if let Some(child_execution_id) = created_child_execution_id(child_req) {
                         submit_of_child.insert(child_execution_id, event.version);
                         Some(event.version)
                     } else {
@@ -848,11 +848,12 @@ fn compute_root_trace(
                             Some(execution_event::history_event::Event::JoinSetRequest(
                                 JoinSetRequest {
                                     join_set_request: Some(join_set_request::JoinSetRequest::ChildExecutionRequest(
-                                        join_set_request::ChildExecutionRequest{child_execution_id: Some(child_execution_id), ..})),
+                                        child_request)),
                                     ..
                                 },
                             )),
                     }) => {
+                        let child_execution_id = created_child_execution_id(child_request)?;
                         let name = if let Some(suffix) =  child_execution_id.id.strip_prefix(&format!("{execution_id}{EXECUTION_ID_INFIX}")) {
                             suffix.to_string()
                         } else {
@@ -1195,6 +1196,17 @@ fn compute_child_execution_id_to_child_execution_finished(
         .collect()
 }
 
+fn created_child_execution_id(
+    request: &join_set_request::ChildExecutionRequest,
+) -> Option<&ExecutionId> {
+    match request.result.as_ref() {
+        Some(join_set_request::child_execution_request::Result::Ok(_)) => {
+            request.child_execution_id.as_ref()
+        }
+        _ => None,
+    }
+}
+
 fn compute_delay_id_to_finished(
     responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
 ) -> HashMap<grpc_client::DelayId, (bool, DateTime<Utc>)> {
@@ -1264,6 +1276,11 @@ mod tests {
             child_execution_id: Some(ExecutionId {
                 id: child_id.to_string(),
             }),
+            result: Some(
+                history_event::join_set_request::child_execution_request::Result::Ok(
+                    Default::default(),
+                ),
+            ),
             ..Default::default()
         };
         history_event(
@@ -1323,5 +1340,33 @@ mod tests {
         assert_eq!(groups[&1], vec![1]);
         assert_eq!(groups[&2], vec![2]);
         assert!(!groups.contains_key(&3));
+    }
+
+    #[test]
+    fn failed_child_submit_is_not_treated_as_an_execution() {
+        let join_set_id = join_set("failed");
+        let mut event = child_submit(1, &join_set_id, "missing-child");
+        let Some(Event::HistoryVariant(HistoryEvent {
+            event:
+                Some(history_event::Event::JoinSetRequest(history_event::JoinSetRequest {
+                    join_set_request:
+                        Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
+                            request,
+                        )),
+                    ..
+                })),
+        })) = &mut event.event
+        else {
+            unreachable!()
+        };
+        request.result = Some(
+            history_event::join_set_request::child_execution_request::Result::Error(
+                Default::default(),
+            ),
+        );
+
+        let groups = compute_submit_await_version_groups(&[event], &HashMap::new());
+
+        assert!(groups.is_empty());
     }
 }
