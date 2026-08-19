@@ -11,7 +11,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-deployment-config.workspace = true
 val-json.workspace = true
 
 anyhow.workspace = true
