@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "obelisk/crates/deployment-config",
     "obelisk/crates/val-json",
     "crates/webui",
     "crates/webui-proxy",
@@ -17,7 +16,6 @@ rust-version = "1.91.0"
 
 [workspace.dependencies]
 val-json = { package = "obeli-sk-val-json", path = "obelisk/crates/val-json" }
-deployment-config = { package = "obeli-sk-deployment-config", path = "obelisk/crates/deployment-config" }
 
 cargo_metadata = "0.23"
 
