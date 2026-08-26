@@ -268,17 +268,12 @@ fn fetch_child_created(
                 crate::auth::client(),
             );
         let response = execution_client
-            .list_execution_events_and_responses(
-                grpc_client::ListExecutionEventsAndResponsesRequest {
-                    execution_id: Some(child_execution_id.clone()),
-                    version_from: 0,
-                    events_length: 1,
-                    responses_cursor_from: 0,
-                    responses_length: 0,
-                    responses_including_cursor: false,
-                    include_backtrace_id: false,
-                },
-            )
+            .list_execution_events(grpc_client::ListExecutionEventsRequest {
+                execution_id: Some(child_execution_id.clone()),
+                version_from: 0,
+                length: 1,
+                include_backtrace_id: false,
+            })
             .await;
         match response {
             Ok(resp) => {
