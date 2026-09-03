@@ -19,7 +19,8 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{
             self, CapturedBacktrace, CapturedWrite, ComponentId, CreateExecutionRequest,
-            ExecutionId, GetBacktraceSourceRequest, JoinSetResponseEvent, captured_write,
+            ExecutionId, GetBacktraceSourceRequest, JoinSetResponseEvent,
+            ListExecutionEventsRequest, captured_write,
             execution_event::{self, history_event},
             execution_repository_client::ExecutionRepositoryClient,
         },
@@ -261,6 +262,33 @@ fn child_created_from_writes(
     map
 }
 
+/// Collect child execution IDs referenced by `AppendStubResponse` writes and
+/// `ChildExecutionRequest` events. Their `Created` event (function name + params) may
+/// have been written in an earlier, already-applied batch, so it won't be present in
+/// `child_created_from_writes` for the currently displayed writes.
+fn referenced_child_execution_ids(writes: &[CapturedWrite]) -> HashSet<ExecutionId> {
+    let mut ids = HashSet::new();
+    for cw in writes {
+        if let Some(captured_write::Write::AppendStubResponse(s)) = &cw.write
+            && let Some(id) = &s.child_execution_id
+        {
+            ids.insert(id.clone());
+        }
+        for event in iter_events(cw) {
+            if let Some(execution_event::Event::HistoryVariant(h)) = &event.event
+                && let Some(history_event::Event::JoinSetRequest(jsr)) = &h.event
+                && let Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
+                    child_req,
+                )) = &jsr.join_set_request
+                && let Some(id) = &child_req.child_execution_id
+            {
+                ids.insert(id.clone());
+            }
+        }
+    }
+    ids
+}
+
 /// Build a tree displaying AppendStubResponse metadata: function name, params, parent execution.
 fn stub_response_tree(
     stub: &captured_write::AppendStubResponse,
@@ -427,6 +455,64 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
         .expect("AppState context is set when starting the App");
     let expanded_writes = use_state(HashSet::<usize>::new);
 
+    // Created events for children referenced by this batch (e.g. via `AppendStubResponse` or
+    // `ChildExecutionRequest`) but created in an earlier, already-applied batch. Fetched lazily
+    // since `child_created_from_writes` only sees children created within the current batch.
+    let fetched_child_created = use_state(HashMap::<ExecutionId, execution_event::Created>::new);
+    let child_created_requested = use_state(HashSet::<ExecutionId>::new);
+
+    {
+        let fetched_child_created = fetched_child_created.clone();
+        let child_created_requested = child_created_requested.clone();
+        use_effect_with(props.captured_writes.clone(), move |captured_writes| {
+            let local = child_created_from_writes(captured_writes);
+            let needed: Vec<ExecutionId> = referenced_child_execution_ids(captured_writes)
+                .into_iter()
+                .filter(|id| !local.contains_key(id) && !child_created_requested.contains(id))
+                .collect();
+            if !needed.is_empty() {
+                let mut requested = (*child_created_requested).clone();
+                for id in &needed {
+                    requested.insert(id.clone());
+                }
+                child_created_requested.set(requested);
+
+                for id in needed {
+                    let fetched_child_created = fetched_child_created.clone();
+                    spawn_local(async move {
+                        let mut client = ExecutionRepositoryClient::new(crate::auth::client());
+                        let result = client
+                            .list_execution_events(ListExecutionEventsRequest {
+                                execution_id: Some(id.clone()),
+                                version_from: 0,
+                                length: 1,
+                                include_backtrace_id: false,
+                            })
+                            .await;
+                        match result {
+                            Ok(resp) => {
+                                if let Some(execution_event::Event::Created(created)) = resp
+                                    .into_inner()
+                                    .events
+                                    .into_iter()
+                                    .next()
+                                    .and_then(|e| e.event)
+                                {
+                                    let mut next = (*fetched_child_created).clone();
+                                    next.insert(id, created);
+                                    fetched_child_created.set(next);
+                                }
+                            }
+                            Err(err) => {
+                                trace!("Cannot obtain child Created event for {id}: {err:?}");
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
+
     let has_delays = has_delay_requests(&props.captured_writes);
     let has_child_execs = has_child_execution_requests(&props.captured_writes);
 
@@ -561,7 +647,12 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
     }
 
     let empty_join_next: HashMap<u32, &JoinSetResponseEvent> = HashMap::new();
-    let child_created = child_created_from_writes(&props.captured_writes);
+    // Local batch data takes precedence; fall back to lazily fetched child Created events.
+    let child_created: HashMap<ExecutionId, execution_event::Created> = fetched_child_created
+        .iter()
+        .map(|(id, created)| (id.clone(), created.clone()))
+        .chain(child_created_from_writes(&props.captured_writes))
+        .collect();
 
     // Left pane: list of captured writes
     let write_list = props
