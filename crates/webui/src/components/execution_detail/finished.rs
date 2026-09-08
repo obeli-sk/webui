@@ -26,6 +26,20 @@ fn with_version(version: Option<VersionType>, label: &'static str) -> Html {
     }
 }
 
+fn execution_failure_presentation(kind: grpc_client::ExecutionFailureKind) -> (&'static str, Icon) {
+    match kind {
+        grpc_client::ExecutionFailureKind::Unspecified => ("Unspecified", Icon::Error),
+        grpc_client::ExecutionFailureKind::TimedOut => ("Timed out", Icon::Time),
+        grpc_client::ExecutionFailureKind::NondeterminismDetected => {
+            ("Nondeterminism detected", Icon::Exchange)
+        }
+        grpc_client::ExecutionFailureKind::OutOfFuel => ("Out of fuel", Icon::Error),
+        grpc_client::ExecutionFailureKind::Cancelled => ("Cancelled", Icon::Cross),
+        grpc_client::ExecutionFailureKind::Uncategorized => ("Uncategorized", Icon::Error),
+        grpc_client::ExecutionFailureKind::ValueTooLarge => ("Value too large", Icon::Error),
+    }
+}
+
 pub fn attach_result_detail(
     tree: &mut Tree<NodeData<u32>>,
     root_id: &NodeId,
@@ -77,16 +91,7 @@ pub fn attach_result_detail(
         }
 
         grpc_client::supported_function_result::Value::ExecutionFailure(failure) => {
-            let (failure_kind, icon) = match failure.kind() {
-                grpc_client::ExecutionFailureKind::Unspecified => ("Unspecified", Icon::Error),
-                grpc_client::ExecutionFailureKind::TimedOut => ("Timed out", Icon::Time),
-                grpc_client::ExecutionFailureKind::NondeterminismDetected => {
-                    ("Nondeterminism detected", Icon::Exchange)
-                }
-                grpc_client::ExecutionFailureKind::OutOfFuel => ("Out of fuel", Icon::Error),
-                grpc_client::ExecutionFailureKind::Cancelled => ("Cancelled", Icon::Cross),
-                grpc_client::ExecutionFailureKind::Uncategorized => ("Uncategorized", Icon::Error),
-            };
+            let (failure_kind, icon) = execution_failure_presentation(failure.kind());
 
             let failure_node = tree
                 .insert(
@@ -162,5 +167,19 @@ pub fn finished_event(props: &FinishedEventProps) -> Html {
     let tree = props.construct_tree();
     html! {
         <TreeComponent {tree} />
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn value_too_large_has_named_failure_presentation() {
+        let (label, icon) =
+            execution_failure_presentation(grpc_client::ExecutionFailureKind::ValueTooLarge);
+
+        assert_eq!(label, "Value too large");
+        assert_eq!(icon, Icon::Error);
     }
 }

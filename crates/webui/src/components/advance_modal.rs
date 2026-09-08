@@ -242,6 +242,7 @@ fn create_req_to_created(req: &CreateExecutionRequest) -> execution_event::Creat
         parent_execution_id: req.parent_execution_id.clone(),
         parent_join_set_id: req.parent_join_set_id.clone(),
         metadata: req.metadata.clone(),
+        max_persisted_value_size_bytes: req.max_persisted_value_size_bytes,
     }
 }
 
