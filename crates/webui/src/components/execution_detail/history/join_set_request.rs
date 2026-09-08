@@ -264,6 +264,31 @@ impl HistoryJoinSetRequestEventProps {
                     .unwrap();
                 }
 
+                if let Some(rejected) = &child_req.rejected_params {
+                    tree.insert(
+                        Node::new(NodeData {
+                            icon: Icon::IdNumber,
+                            label: format!("Parameters Hash: {}", rejected.sha256).into(),
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&join_set_node),
+                    )
+                    .unwrap();
+                    tree.insert(
+                        Node::new(NodeData {
+                            icon: Icon::Error,
+                            label: format!(
+                                "Encoded Parameters Size: at least {} bytes",
+                                rejected.encoded_size_at_least
+                            )
+                            .into(),
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&join_set_node),
+                    )
+                    .unwrap();
+                }
+
                 if let Some((ffqn, params)) = &child_info {
                     tree.insert(
                         Node::new(NodeData {
