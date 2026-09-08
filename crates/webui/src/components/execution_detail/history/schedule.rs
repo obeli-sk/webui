@@ -61,6 +61,18 @@ impl HistoryScheduleEventProps {
         )
         .unwrap();
 
+        if let Some(params_hash) = &self.event.params_hash {
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::IdNumber,
+                    label: format!("Parameters Hash: {params_hash}").into(),
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&event_type),
+            )
+            .unwrap();
+        }
+
         // Error detail
         if let Some(grpc_client::execution_event::history_event::schedule::Result::Error(err)) =
             &self.event.result

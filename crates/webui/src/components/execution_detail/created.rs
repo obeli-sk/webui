@@ -68,6 +68,7 @@ impl CreatedEventProps {
             parent_execution_id: self.created.parent_execution_id.clone(),
             parent_join_set_id: self.created.parent_join_set_id.clone(),
             metadata: self.created.metadata.clone(),
+            max_persisted_value_size_bytes: self.created.max_persisted_value_size_bytes,
             component_id: component_id.clone(),
             deployment_id: deployment_id.clone(),
             version: self.version,
@@ -86,6 +87,7 @@ struct ProcessedProps {
     parent_execution_id: Option<ExecutionId>,
     parent_join_set_id: Option<grpc_client::JoinSetId>,
     metadata: std::collections::HashMap<String, String>,
+    max_persisted_value_size_bytes: u64,
     component_id: ComponentId,
     deployment_id: DeploymentId,
     version: VersionType,
@@ -292,6 +294,21 @@ impl ProcessedProps {
                 )
                 .unwrap();
             }
+        }
+        if self.max_persisted_value_size_bytes > 0 {
+            tree.insert(
+                Node::new(NodeData {
+                    icon: Icon::IdNumber,
+                    label: format!(
+                        "Maximum Persisted Value Size: {} bytes",
+                        self.max_persisted_value_size_bytes
+                    )
+                    .into(),
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&event_type),
+            )
+            .unwrap();
         }
         TreeData::from(tree)
     }
