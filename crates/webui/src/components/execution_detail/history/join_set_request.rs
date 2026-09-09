@@ -264,16 +264,19 @@ impl HistoryJoinSetRequestEventProps {
                     .unwrap();
                 }
 
-                if let Some(rejected) = &child_req.rejected_params {
+                if !child_req.params_hash.is_empty() {
                     tree.insert(
                         Node::new(NodeData {
                             icon: Icon::IdNumber,
-                            label: format!("Parameters Hash: {}", rejected.sha256).into(),
+                            label: format!("Parameters Hash: {}", child_req.params_hash).into(),
                             ..Default::default()
                         }),
                         InsertBehavior::UnderNode(&join_set_node),
                     )
                     .unwrap();
+                }
+
+                if let Some(rejected) = &child_req.rejected_params {
                     tree.insert(
                         Node::new(NodeData {
                             icon: Icon::Error,
