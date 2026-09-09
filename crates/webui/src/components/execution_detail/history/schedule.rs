@@ -61,11 +61,11 @@ impl HistoryScheduleEventProps {
         )
         .unwrap();
 
-        if let Some(params_hash) = &self.event.params_hash {
+        if !self.event.params_hash.is_empty() {
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::IdNumber,
-                    label: format!("Parameters Hash: {params_hash}").into(),
+                    label: format!("Parameters Hash: {}", self.event.params_hash).into(),
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&event_type),
