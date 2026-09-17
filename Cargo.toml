@@ -46,8 +46,8 @@ yew = { version = "0.23.0", features = ["csr"] }
 yew-router = "0.20.0"
 
 wstd = "0.6.5"
-wit-component = "0.245.1"
-wit-parser = "0.245.1"
+wit-component = "0.254.0"
+wit-parser = "0.254.0"
 
 anyhow = { version = "1.0", features = ["backtrace"] }
 assert_matches = "1.5.0"
@@ -86,10 +86,10 @@ ulid = { version = "=1.1.4", features = ["serde"] }
 tonic-prost-build = "0.14.5"
 
 # val-json
-itertools = "0.14"
+itertools = "0.15"
 thiserror = "2.0"
 wasmtime = "41.0.3" # not used
-wast = "245.0.1"
+wast = "254.0.0"
 insta = { version = "1.46", features = ["json"] }
 
 # config-deployment

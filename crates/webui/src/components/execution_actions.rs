@@ -58,28 +58,68 @@ pub fn process_replay_response(
     notifications: &NotificationContext,
 ) -> Option<Vec<grpc_client::CapturedWrite>> {
     use grpc_client::replay_execution_response::Outcome;
+    let duration_ms = response.replay_duration.as_ref().map_or(0, |duration| {
+        duration.seconds.saturating_mul(1_000) + i64::from(duration.nanos) / 1_000_000
+    });
+    let replay_summary = format!(
+        "Replayed {} events in {duration_ms} ms",
+        response.replayed_event_count
+    );
     match &response.outcome {
         Some(Outcome::Advanceable(adv)) => {
             if adv.captured_writes.is_empty() {
-                notifications.push(Notification::info("Replay OK, no pending writes"));
+                notifications.push(Notification::info(format!(
+                    "{replay_summary}; no advance writes available"
+                )));
                 None
             } else {
+                notifications.push(Notification::success(format!(
+                    "{replay_summary}; {} advance writes available",
+                    adv.captured_writes.len()
+                )));
                 Some(adv.captured_writes.clone())
             }
         }
         Some(Outcome::Finished(_)) => {
-            notifications.push(Notification::info("Replay OK, finished execution"));
+            notifications.push(Notification::info(format!(
+                "{replay_summary}; execution finished"
+            )));
             None
         }
         Some(Outcome::Blocked(_)) => {
-            notifications.push(Notification::info("Replay OK, execution is blocked"));
+            notifications.push(Notification::info(format!(
+                "{replay_summary}; execution is blocked"
+            )));
             None
         }
         Some(Outcome::ReplayFailed(failed)) => {
-            notifications.push(Notification::error(format!(
-                "Replay failed: {}",
-                failed.error
-            )));
+            let structured = failed.failure.as_ref().map(|failure| {
+                let kind = grpc_client::ExecutionFailureKind::try_from(failure.kind)
+                    .unwrap_or(grpc_client::ExecutionFailureKind::Unspecified)
+                    .as_str_name();
+                [
+                    Some(kind.to_string()),
+                    failure.reason.clone(),
+                    failure.detail.clone(),
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(": ")
+            });
+            notifications.push(Notification::error(
+                match structured.filter(|s| !s.is_empty()) {
+                    Some(detail) => format!(
+                        "Replay failed after replaying {} events in {duration_ms} ms: {} ({detail})",
+                        response.replayed_event_count, failed.error
+                    ),
+                    None => format!(
+                        "Replay failed after replaying {} events in {duration_ms} ms: {}",
+                        response.replayed_event_count, failed.error
+                    ),
+                },
+            ));
             None
         }
         None => {
@@ -114,11 +154,7 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
                     if let Some(cb) = &on_replay_response {
                         cb.emit(response.clone());
                     }
-                    let writes = process_replay_response(&response, &notifications);
-                    if writes.is_some() {
-                        notifications
-                            .push(Notification::success("Replay: advanceable writes ready"));
-                    }
+                    process_replay_response(&response, &notifications);
                 }
                 loading_state.set(false);
             });

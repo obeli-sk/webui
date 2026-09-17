@@ -744,9 +744,7 @@ pub fn execution_list_page() -> Html {
                 };
 
                 // Send request
-                #[allow(deprecated)]
                 let req = grpc_client::ListExecutionsRequest {
-                    function_name_prefix: None,
                     top_level_only: !query_params.show_derived,
                     pagination,
                     hide_finished: query_params.hide_finished,

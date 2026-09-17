@@ -1,7 +1,7 @@
 //! Unified notification system for displaying success, error, and info messages.
 //!
 //! Usage:
-//! ```rust
+//! ```ignore
 //! let notifications = use_context::<NotificationContext>().unwrap();
 //! notifications.push(Notification::success("Operation completed"));
 //! notifications.push(Notification::error("Something went wrong"));

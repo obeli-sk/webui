@@ -92,14 +92,20 @@ impl DeploymentCursor {
     }
 }
 
-fn exec_activity_count(summary: &DeploymentSummary) -> Option<u32> {
+fn native_activity_count(summary: &DeploymentSummary) -> Option<(u32, u32)> {
     summary.component_summary.as_ref().map(|component_summary| {
-        component_summary
-            .components
-            .iter()
-            .filter(|component| component.component_type() == DeploymentComponentType::ActivityExec)
-            .map(|component| component.count)
-            .sum()
+        let count = |component_type| {
+            component_summary
+                .components
+                .iter()
+                .filter(|component| component.component_type() == component_type)
+                .map(|component| component.count)
+                .sum()
+        };
+        (
+            count(DeploymentComponentType::ActivityExec),
+            count(DeploymentComponentType::ActivityVm),
+        )
     })
 }
 
@@ -232,27 +238,29 @@ pub fn deployment_list_page() -> Html {
                     }
                     DeploymentStatus::Inactive | DeploymentStatus::Unspecified => html! {},
                 };
-                let exec_badge = match exec_activity_count(deployment_summary) {
-                    Some(0) => html! {},
-                    Some(count) => {
-                        let activity_label = if count == 1 { "activity" } else { "activities" };
+                let native_badges = match native_activity_count(deployment_summary) {
+                    Some((0, 0)) => html! {},
+                    Some((exec_count, vm_count)) => {
+                        let exec_badge = (exec_count > 0).then(|| html! {
+                            <span class="badge dangerous-exec" title={format!(
+                                "This deployment includes {exec_count} exec activities, which run as native processes"
+                            )}>{"⚠ Exec"}</span>
+                        });
+                        let vm_badge = (vm_count > 0).then(|| html! {
+                            <span class="badge dangerous-exec" title={format!(
+                                "This deployment includes {vm_count} VM activities, which run in virtual machines"
+                            )}>{"VM"}</span>
+                        });
                         html! {
-                            <span
-                                class="badge dangerous-exec"
-                                title={format!(
-                                    "This deployment includes {count} exec {activity_label}, which run outside the component sandbox"
-                                )}
-                            >
-                                {"⚠ Exec"}
-                            </span>
+                            <>{exec_badge}{vm_badge}</>
                         }
                     },
                     None => html! {
                         <span
                             class="badge dangerous-exec"
-                            title="Component summary was not returned; exec activity status is unknown"
+                            title="Component summary was not returned; native activity status is unknown"
                         >
-                            {"⚠ Exec unknown"}
+                            {"⚠ Native activities unknown"}
                         </span>
                     },
                 };
@@ -352,7 +360,7 @@ pub fn deployment_list_page() -> Html {
                                     }
                                 </Link<Route>>
                                 {status_badge}
-                                {exec_badge}
+                            {native_badges}
                                 {empty_badge}
                             </div>
                             if description.is_some() {

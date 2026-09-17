@@ -15,6 +15,7 @@ use crate::{
         execution_submit_page::ExecutionSubmitPage,
         not_found::NotFound,
         notification::{Notification, NotificationContext, NotificationProvider},
+        system_events_page::SystemEventsPage,
         trace::trace_view::TraceView,
     },
     grpc::{
@@ -181,6 +182,8 @@ pub enum Route {
     Logs {
         execution_id: grpc_client::ExecutionId,
     },
+    #[at("/admin/system-events")]
+    SystemEvents,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -222,6 +225,7 @@ impl Route {
             Route::Logs { execution_id } => {
                 html! { <LogsPage {execution_id} />}
             }
+            Route::SystemEvents => html! { <SystemEventsPage /> },
             Route::NotFound => html! { <NotFound /> },
         }
     }
@@ -360,6 +364,10 @@ fn app_inner(
                         {" "}
                         <Link<Route> to={Route::ExecutionNew }>
                             {"Submit"}
+                        </Link<Route>>
+                        {" "}
+                        <Link<Route> to={Route::SystemEvents }>
+                            {"System events"}
                         </Link<Route>>
 
                     </nav>

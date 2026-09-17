@@ -25,4 +25,5 @@ pub mod function_signature;
 pub mod json_tree;
 pub mod not_found;
 pub mod notification;
+pub mod system_events_page;
 pub mod trace;
