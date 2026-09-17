@@ -20,7 +20,7 @@ pub fn print_all(
     wit: &str,
     render_ffqn_with_links: HashSet<FunctionFqn>,
 ) -> Result<Vec<Html>, anyhow::Error> {
-    let group = UnresolvedPackageGroup::parse(PathBuf::new(), wit)?;
+    let group = UnresolvedPackageGroup::parse(PathBuf::new(), wit).map_err(|(_, error)| error)?;
     let mut resolve = Resolve::new();
     let main_id = resolve.push_group(group)?;
     let ids = resolve
@@ -40,7 +40,7 @@ pub fn print_interface_with_single_fn(
     wit: &str,
     ffqn: &FunctionFqn,
 ) -> Result<Vec<Html>, anyhow::Error> {
-    let group = UnresolvedPackageGroup::parse(PathBuf::new(), wit)?;
+    let group = UnresolvedPackageGroup::parse(PathBuf::new(), wit).map_err(|(_, error)| error)?;
     let mut resolve = Resolve::new();
     let _main_id = resolve.push_group(group)?;
     let mut printer = WitPrinter::new(OutputToHtml::default());
