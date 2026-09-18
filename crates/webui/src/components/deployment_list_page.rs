@@ -247,8 +247,8 @@ pub fn deployment_list_page() -> Html {
                             )}>{"⚠ Exec"}</span>
                         });
                         let vm_badge = (vm_count > 0).then(|| html! {
-                            <span class="badge dangerous-exec" title={format!(
-                                "This deployment includes {vm_count} VM activities, which run in virtual machines"
+                            <span class="badge vm-activity" title={format!(
+                                "This deployment includes {vm_count} sandboxed VM activities"
                             )}>{"VM"}</span>
                         });
                         html! {

@@ -28,6 +28,12 @@
       color: #dc322f;
     }
 
+    &.vm-activity {
+      background-color: transparent;
+      border: 1px solid $color-border-secondary;
+      color: $color-text-secondary;
+    }
+
     &.empty {
       background-color: transparent;
       border: 1px solid $color-border-secondary;
