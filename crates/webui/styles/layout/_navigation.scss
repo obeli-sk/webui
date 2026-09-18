@@ -4,6 +4,9 @@
 @use '../base/variables' as *;
 
 nav {
+  display: flex;
+  align-items: center;
+  gap: $spacing-lg;
   margin-bottom: $spacing-lg;
   padding-bottom: $spacing-md;
   border-bottom: 1px solid $color-border-primary;
@@ -11,7 +14,6 @@ nav {
   a {
     color: $color-accent-cyan;
     text-decoration: none;
-    margin-right: $spacing-lg;
     font-weight: bold;
     transition: color $transition-normal;
 
@@ -19,6 +21,10 @@ nav {
       color: $color-accent-yellow;
       text-decoration: underline;
     }
+  }
+
+  .nav-submit {
+    margin-left: auto;
   }
 }
 
