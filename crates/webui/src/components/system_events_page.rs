@@ -425,11 +425,16 @@ pub fn system_events_page() -> Html {
                         <button disabled={true}>{"← Newer"}</button>
                     }
                     if let Some(cursor) = &response.next_cursor {
-                        <Link<Route, SystemEventQuery>
-                            classes="button"
-                            to={Route::SystemEvents}
-                            query={SystemEventQuery { before: Some(cursor.clone()), ..query.clone() }}
-                        >{"Older →"}</Link<Route, SystemEventQuery>>
+                        <button onclick={{
+                            let navigator = navigator.clone();
+                            let older_query = SystemEventQuery {
+                                before: Some(cursor.clone()),
+                                ..query.clone()
+                            };
+                            Callback::from(move |_| {
+                                let _ = navigator.push_with_query(&Route::SystemEvents, &older_query);
+                            })
+                        }}>{"Older →"}</button>
                     } else {
                         <button disabled={true}>{"Older →"}</button>
                     }
