@@ -26,6 +26,7 @@ pub const MANIFEST_SECTIONS: &[(&str, &str)] = &[
     ("activity_js", "Activities (JS)"),
     ("activity_wasm", "Activities (WASM)"),
     ("activity_exec", "Activities (Exec)"),
+    ("activity_vm", "Activities (VM)"),
     ("activity_stub", "Activity Stubs"),
     ("activity_external", "External Activities"),
     ("workflow_js", "Workflows (JS)"),
@@ -645,4 +646,26 @@ pub fn deployment_config_view(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_sections_from_manifest;
+    use serde_json::json;
+
+    #[test]
+    fn activity_vm_is_rendered_as_a_component_section() {
+        let sections = build_sections_from_manifest(&json!({
+            "activity_vm": [{
+                "name": "sandboxed-task",
+                "nix": { "packages": ["hello"] }
+            }]
+        }));
+
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].toml_key, "activity_vm");
+        assert_eq!(sections[0].title, "Activities (VM)");
+        assert_eq!(sections[0].components.len(), 1);
+        assert_eq!(sections[0].components[0].name, "sandboxed-task");
+    }
 }

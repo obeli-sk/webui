@@ -357,19 +357,15 @@ fn app_inner(
                         <Link<Route> to={Route::DeploymentList }>
                             {"Deployments"}
                         </Link<Route>>
-                        {" "}
                         <Link<Route> to={Route::ExecutionList }>
                             {"Executions"}
                         </Link<Route>>
-                        {" "}
-                        <Link<Route> to={Route::ExecutionNew }>
-                            {"Submit"}
-                        </Link<Route>>
-                        {" "}
                         <Link<Route> to={Route::SystemEvents }>
                             {"System events"}
                         </Link<Route>>
-
+                        <Link<Route> classes="nav-submit" to={Route::ExecutionNew }>
+                            {"Submit"}
+                        </Link<Route>>
                     </nav>
                     <Switch<Route> render={Route::render} />
                 </BrowserRouter>
