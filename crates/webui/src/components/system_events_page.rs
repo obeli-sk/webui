@@ -16,7 +16,8 @@ use yew::prelude::*;
 use yew_router::prelude::*;
 
 const PAGE_SIZE: u32 = 50;
-const FILTER_LEVELS: [SystemEventLevel; 3] = [
+const FILTER_LEVELS: [SystemEventLevel; 4] = [
+    SystemEventLevel::Debug,
     SystemEventLevel::Info,
     SystemEventLevel::Warning,
     SystemEventLevel::Error,
@@ -71,7 +72,7 @@ pub struct SystemEventQuery {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     all_runs: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    server_run_id: Option<String>,
+    node_run_id: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     all_deployments: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,6 +91,7 @@ struct EventPage {
 
 fn level_label(level: SystemEventLevel) -> &'static str {
     match level {
+        SystemEventLevel::Debug => "Debug",
         SystemEventLevel::Info => "Info",
         SystemEventLevel::Warning => "Warning",
         SystemEventLevel::Error => "Error",
@@ -140,7 +142,7 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
             <div class="system-event-message">{&event.message}</div>
             <div class="system-event-metadata">
                 <span>{"Event "}<code>{&event.event_id}</code></span>
-                <span>{"Server run "}<code title={event.server_run_id.clone()}>{&event.server_run_id}</code></span>
+                <span>{"Node run "}<code title={event.node_run_id.clone()}>{&event.node_run_id}</code></span>
                 if let Some(execution) = execution {
                     <span>{"Execution "}{execution}</span>
                 }
@@ -180,14 +182,14 @@ pub fn system_events_page() -> Html {
             spawn_local(async move {
                 let mut client = AdminRepositoryClient::new(crate::auth::client());
                 match client
-                    .get_server_run_id(grpc_client::GetServerRunIdRequest {})
+                    .get_node_run_id(grpc_client::GetNodeRunIdRequest {})
                     .await
                 {
-                    Ok(result) => current_run_id.set(Some(result.into_inner().server_run_id)),
+                    Ok(result) => current_run_id.set(Some(result.into_inner().node_run_id)),
                     Err(err) => {
-                        error!("Failed to get current server run ID: {err:?}");
+                        error!("Failed to get current node run ID: {err:?}");
                         notifications.push(Notification::error(format!(
-                            "Failed to get current server run ID: {}",
+                            "Failed to get current node run ID: {}",
                             err.message()
                         )));
                     }
@@ -205,16 +207,13 @@ pub fn system_events_page() -> Html {
         use_effect_with(
             (query, current_run_id, current_deployment_id),
             move |(query, current_run_id, current_deployment_id)| {
-                if !query.all_runs && query.server_run_id.is_none() && current_run_id.is_none() {
+                if !query.all_runs && query.node_run_id.is_none() && current_run_id.is_none() {
                     return;
                 }
-                let server_run_id = if query.all_runs {
+                let node_run_id = if query.all_runs {
                     None
                 } else {
-                    query
-                        .server_run_id
-                        .clone()
-                        .or_else(|| current_run_id.clone())
+                    query.node_run_id.clone().or_else(|| current_run_id.clone())
                 };
                 let deployment_id = if query.all_deployments {
                     None
@@ -244,7 +243,7 @@ pub fn system_events_page() -> Html {
                             deployment_id: deployment_id.clone(),
                             before_event_id: query.before.clone(),
                             limit: PAGE_SIZE,
-                            server_run_id: server_run_id.clone(),
+                            node_run_id: node_run_id.clone(),
                         };
                         let mut client = AdminRepositoryClient::new(crate::auth::client());
                         match client.list_system_events(request).await {
@@ -291,7 +290,7 @@ pub fn system_events_page() -> Html {
                 .cast::<HtmlInputElement>()
                 .map(|input| input.value())
                 .filter(|value| !value.is_empty());
-            query.server_run_id = run_ref
+            query.node_run_id = run_ref
                 .cast::<HtmlInputElement>()
                 .map(|input| input.value())
                 .filter(|value| !value.is_empty());
@@ -299,7 +298,7 @@ pub fn system_events_page() -> Html {
                 .cast::<HtmlInputElement>()
                 .map(|input| input.value())
                 .filter(|value| !value.is_empty());
-            if query.server_run_id.is_some() {
+            if query.node_run_id.is_some() {
                 query.all_runs = false;
             }
             if query.deployment_id.is_some() {
@@ -316,7 +315,7 @@ pub fn system_events_page() -> Html {
         Callback::from(move |_| {
             let mut query = query.clone();
             query.all_runs = all_runs;
-            query.server_run_id = None;
+            query.node_run_id = None;
             query.before = None;
             let _ = navigator.push_with_query(&Route::SystemEvents, &query);
         })
@@ -367,15 +366,15 @@ pub fn system_events_page() -> Html {
         query.all_deployments || (query.deployment_id.is_none() && current_deployment_id.is_none());
     let has_more_filters = query.code.is_some()
         || query.levels.is_some()
-        || query.server_run_id.is_some()
+        || query.node_run_id.is_some()
         || query.deployment_id.is_some();
     html! {
         <main>
             <h1>{"System events"}</h1>
             <div class="system-event-filters">
                 <div class="system-event-filter-group">
-                    <span class="system-event-filter-label">{"Server run"}</span>
-                    <button class={classes!((!query.all_runs && query.server_run_id.is_none()).then_some("selected"))} onclick={set_run_scope(false)}>{"Current"}</button>
+                    <span class="system-event-filter-label">{"Node run"}</span>
+                    <button class={classes!((!query.all_runs && query.node_run_id.is_none()).then_some("selected"))} onclick={set_run_scope(false)}>{"Current"}</button>
                     <button class={classes!(query.all_runs.then_some("selected"))} onclick={set_run_scope(true)}>{"All runs"}</button>
                 </div>
                 <div class="system-event-filter-group">
@@ -402,13 +401,13 @@ pub fn system_events_page() -> Html {
                         })}
                     </div>
                     <label>{"Code"}<input ref={code_ref} value={query.code.clone().unwrap_or_default()} /></label>
-                    <label>{"One server run"}<input ref={run_ref} placeholder="Run_…" value={query.server_run_id.clone().unwrap_or_default()} /></label>
+                    <label>{"One node run"}<input ref={run_ref} placeholder="NodeRun_…" value={query.node_run_id.clone().unwrap_or_default()} /></label>
                     <label>{"One deployment"}<input ref={deployment_ref} placeholder="Dep_…" value={query.deployment_id.clone().unwrap_or_default()} /></label>
                     <button type="submit">{"Apply"}</button>
                 </form>
             </details>
             <p class="system-event-scope-summary">
-                {if query.all_runs { "All server runs" } else if query.server_run_id.is_some() { "One server run" } else { "Current server run" }}
+                {if query.all_runs { "All node runs" } else if query.node_run_id.is_some() { "One node run" } else { "Current node run" }}
                 {" · "}
                 {if query.all_deployments { "All deployments" } else if query.deployment_id.is_some() { "One deployment" } else if showing_all_deployments { "All deployments" } else { "Current deployment" }}
             </p>
