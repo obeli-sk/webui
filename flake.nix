@@ -9,7 +9,7 @@
       };
     };
     obelisk = {
-      url = "github:obeli-sk/obelisk/latest";
+      url = "github:obeli-sk/obelisk/latest-rc";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
@@ -33,12 +33,15 @@
             binaryen # wasm-opt
             cargo-edit
             cargo-expand
+            gh
+            jq
             just
             protobuf
             rustToolchain
             dart-sass # SCSS compiler for styles
             trunk
             wasm-bindgen-cli
+            yq-go
           ];
           withObelisk = commonDeps ++ [ obelisk.packages.${system}.default ];
           noObeliskShell = pkgs.mkShell {
