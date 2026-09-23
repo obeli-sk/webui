@@ -155,9 +155,7 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
             <div class="system-event-metadata">
                 <code>{&event.event_id}</code>
                 <code title={event.node_run_id.clone()}>{&event.node_run_id}</code>
-                if let Some(execution) = execution {
-                    <span>{"Execution "}{execution}</span>
-                }
+                {execution}
                 {deployment}
             </div>
             if !event.details_json.is_empty() {
