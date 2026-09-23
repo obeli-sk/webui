@@ -153,14 +153,12 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
             </div>
             <div class="system-event-message">{&event.message}</div>
             <div class="system-event-metadata">
-                <span>{"Event "}<code>{&event.event_id}</code></span>
-                <span>{"Node run "}<code title={event.node_run_id.clone()}>{&event.node_run_id}</code></span>
+                <code>{&event.event_id}</code>
+                <code title={event.node_run_id.clone()}>{&event.node_run_id}</code>
                 if let Some(execution) = execution {
                     <span>{"Execution "}{execution}</span>
                 }
-                if let Some(deployment) = deployment {
-                    <span>{"Deployment "}{deployment}</span>
-                }
+                {deployment}
             </div>
             if !event.details_json.is_empty() {
                 <details class="system-event-details">
@@ -382,7 +380,6 @@ pub fn system_events_page() -> Html {
             <h1>{"System events"}</h1>
             <div class="system-event-filters">
                 <div class="system-event-filter-group">
-                    <span class="system-event-filter-label">{"Level"}</span>
                     {for FILTER_LEVELS.into_iter().map(|level| {
                         let selected = selected_levels.contains(&level);
                         html! {
