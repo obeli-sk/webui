@@ -165,6 +165,12 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
+
+  // Naming the stack avoids the UA's smaller default size for bare `monospace`.
+  code {
+    font-family: $font-family-mono;
+    font-size: inherit;
+  }
 }
 
 .system-event-details {

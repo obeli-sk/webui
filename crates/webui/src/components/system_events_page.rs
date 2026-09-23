@@ -122,14 +122,14 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
     let execution = event.execution_id.as_ref().map(|execution_id| {
         html! {
             <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
-                {execution_id.to_string()}
+                <code>{execution_id.to_string()}</code>
             </Link<Route>>
         }
     });
     let deployment = event.deployment_id.as_ref().map(|deployment_id| {
         html! {
             <Link<Route> to={Route::DeploymentDetail { deployment_id: deployment_id.clone() }}>
-                {deployment_id.to_string()}
+                <code>{deployment_id.to_string()}</code>
             </Link<Route>>
         }
     });
@@ -155,8 +155,8 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
             <div class="system-event-metadata">
                 <code>{&event.event_id}</code>
                 <code title={event.node_run_id.clone()}>{&event.node_run_id}</code>
-                {execution}
                 {deployment}
+                {execution}
             </div>
             if !event.details_json.is_empty() {
                 <details class="system-event-details">
