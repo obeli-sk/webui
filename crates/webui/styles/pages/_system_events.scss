@@ -23,7 +23,31 @@
   font-size: $font-size-sm;
 }
 
+.system-event-filter-group button,
+.system-event-more-filters button {
+  padding: 0.35rem 0.7rem;
+  background: $color-bg-primary;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  color: $color-text-primary;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  transition: background-color $transition-normal, border-color $transition-normal,
+    color $transition-normal;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-hover;
+    color: $color-text-light;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
 .system-event-filter-group button.selected {
+  background: rgba($color-accent-cyan, 0.15);
   border-color: $color-accent-cyan;
   color: $color-accent-cyan;
 }
@@ -53,6 +77,25 @@
       gap: $spacing-xs;
       color: $color-text-secondary;
       font-size: $font-size-sm;
+    }
+
+    input {
+      padding: 0.35rem 0.5rem;
+      background: $color-bg-primary;
+      border: 1px solid $color-border-primary;
+      border-radius: $border-radius-md;
+      color: $color-text-primary;
+      font-family: $font-family-mono;
+      font-size: $font-size-sm;
+
+      &:focus {
+        outline: none;
+        border-color: $color-accent-cyan;
+      }
+
+      &::placeholder {
+        color: $color-text-muted;
+      }
     }
   }
 }

@@ -12,11 +12,12 @@
   box-shadow: $shadow-md;
 
   // Pagination within container
-  > .pagination {
+  .pagination {
     margin-top: 20px;
   }
 
-  > div.pagination button {
+  // Descendant, not child: the system events page wraps its content in <main>.
+  .pagination button {
     padding: 10px;
     margin: 0 5px;
     text-decoration: none;
