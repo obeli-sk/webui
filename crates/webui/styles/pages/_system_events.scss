@@ -12,8 +12,7 @@
   border-radius: $border-radius-lg;
 }
 
-.system-event-filter-group,
-.system-event-levels {
+.system-event-filter-group {
   display: flex;
   align-items: center;
   gap: $spacing-xs;
@@ -27,14 +26,6 @@
 .system-event-filter-group button.selected {
   border-color: $color-accent-cyan;
   color: $color-accent-cyan;
-}
-
-.system-event-levels {
-  label {
-    display: flex;
-    align-items: center;
-    gap: 0.2rem;
-  }
 }
 
 .system-event-more-filters {
@@ -157,8 +148,7 @@
 }
 
 @media (max-width: 760px) {
-  .system-event-filter-group,
-  .system-event-levels {
+  .system-event-filter-group {
     width: 100%;
     flex-wrap: wrap;
   }

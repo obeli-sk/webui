@@ -22,6 +22,11 @@ const FILTER_LEVELS: [SystemEventLevel; 4] = [
     SystemEventLevel::Warning,
     SystemEventLevel::Error,
 ];
+const DEFAULT_LEVELS: [SystemEventLevel; 3] = [
+    SystemEventLevel::Info,
+    SystemEventLevel::Warning,
+    SystemEventLevel::Error,
+];
 
 #[derive(
     Clone,
@@ -87,6 +92,13 @@ pub struct SystemEventQuery {
 struct EventPage {
     events: Vec<SystemEvent>,
     next_cursor: Option<String>,
+}
+
+fn selected_levels(query: &SystemEventQuery) -> Vec<SystemEventLevel> {
+    query
+        .levels
+        .as_ref()
+        .map_or_else(|| DEFAULT_LEVELS.to_vec(), |levels| levels.0.clone())
 }
 
 fn level_label(level: SystemEventLevel) -> &'static str {
@@ -224,16 +236,16 @@ pub fn system_events_page() -> Html {
                         .map(|id| grpc_client::DeploymentId::from(id.clone()))
                         .or_else(|| current_deployment_id.clone())
                 };
-                let levels = query
-                    .levels
-                    .as_ref()
-                    .map(|levels| levels.0.clone())
-                    .filter(|levels| !levels.is_empty() && levels.len() < FILTER_LEVELS.len());
+                let levels = selected_levels(query);
+                // Selecting every level is the same as not filtering, so ask for all of them at once.
+                let requested_levels = if levels.len() == FILTER_LEVELS.len() {
+                    vec![SystemEventLevel::Unspecified]
+                } else {
+                    levels
+                };
                 let query = query.clone();
                 response.set(None);
                 spawn_local(async move {
-                    let requested_levels =
-                        levels.unwrap_or_else(|| vec![SystemEventLevel::Unspecified]);
                     let mut events = Vec::new();
                     let mut has_more = false;
                     for level in requested_levels {
@@ -343,35 +355,43 @@ pub fn system_events_page() -> Html {
         })
     };
 
-    let toggle_level = |level: SystemEventLevel| {
+    let toggle_level = |level: SystemEventLevel, selected: bool| {
         let navigator = navigator.clone();
         let query = query.clone();
-        Callback::from(move |event: Event| {
-            let checked = event.target_unchecked_into::<HtmlInputElement>().checked();
+        Callback::from(move |_| {
             let mut query = query.clone();
-            let mut levels = query.levels.take().unwrap_or_default().0;
+            let mut levels = selected_levels(&query);
             levels.retain(|candidate| *candidate != level);
-            if checked {
+            if !selected {
                 levels.push(level);
+                levels.sort_unstable_by_key(|level| *level as i32);
             }
-            levels.sort_unstable_by_key(|level| *level as i32);
-            query.levels = (!levels.is_empty()).then_some(LevelFilter(levels));
+            query.levels = (levels != DEFAULT_LEVELS).then_some(LevelFilter(levels));
             query.before = None;
             let _ = navigator.push_with_query(&Route::SystemEvents, &query);
         })
     };
 
-    let selected_levels = query.levels.as_ref().map_or(&[][..], |levels| &levels.0);
+    let selected_levels = selected_levels(&query);
     let showing_all_deployments =
         query.all_deployments || (query.deployment_id.is_none() && current_deployment_id.is_none());
-    let has_more_filters = query.code.is_some()
-        || query.levels.is_some()
-        || query.node_run_id.is_some()
-        || query.deployment_id.is_some();
+    let has_more_filters =
+        query.code.is_some() || query.node_run_id.is_some() || query.deployment_id.is_some();
     html! {
         <main>
             <h1>{"System events"}</h1>
             <div class="system-event-filters">
+                <div class="system-event-filter-group">
+                    <span class="system-event-filter-label">{"Level"}</span>
+                    {for FILTER_LEVELS.into_iter().map(|level| {
+                        let selected = selected_levels.contains(&level);
+                        html! {
+                            <button class={classes!(selected.then_some("selected"))} onclick={toggle_level(level, selected)}>
+                                {level_label(level)}
+                            </button>
+                        }
+                    })}
+                </div>
                 <div class="system-event-filter-group">
                     <span class="system-event-filter-label">{"Node run"}</span>
                     <button class={classes!((!query.all_runs && query.node_run_id.is_none()).then_some("selected"))} onclick={set_run_scope(false)}>{"Current"}</button>
@@ -391,15 +411,6 @@ pub fn system_events_page() -> Html {
             <details class="system-event-more-filters" open={has_more_filters}>
                 <summary>{"More filters"}</summary>
                 <form onsubmit={apply_more_filters}>
-                    <div class="system-event-levels">
-                        <span class="system-event-filter-label">{"Levels (none or all shows all)"}</span>
-                        {for FILTER_LEVELS.into_iter().map(|level| html! {
-                            <label>
-                                <input type="checkbox" checked={selected_levels.contains(&level)} onchange={toggle_level(level)} />
-                                {level_label(level)}
-                            </label>
-                        })}
-                    </div>
                     <label>{"Code"}<input ref={code_ref} value={query.code.clone().unwrap_or_default()} /></label>
                     <label>{"One node run"}<input ref={run_ref} placeholder="NodeRun_…" value={query.node_run_id.clone().unwrap_or_default()} /></label>
                     <label>{"One deployment"}<input ref={deployment_ref} placeholder="Dep_…" value={query.deployment_id.clone().unwrap_or_default()} /></label>
