@@ -393,27 +393,24 @@ pub fn system_events_page() -> Html {
                     })}
                 </div>
                 <div class="system-event-filter-group">
-                    <span class="system-event-filter-label">{"Node run"}</span>
-                    <button class={classes!((!query.all_runs && query.node_run_id.is_none()).then_some("selected"))} onclick={set_run_scope(false)}>{"Current"}</button>
+                    <button class={classes!((!query.all_runs && query.node_run_id.is_none()).then_some("selected"))} onclick={set_run_scope(false)}>{"Current run"}</button>
                     <button class={classes!(query.all_runs.then_some("selected"))} onclick={set_run_scope(true)}>{"All runs"}</button>
                 </div>
                 <div class="system-event-filter-group">
-                    <span class="system-event-filter-label">{"Deployment"}</span>
-                    <button class={classes!((!showing_all_deployments && query.deployment_id.is_none()).then_some("selected"))} onclick={set_deployment_scope(false)} disabled={current_deployment_id.is_none()}>{"Current"}</button>
+                    <button class={classes!((!showing_all_deployments && query.deployment_id.is_none()).then_some("selected"))} onclick={set_deployment_scope(false)} disabled={current_deployment_id.is_none()}>{"Current deployment"}</button>
                     <button class={classes!(query.all_deployments.then_some("selected"))} onclick={set_deployment_scope(true)}>{"All deployments"}</button>
                 </div>
                 <div class="system-event-filter-group">
-                    <span class="system-event-filter-label">{"Time"}</span>
-                    <button class={classes!((!query.absolute_time).then_some("selected"))} onclick={set_absolute_time(false)}>{"Relative"}</button>
-                    <button class={classes!(query.absolute_time.then_some("selected"))} onclick={set_absolute_time(true)}>{"UTC"}</button>
+                    <button class={classes!((!query.absolute_time).then_some("selected"))} onclick={set_absolute_time(false)}>{"Relative time"}</button>
+                    <button class={classes!(query.absolute_time.then_some("selected"))} onclick={set_absolute_time(true)}>{"UTC time"}</button>
                 </div>
             </div>
             <details class="system-event-more-filters" open={has_more_filters}>
                 <summary>{"More filters"}</summary>
                 <form onsubmit={apply_more_filters}>
-                    <label>{"Code"}<input ref={code_ref} value={query.code.clone().unwrap_or_default()} /></label>
-                    <label>{"One node run"}<input ref={run_ref} placeholder="NodeRun_…" value={query.node_run_id.clone().unwrap_or_default()} /></label>
-                    <label>{"One deployment"}<input ref={deployment_ref} placeholder="Dep_…" value={query.deployment_id.clone().unwrap_or_default()} /></label>
+                    <input ref={code_ref} placeholder="Code, e.g. deployment.switch.completed" value={query.code.clone().unwrap_or_default()} />
+                    <input ref={run_ref} placeholder="Node run, e.g. NodeRun_…" value={query.node_run_id.clone().unwrap_or_default()} />
+                    <input ref={deployment_ref} placeholder="Deployment, e.g. Dep_…" value={query.deployment_id.clone().unwrap_or_default()} />
                     <button type="submit">{"Apply"}</button>
                 </form>
             </details>

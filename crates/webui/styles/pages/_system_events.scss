@@ -18,11 +18,6 @@
   gap: $spacing-xs;
 }
 
-.system-event-filter-label {
-  color: $color-text-secondary;
-  font-size: $font-size-sm;
-}
-
 .system-event-filter-group button,
 .system-event-more-filters button {
   padding: 0.35rem 0.7rem;
@@ -71,15 +66,9 @@
     gap: $spacing-md;
     padding-top: $spacing-md;
 
-    > label {
-      display: flex;
-      flex-direction: column;
-      gap: $spacing-xs;
-      color: $color-text-secondary;
-      font-size: $font-size-sm;
-    }
-
     input {
+      flex: 1;
+      min-width: 14rem;
       padding: 0.35rem 0.5rem;
       background: $color-bg-primary;
       border: 1px solid $color-border-primary;
