@@ -6,7 +6,7 @@ use crate::{
     },
     util::time::{RelativeAgo, format_date},
 };
-use chrono::DateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use log::error;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Display, ops::Deref, str::FromStr};
@@ -82,10 +82,16 @@ pub struct SystemEventQuery {
     all_deployments: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deployment_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    to: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     absolute_time: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -99,6 +105,28 @@ fn selected_levels(query: &SystemEventQuery) -> Vec<SystemEventLevel> {
         .levels
         .as_ref()
         .map_or_else(|| DEFAULT_LEVELS.to_vec(), |levels| levels.0.clone())
+}
+
+// `datetime-local` inputs omit the seconds when they are zero.
+fn parse_utc(value: &str) -> Result<DateTime<Utc>, String> {
+    NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
+        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))
+        .map(|naive| naive.and_utc())
+        .map_err(|_| format!("invalid UTC date and time `{value}`"))
+}
+
+fn parse_bound(value: Option<&String>) -> Result<Option<prost_wkt_types::Timestamp>, String> {
+    value
+        .filter(|value| !value.is_empty())
+        .map(|value| parse_utc(value).map(prost_wkt_types::Timestamp::from))
+        .transpose()
+}
+
+fn input_value(node_ref: &NodeRef) -> Option<String> {
+    node_ref
+        .cast::<HtmlInputElement>()
+        .map(|input| input.value().trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn level_label(level: SystemEventLevel) -> &'static str {
@@ -153,7 +181,12 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
             </div>
             <div class="system-event-message">{&event.message}</div>
             <div class="system-event-metadata">
-                <code>{&event.event_id}</code>
+                <Link<Route, SystemEventQuery>
+                    to={Route::SystemEvents}
+                    query={Some(SystemEventQuery { id: Some(event.event_id.clone()), absolute_time, ..SystemEventQuery::default() })}
+                >
+                    <code>{&event.event_id}</code>
+                </Link<Route, SystemEventQuery>>
                 <code title={event.node_run_id.clone()}>{&event.node_run_id}</code>
                 {deployment}
                 {execution}
@@ -182,6 +215,9 @@ pub fn system_events_page() -> Html {
     let code_ref = use_node_ref();
     let run_ref = use_node_ref();
     let deployment_ref = use_node_ref();
+    let from_ref = use_node_ref();
+    let to_ref = use_node_ref();
+    let id_ref = use_node_ref();
 
     {
         let current_run_id = current_run_id.clone();
@@ -215,6 +251,47 @@ pub fn system_events_page() -> Html {
         use_effect_with(
             (query, current_run_id, current_deployment_id),
             move |(query, current_run_id, current_deployment_id)| {
+                if let Some(event_id) = query.id.clone() {
+                    response.set(None);
+                    spawn_local(async move {
+                        let mut client = AdminRepositoryClient::new(crate::auth::client());
+                        match client
+                            .get_system_event(grpc_client::GetSystemEventRequest { event_id })
+                            .await
+                        {
+                            Ok(result) => response.set(Some(EventPage {
+                                events: result.into_inner().event.into_iter().collect(),
+                                next_cursor: None,
+                            })),
+                            Err(err) => {
+                                error!("Failed to get system event: {err:?}");
+                                notifications.push(Notification::error(format!(
+                                    "Failed to get system event: {}",
+                                    err.message()
+                                )));
+                                response.set(Some(EventPage {
+                                    events: Vec::new(),
+                                    next_cursor: None,
+                                }));
+                            }
+                        }
+                    });
+                    return;
+                }
+                let (created_from, created_to) = match (
+                    parse_bound(query.from.as_ref()),
+                    parse_bound(query.to.as_ref()),
+                ) {
+                    (Ok(from), Ok(to)) => (from, to),
+                    (Err(err), _) | (_, Err(err)) => {
+                        notifications.push(Notification::error(err));
+                        response.set(Some(EventPage {
+                            events: Vec::new(),
+                            next_cursor: None,
+                        }));
+                        return;
+                    }
+                };
                 if !query.all_runs && query.node_run_id.is_none() && current_run_id.is_none() {
                     return;
                 }
@@ -252,6 +329,8 @@ pub fn system_events_page() -> Html {
                             before_event_id: query.before.clone(),
                             limit: PAGE_SIZE,
                             node_run_id: node_run_id.clone(),
+                            created_from,
+                            created_to,
                         };
                         let mut client = AdminRepositoryClient::new(crate::auth::client());
                         match client.list_system_events(request).await {
@@ -290,22 +369,17 @@ pub fn system_events_page() -> Html {
         let code_ref = code_ref.clone();
         let run_ref = run_ref.clone();
         let deployment_ref = deployment_ref.clone();
+        let from_ref = from_ref.clone();
+        let to_ref = to_ref.clone();
         let query = query.clone();
         Callback::from(move |event: SubmitEvent| {
             event.prevent_default();
             let mut query = query.clone();
-            query.code = code_ref
-                .cast::<HtmlInputElement>()
-                .map(|input| input.value())
-                .filter(|value| !value.is_empty());
-            query.node_run_id = run_ref
-                .cast::<HtmlInputElement>()
-                .map(|input| input.value())
-                .filter(|value| !value.is_empty());
-            query.deployment_id = deployment_ref
-                .cast::<HtmlInputElement>()
-                .map(|input| input.value())
-                .filter(|value| !value.is_empty());
+            query.code = input_value(&code_ref);
+            query.node_run_id = input_value(&run_ref);
+            query.deployment_id = input_value(&deployment_ref);
+            query.from = input_value(&from_ref);
+            query.to = input_value(&to_ref);
             if query.node_run_id.is_some() {
                 query.all_runs = false;
             }
@@ -313,6 +387,22 @@ pub fn system_events_page() -> Html {
                 query.all_deployments = false;
             }
             query.before = None;
+            query.id = None;
+            let _ = navigator.push_with_query(&Route::SystemEvents, &query);
+        })
+    };
+
+    let find_by_id = {
+        let navigator = navigator.clone();
+        let id_ref = id_ref.clone();
+        let query = query.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            let query = SystemEventQuery {
+                id: input_value(&id_ref),
+                absolute_time: query.absolute_time,
+                ..SystemEventQuery::default()
+            };
             let _ = navigator.push_with_query(&Route::SystemEvents, &query);
         })
     };
@@ -325,6 +415,7 @@ pub fn system_events_page() -> Html {
             query.all_runs = all_runs;
             query.node_run_id = None;
             query.before = None;
+            query.id = None;
             let _ = navigator.push_with_query(&Route::SystemEvents, &query);
         })
     };
@@ -337,6 +428,7 @@ pub fn system_events_page() -> Html {
             query.all_deployments = all_deployments;
             query.deployment_id = None;
             query.before = None;
+            query.id = None;
             let _ = navigator.push_with_query(&Route::SystemEvents, &query);
         })
     };
@@ -364,6 +456,7 @@ pub fn system_events_page() -> Html {
             }
             query.levels = (levels != DEFAULT_LEVELS).then_some(LevelFilter(levels));
             query.before = None;
+            query.id = None;
             let _ = navigator.push_with_query(&Route::SystemEvents, &query);
         })
     };
@@ -371,8 +464,20 @@ pub fn system_events_page() -> Html {
     let selected_levels = selected_levels(&query);
     let showing_all_deployments =
         query.all_deployments || (query.deployment_id.is_none() && current_deployment_id.is_none());
-    let has_more_filters =
-        query.code.is_some() || query.node_run_id.is_some() || query.deployment_id.is_some();
+    let has_more_filters = query.code.is_some()
+        || query.node_run_id.is_some()
+        || query.deployment_id.is_some()
+        || query.from.is_some()
+        || query.to.is_some()
+        || query.id.is_some();
+    let time_range = match (&query.from, &query.to) {
+        (None, None) => None,
+        (from, to) => Some(format!(
+            "{} to {} UTC",
+            from.as_deref().unwrap_or("…"),
+            to.as_deref().unwrap_or("now")
+        )),
+    };
     html! {
         <main>
             <h1>{"System events"}</h1>
@@ -404,43 +509,71 @@ pub fn system_events_page() -> Html {
                 <summary>{"More filters"}</summary>
                 <form onsubmit={apply_more_filters}>
                     <input ref={code_ref} placeholder="Code, e.g. deployment.switch.completed" value={query.code.clone().unwrap_or_default()} />
-                    <input ref={run_ref} placeholder="Node run, e.g. NodeRun_…" value={query.node_run_id.clone().unwrap_or_default()} />
-                    <input ref={deployment_ref} placeholder="Deployment, e.g. Dep_…" value={query.deployment_id.clone().unwrap_or_default()} />
+                    <input ref={run_ref} class="system-event-ulid-input" placeholder="Node run, e.g. NodeRun_…" value={query.node_run_id.clone().unwrap_or_default()} />
+                    <input ref={deployment_ref} class="system-event-ulid-input" placeholder="Deployment, e.g. Dep_…" value={query.deployment_id.clone().unwrap_or_default()} />
+                    <div class="system-event-time-range">
+                        <label class="system-event-time-bound" title="Inclusive">
+                            {"From (UTC)"}
+                            <input ref={from_ref} type="datetime-local" step="1" value={query.from.clone().unwrap_or_default()} />
+                        </label>
+                        <label class="system-event-time-bound" title="Exclusive">
+                            {"To (UTC)"}
+                            <input ref={to_ref} type="datetime-local" step="1" value={query.to.clone().unwrap_or_default()} />
+                        </label>
+                    </div>
                     <button type="submit">{"Apply"}</button>
+                </form>
+                <form onsubmit={find_by_id}>
+                    <input ref={id_ref} class="system-event-ulid-input" placeholder="Event ID, e.g. Sysevt_…" value={query.id.clone().unwrap_or_default()} />
+                    <button type="submit">{"Find"}</button>
                 </form>
             </details>
             <p class="system-event-scope-summary">
-                {if query.all_runs { "All node runs" } else if query.node_run_id.is_some() { "One node run" } else { "Current node run" }}
-                {" · "}
-                {if query.all_deployments { "All deployments" } else if query.deployment_id.is_some() { "One deployment" } else if showing_all_deployments { "All deployments" } else { "Current deployment" }}
+                if let Some(id) = &query.id {
+                    {format!("Event {id} · ")}
+                    <Link<Route> to={Route::SystemEvents}>{"Show all events"}</Link<Route>>
+                } else {
+                    {if query.all_runs { "All node runs" } else if query.node_run_id.is_some() { "One node run" } else { "Current node run" }}
+                    {" · "}
+                    {if query.all_deployments { "All deployments" } else if query.deployment_id.is_some() { "One deployment" } else if showing_all_deployments { "All deployments" } else { "Current deployment" }}
+                    if let Some(time_range) = time_range {
+                        {" · "}{time_range}
+                    }
+                }
             </p>
             if let Some(response) = response.deref() {
                 if response.events.is_empty() {
-                    <p>{"No system events match these filters."}</p>
+                    if query.id.is_some() {
+                        <p>{"System event not found."}</p>
+                    } else {
+                        <p>{"No system events match these filters."}</p>
+                    }
                 } else {
                     <div class="system-event-list">{for response.events.iter().map(|event| event_card(event, query.absolute_time))}</div>
                 }
-                <div class="pagination">
-                    if query.before.is_some() {
-                        <button onclick={{ let navigator = navigator.clone(); Callback::from(move |_| navigator.back()) }}>{"← Newer"}</button>
-                    } else {
-                        <button disabled={true}>{"← Newer"}</button>
-                    }
-                    if let Some(cursor) = &response.next_cursor {
-                        <button onclick={{
-                            let navigator = navigator.clone();
-                            let older_query = SystemEventQuery {
-                                before: Some(cursor.clone()),
-                                ..query.clone()
-                            };
-                            Callback::from(move |_| {
-                                let _ = navigator.push_with_query(&Route::SystemEvents, &older_query);
-                            })
-                        }}>{"Older →"}</button>
-                    } else {
-                        <button disabled={true}>{"Older →"}</button>
-                    }
-                </div>
+                if query.id.is_none() {
+                    <div class="pagination">
+                        if query.before.is_some() {
+                            <button onclick={{ let navigator = navigator.clone(); Callback::from(move |_| navigator.back()) }}>{"← Newer"}</button>
+                        } else {
+                            <button disabled={true}>{"← Newer"}</button>
+                        }
+                        if let Some(cursor) = &response.next_cursor {
+                            <button onclick={{
+                                let navigator = navigator.clone();
+                                let older_query = SystemEventQuery {
+                                    before: Some(cursor.clone()),
+                                    ..query.clone()
+                                };
+                                Callback::from(move |_| {
+                                    let _ = navigator.push_with_query(&Route::SystemEvents, &older_query);
+                                })
+                            }}>{"Older →"}</button>
+                        } else {
+                            <button disabled={true}>{"Older →"}</button>
+                        }
+                    </div>
+                }
             } else {
                 <p>{"Loading system events…"}</p>
             }

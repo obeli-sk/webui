@@ -87,6 +87,31 @@
       }
     }
   }
+
+  .system-event-ulid-input {
+    flex: 0 1 36ch;
+  }
+
+  .system-event-time-range {
+    display: flex;
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    align-items: center;
+    gap: $spacing-md;
+  }
+
+  .system-event-time-bound {
+    display: flex;
+    align-items: center;
+    gap: $spacing-xs;
+    color: $color-text-secondary;
+    font-size: $font-size-sm;
+
+    input {
+      min-width: auto;
+      color-scheme: dark;
+    }
+  }
 }
 
 .system-event-scope-summary {
