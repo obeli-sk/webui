@@ -46,7 +46,7 @@ just serve
 
 The WebUI will be available at [http://localhost:8081](http://localhost:8081).
 
-Make sure the Obelisk server is running for gRPC connectivity.
+Make sure the Obelisk REST API is running at `http://127.0.0.1:8080`.
 
 ### Building for Release
 
@@ -57,7 +57,7 @@ just build
 
 This creates:
 - Release WASM files in `crates/webui/dist/`
-- The `webui-proxy` component at `target/wasm32-wasip2/release/webui_proxy.wasm`
+- The static asset and same origin API gateway component at `target/wasm32-wasip2/release/webui_proxy.wasm`
 
 See [webui-proxy README](crates/webui-proxy/README.md) for deployment instructions.
 

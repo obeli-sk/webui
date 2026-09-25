@@ -5,11 +5,9 @@ use crate::{
     components::notification::{Notification, NotificationContext},
     grpc::{
         ffqn::FunctionFqn,
-        grpc_client::{
-            self, ContentDigest, ExecutionId,
-            execution_repository_client::ExecutionRepositoryClient,
-        },
+        grpc_client::{self, ContentDigest, ExecutionId},
     },
+    rest,
 };
 use log::{debug, error};
 use wasm_bindgen::prelude::*;
@@ -35,17 +33,11 @@ pub async fn call_replay(
     execution_id: &ExecutionId,
     notifications: &NotificationContext,
 ) -> Option<grpc_client::ReplayExecutionResponse> {
-    let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-    match client
-        .replay_execution(grpc_client::ReplayExecutionRequest {
-            execution_id: Some(execution_id.clone()),
-        })
-        .await
-    {
-        Ok(resp) => Some(resp.into_inner()),
+    match rest::replay::replay(&execution_id.id).await {
+        Ok(resp) => Some(resp),
         Err(e) => {
             error!("Failed to replay execution {}: {:?}", execution_id, e);
-            notifications.push(Notification::error(e.message().to_string()));
+            notifications.push(Notification::error(e));
             None
         }
     }
@@ -387,18 +379,15 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                 let upgraded_digest = upgraded_digest.clone();
 
                 async move {
-                    let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-
-                    let result = client
-                        .upgrade_execution_component(
-                            grpc_client::UpgradeExecutionComponentRequest {
-                                execution_id: Some(execution_id.clone()),
-                                expected_component_digest: Some(effective_digest),
-                                new_component_digest: Some(new_digest.clone()),
-                                skip_determinism_check: skip_determinism,
-                            },
-                        )
-                        .await;
+                    let result = rest::put::<_, serde_json::Value>(
+                        &format!("/v1/executions/{execution_id}/upgrade"),
+                        &serde_json::json!({
+                            "old": effective_digest.digest,
+                            "new": new_digest.digest,
+                            "skip_determinism_check": skip_determinism,
+                        }),
+                    )
+                    .await;
 
                     loading_state.set(false);
 
@@ -418,7 +407,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                         }
                         Err(e) => {
                             error!("Failed to upgrade execution {}: {:?}", execution_id, e);
-                            notifications.push(Notification::error(e.message().to_string()));
+                            notifications.push(Notification::error(e));
                         }
                     }
                 }
@@ -582,42 +571,28 @@ pub fn cancel_execution_button(props: &CancelExecutionButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-
-                let result = client
-                    .cancel_execution(grpc_client::CancelExecutionRequest {
-                        execution_id: Some(execution_id.clone()),
-                    })
-                    .await;
+                let result =
+                    rest::put_action(&format!("/v1/executions/{execution_id}/cancel")).await;
 
                 loading_state.set(false);
 
                 match result {
-                    Ok(response) => {
-                        let outcome = response.into_inner().outcome();
+                    Ok(outcome) => {
                         debug!(
-                            "Cancel requested for execution {}: {:?}",
-                            execution_id, outcome
+                            "Cancel requested for execution {execution_id}: {}",
+                            outcome.message
                         );
-                        let message = match outcome {
-                            grpc_client::cancel_execution_response::CancelExecutionOutcome::CancellationRequested => {
-                                "Cancellation requested"
-                            }
-                            grpc_client::cancel_execution_response::CancelExecutionOutcome::AlreadyFinished => {
-                                "Execution already finished"
-                            }
-                            grpc_client::cancel_execution_response::CancelExecutionOutcome::AlreadyCancelling => {
-                                "Execution already cancelling"
-                            }
-                            grpc_client::cancel_execution_response::CancelExecutionOutcome::Unspecified => {
-                                "Unknown cancel outcome"
-                            }
+                        let message = match outcome.message.as_str() {
+                            "cancellation requested" => "Cancellation requested",
+                            "already finished" => "Execution already finished",
+                            "already cancelling" => "Execution already cancelling",
+                            _ => "Unknown cancel outcome",
                         };
                         notifications.push(Notification::success(message));
                     }
                     Err(e) => {
                         error!("Failed to cancel execution {}: {:?}", execution_id, e);
-                        notifications.push(Notification::error(e.message().to_string()));
+                        notifications.push(Notification::error(e));
                     }
                 }
             });
@@ -673,13 +648,8 @@ pub fn pause_button(props: &PauseButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-
-                let result = client
-                    .pause_execution(grpc_client::PauseExecutionRequest {
-                        execution_id: Some(execution_id.clone()),
-                    })
-                    .await;
+                let result =
+                    rest::put_action(&format!("/v1/executions/{execution_id}/pause")).await;
 
                 loading_state.set(false);
 
@@ -690,7 +660,7 @@ pub fn pause_button(props: &PauseButtonProps) -> Html {
                     }
                     Err(e) => {
                         error!("Failed to pause execution {}: {:?}", execution_id, e);
-                        notifications.push(Notification::error(e.message().to_string()));
+                        notifications.push(Notification::error(e));
                     }
                 }
             });
@@ -747,13 +717,8 @@ pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-
-                let result = client
-                    .unpause_execution(grpc_client::UnpauseExecutionRequest {
-                        execution_id: Some(execution_id.clone()),
-                    })
-                    .await;
+                let result =
+                    rest::put_action(&format!("/v1/executions/{execution_id}/unpause")).await;
 
                 loading_state.set(false);
 
@@ -765,7 +730,7 @@ pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
                     }
                     Err(e) => {
                         error!("Failed to unpause execution {}: {:?}", execution_id, e);
-                        notifications.push(Notification::error(e.message().to_string()));
+                        notifications.push(Notification::error(e));
                     }
                 }
             });
@@ -820,36 +785,23 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-
-                let result = client
-                    .cancel_delay(grpc_client::CancelDelayRequest {
-                        delay_id: Some(delay_id.clone()),
-                    })
-                    .await;
+                let result = rest::put_action(&format!("/v1/delays/{delay_id}/cancel")).await;
 
                 loading_state.set(false);
 
                 match result {
-                    Ok(response) => {
-                        let outcome = response.into_inner().outcome();
-                        debug!("Cancel requested for delay {}: {:?}", delay_id, outcome);
-                        let message = match outcome {
-                            grpc_client::cancel_delay_response::CancelDelayOutcome::Cancelled => {
-                                "Delay cancelled successfully"
-                            }
-                            grpc_client::cancel_delay_response::CancelDelayOutcome::AlreadyFinished => {
-                                "Delay already finished"
-                            }
-                            grpc_client::cancel_delay_response::CancelDelayOutcome::Unspecified => {
-                                "Unknown cancel outcome"
-                            }
+                    Ok(outcome) => {
+                        debug!("Cancel requested for delay {delay_id}: {}", outcome.message);
+                        let message = match outcome.message.as_str() {
+                            "cancelled" => "Delay cancelled successfully",
+                            "already finished" => "Delay already finished",
+                            _ => "Unknown cancel outcome",
                         };
                         notifications.push(Notification::success(message));
                     }
                     Err(e) => {
                         error!("Failed to cancel delay {}: {:?}", delay_id, e);
-                        notifications.push(Notification::error(e.message().to_string()));
+                        notifications.push(Notification::error(e));
                     }
                 }
             });
@@ -903,36 +855,18 @@ pub fn pause_delay_button(props: &PauseDelayButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-
-                let result = client
-                    .pause_delay(grpc_client::PauseDelayRequest {
-                        delay_id: Some(delay_id.clone()),
-                    })
-                    .await;
+                let result = rest::put_action(&format!("/v1/delays/{delay_id}/pause")).await;
 
                 loading_state.set(false);
 
                 match result {
-                    Ok(response) => {
-                        let outcome = response.into_inner().outcome();
-                        debug!("Pause requested for delay {}: {:?}", delay_id, outcome);
-                        let message = match outcome {
-                            grpc_client::pause_delay_response::PauseDelayOutcome::Paused => {
-                                "Delay paused successfully"
-                            }
-                            grpc_client::pause_delay_response::PauseDelayOutcome::AlreadyFinished => {
-                                "Delay already finished"
-                            }
-                            grpc_client::pause_delay_response::PauseDelayOutcome::Unspecified => {
-                                "Unknown pause outcome"
-                            }
-                        };
-                        notifications.push(Notification::success(message));
+                    Ok(outcome) => {
+                        debug!("Pause requested for delay {delay_id}: {}", outcome.message);
+                        notifications.push(Notification::success("Delay paused successfully"));
                     }
                     Err(e) => {
                         error!("Failed to pause delay {}: {:?}", delay_id, e);
-                        notifications.push(Notification::error(e.message().to_string()));
+                        notifications.push(Notification::error(e));
                     }
                 }
             });
@@ -986,36 +920,21 @@ pub fn unpause_delay_button(props: &UnpauseDelayButtonProps) -> Html {
             loading_state.set(true);
 
             spawn_local(async move {
-                let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-
-                let result = client
-                    .unpause_delay(grpc_client::UnpauseDelayRequest {
-                        delay_id: Some(delay_id.clone()),
-                    })
-                    .await;
+                let result = rest::put_action(&format!("/v1/delays/{delay_id}/unpause")).await;
 
                 loading_state.set(false);
 
                 match result {
-                    Ok(response) => {
-                        let outcome = response.into_inner().outcome();
-                        debug!("Unpause requested for delay {}: {:?}", delay_id, outcome);
-                        let message = match outcome {
-                            grpc_client::unpause_delay_response::UnpauseDelayOutcome::Unpaused => {
-                                "Delay unpaused successfully"
-                            }
-                            grpc_client::unpause_delay_response::UnpauseDelayOutcome::AlreadyFinished => {
-                                "Delay already finished"
-                            }
-                            grpc_client::unpause_delay_response::UnpauseDelayOutcome::Unspecified => {
-                                "Unknown unpause outcome"
-                            }
-                        };
-                        notifications.push(Notification::success(message));
+                    Ok(outcome) => {
+                        debug!(
+                            "Unpause requested for delay {delay_id}: {}",
+                            outcome.message
+                        );
+                        notifications.push(Notification::success("Delay unpaused successfully"));
                     }
                     Err(e) => {
                         error!("Failed to unpause delay {}: {:?}", delay_id, e);
-                        notifications.push(Notification::error(e.message().to_string()));
+                        notifications.push(Notification::error(e));
                     }
                 }
             });

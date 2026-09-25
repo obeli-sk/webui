@@ -7,11 +7,8 @@ use crate::{
         },
         notification::{Notification, NotificationContext},
     },
-    grpc::grpc_client::{
-        self, DeploymentId, deployment_repository_client::DeploymentRepositoryClient,
-        execution_repository_client::ExecutionRepositoryClient,
-        function_repository_client::FunctionRepositoryClient,
-    },
+    grpc::grpc_client::{self, DeploymentId},
+    rest,
 };
 use log::error;
 use serde_json::Value;
@@ -336,23 +333,9 @@ fn render_section_diff(
 }
 
 async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<DeploymentInfo, String> {
-    let mut client = DeploymentRepositoryClient::new(crate::auth::client());
-    let deployment = client
-        .get_deployment(grpc_client::GetDeploymentRequest {
-            deployment_id: Some(deployment_id.clone()),
-            include_generated_metadata: Some(false),
-        })
+    let deployment = rest::deployments::get(&deployment_id.id)
         .await
-        .map_err(|e| {
-            format!(
-                "cannot get deployment {}: {}",
-                deployment_id.id,
-                e.message()
-            )
-        })?
-        .into_inner()
-        .deployment
-        .ok_or_else(|| format!("deployment {} not found", deployment_id.id))?;
+        .map_err(|e| format!("cannot get deployment {}: {e}", deployment_id.id))?;
     let deployment_toml = deployment
         .deployment_toml
         .ok_or_else(|| format!("deployment {} has no manifest", deployment_id.id))?;
@@ -360,18 +343,10 @@ async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<Deployment
         .map_err(|e| format!("cannot parse manifest of {}: {e}", deployment_id.id))?;
     let sections = build_sections_from_manifest(&config);
 
-    let mut function_client = FunctionRepositoryClient::new(crate::auth::client());
-    let components_by_name = function_client
-        .list_components(grpc_client::ListComponentsRequest {
-            function_name: None,
-            component_digest: None,
-            extensions: false,
-            deployment_id: Some(deployment_id),
-        })
+    let components_by_name = rest::components::list(Some(&deployment_id.id), None)
         .await
-        .map(|resp| {
-            resp.into_inner()
-                .components
+        .map(|components| {
+            components
                 .into_iter()
                 .filter_map(|component| component.component_id)
                 .map(|component_id| (component_id.name.clone(), component_id))
@@ -397,35 +372,18 @@ async fn resolve_source(
         SourceContent::ExternalPath { path } => ResolvedSource::Note(format!(
             "Source is read at runtime from the external path `{path}`."
         )),
-        SourceContent::FetchFile { digest } => {
-            let mut client = DeploymentRepositoryClient::new(crate::auth::client());
-            client
-                .get_file(grpc_client::GetFileRequest { digest })
-                .await
-                .map(|resp| {
-                    ResolvedSource::Text(
-                        String::from_utf8_lossy(&resp.into_inner().content).into_owned(),
-                    )
-                })
-                .unwrap_or_else(|err| {
-                    ResolvedSource::Error(format!("Cannot fetch source: {}", err.message()))
-                })
-        }
+        SourceContent::FetchFile { digest } => rest::deployments::file(&digest)
+            .await
+            .map(ResolvedSource::Text)
+            .unwrap_or_else(|err| ResolvedSource::Error(format!("Cannot fetch source: {err}"))),
         SourceContent::Fetch { file } => {
             let Some(component_id) = component_id else {
                 return ResolvedSource::Error("component not found in this deployment".to_string());
             };
-            let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-            client
-                .get_backtrace_source(grpc_client::GetBacktraceSourceRequest {
-                    component_id: Some(component_id),
-                    file,
-                })
+            rest::deployments::component_source(&component_id, &file)
                 .await
-                .map(|resp| ResolvedSource::Text(resp.into_inner().content))
-                .unwrap_or_else(|err| {
-                    ResolvedSource::Error(format!("Cannot fetch source: {}", err.message()))
-                })
+                .map(ResolvedSource::Text)
+                .unwrap_or_else(|err| ResolvedSource::Error(format!("Cannot fetch source: {err}")))
         }
     }
 }

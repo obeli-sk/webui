@@ -10,6 +10,7 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{self, ExecutionId},
     },
+    rest,
     util::{wit_highlighter, wit_type_formatter::format_wit_type},
 };
 use log::{debug, error, trace, warn};
@@ -66,22 +67,15 @@ pub fn execution_stub_result_page(
         let component_id = component_id.clone();
         move |_ffqn| {
             wasm_bindgen_futures::spawn_local(async move {
-                let mut fn_client =
-                    grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                        crate::auth::client(),
-                    );
-                let wit = fn_client
-                    .get_wit(grpc_client::GetWitRequest {
-                        component_digest: Some(
-                            component_id.digest.clone().expect("`digest` is sent"),
-                        ),
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap()
-                    .into_inner()
-                    .content;
-                wit_state.set(wit);
+                let digest = &component_id
+                    .digest
+                    .as_ref()
+                    .expect("`digest` is sent")
+                    .digest;
+                match rest::get_text(&format!("/v1/components/{digest}/wit"), &[]).await {
+                    Ok(wit) => wit_state.set(Some(wit)),
+                    Err(error) => log::error!("Failed to fetch WIT: {error}"),
+                }
             });
         }
     });
@@ -90,7 +84,6 @@ pub fn execution_stub_result_page(
         let request_processing_state = request_processing_state.clone();
         let validation_err_state = validation_err_state.clone();
         let notifications = notifications.clone();
-        let ffqn = ffqn.clone();
         let navigator = use_navigator().unwrap();
         let execution_id = execution_id.clone();
         let input_ref = input_ref.clone();
@@ -99,19 +92,13 @@ pub fn execution_stub_result_page(
             let return_value = {
                 let input = input_ref.cast::<HtmlTextAreaElement>().unwrap().value();
                 match serde_json::from_str::<serde_json::Value>(&input) {
-                    Ok(_) => {
-                        debug!("serde ok")
-                    }
+                    Ok(value) => value,
                     Err(serde_err) => {
                         error!("Cannot serialize input - {serde_err:?}");
                         validation_err_state
                             .set(Some(format!("cannot serialize input - {serde_err}")));
                         return;
                     }
-                };
-                prost_wkt_types::Any {
-                    type_url: format!("urn:obelisk:json:retval:{ffqn}"),
-                    value: input.into_bytes(),
                 }
             };
             {
@@ -125,18 +112,13 @@ pub fn execution_stub_result_page(
                 let navigator = navigator.clone();
                 let request_processing_state = request_processing_state.clone();
                 async move {
-                    let mut client =
-                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
-                    let response = client
-                        .stub(grpc_client::StubRequest {
-                            execution_id: Some(execution_id.clone()),
-                            return_value: Some(return_value),
-                        })
-                        .await;
+                    let response = rest::put::<_, serde_json::Value>(
+                        &format!("/v1/executions/{execution_id}/stub"),
+                        &return_value,
+                    )
+                    .await;
                     request_processing_state.set(false); // reenable the submit button
-                    trace!("Got gRPC {response:?}");
+                    trace!("Got REST {response:?}");
                     match response {
                         Ok(_response) => navigator.push(&Route::ExecutionTrace { execution_id }),
                         Err(err) => {

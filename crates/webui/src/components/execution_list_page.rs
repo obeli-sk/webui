@@ -7,12 +7,9 @@ use crate::{
     },
     grpc::{
         ffqn::FunctionFqn,
-        grpc_client::{
-            self, ExecutionId, ExecutionSummary,
-            execution_repository_client::ExecutionRepositoryClient,
-            list_executions_request::{NewerThan, OlderThan, Pagination, cursor},
-        },
+        grpc_client::{self, ExecutionId, ExecutionSummary},
     },
+    rest,
     util::time::{RelativeAgo, TimeGranularity, human_formatted_timedelta},
 };
 use chrono::{DateTime, Utc};
@@ -159,24 +156,6 @@ impl StatusFilter {
             .into_iter()
             .find(|status| status.as_str() == value)
     }
-
-    fn to_grpc(self) -> grpc_client::list_executions_request::ExecutionStateFilter {
-        use grpc_client::list_executions_request::ExecutionStateFilter;
-        match self {
-            StatusFilter::Locked => ExecutionStateFilter::Locked,
-            StatusFilter::Pending => ExecutionStateFilter::Pending,
-            StatusFilter::Scheduled => ExecutionStateFilter::Scheduled,
-            StatusFilter::Blocked => ExecutionStateFilter::Blocked,
-            StatusFilter::Paused => ExecutionStateFilter::Paused,
-            StatusFilter::Cancelling => ExecutionStateFilter::Cancelling,
-            StatusFilter::Finished => ExecutionStateFilter::Finished,
-            StatusFilter::FinishedOk => ExecutionStateFilter::FinishedOk,
-            StatusFilter::FinishedError => ExecutionStateFilter::FinishedError,
-            StatusFilter::FinishedExecutionFailure => {
-                ExecutionStateFilter::FinishedExecutionFailure
-            }
-        }
-    }
 }
 impl ExecutionQuery {
     fn flip(mut self, old_direction: Direction) -> ExecutionQuery {
@@ -240,21 +219,6 @@ impl ExecutionsCursor {
         }
     }
 
-    fn into_grpc_cursor(self) -> grpc_client::list_executions_request::Cursor {
-        match self {
-            ExecutionsCursor::ExecutionId(execution_id) => {
-                grpc_client::list_executions_request::Cursor {
-                    cursor: Some(cursor::Cursor::ExecutionId(execution_id)),
-                }
-            }
-            ExecutionsCursor::CreatedAt(created_at) => {
-                grpc_client::list_executions_request::Cursor {
-                    cursor: Some(cursor::Cursor::CreatedAt(created_at.into())),
-                }
-            }
-        }
-    }
-
     fn from_summary(execution: &ExecutionSummary, cursor_type: CursorType) -> Self {
         match cursor_type {
             CursorType::CreatedAt => ExecutionsCursor::CreatedAt(DateTime::from(
@@ -279,21 +243,18 @@ pub enum CursorType {
     ExecutionId,
 }
 
-fn grpc_execution_function_filter(
-    value: String,
-) -> grpc_client::list_executions_request::ExecutionFunctionFilter {
+fn execution_function_filter(value: String) -> (&'static str, String) {
     let scope = if value
         .rsplit_once('.')
         .is_some_and(|(left, _)| left.contains('/'))
     {
-        grpc_client::list_executions_request::execution_function_filter::Scope::FunctionName(value)
+        "function"
     } else if value.contains('/') {
-        grpc_client::list_executions_request::execution_function_filter::Scope::InterfaceName(value)
+        "interface"
     } else {
-        grpc_client::list_executions_request::execution_function_filter::Scope::PackageName(value)
+        "package"
     };
-
-    grpc_client::list_executions_request::ExecutionFunctionFilter { scope: Some(scope) }
+    (scope, value)
 }
 
 #[derive(Clone, PartialEq)]
@@ -720,61 +681,55 @@ pub fn execution_list_page() -> Html {
                 }
                 ffqn_prefix_state.set(query_params.ffqn_prefix.clone().unwrap_or_default());
 
-                let mut execution_client = ExecutionRepositoryClient::new(crate::auth::client());
-
                 let page_size = 10;
-
-                let cursor = query_params
-                    .cursor
-                    .as_ref()
-                    .map(|c| c.clone().into_grpc_cursor());
-
-                // Determine pagination based on direction
-                let pagination = match query_params.direction.unwrap_or_default() {
-                    Direction::Older => Some(Pagination::OlderThan(OlderThan {
-                        cursor,
-                        length: page_size,
-                        including_cursor: query_params.include_cursor,
-                    })),
-                    Direction::Newer => Some(Pagination::NewerThan(NewerThan {
-                        cursor,
-                        length: page_size,
-                        including_cursor: query_params.include_cursor,
-                    })),
-                };
-
-                // Send request
-                let req = grpc_client::ListExecutionsRequest {
-                    top_level_only: !query_params.show_derived,
-                    pagination,
-                    hide_finished: query_params.hide_finished,
-                    function_filter: query_params.ffqn_prefix.map(grpc_execution_function_filter),
-                    execution_id_prefix: query_params.execution_id_prefix.filter(|s| !s.is_empty()),
-                    component_digest: query_params
-                        .component_digest
-                        .filter(|s| !s.is_empty())
-                        .map(grpc_client::ContentDigest::from),
-                    deployment_id: query_params
-                        .deployment_id
-                        .filter(|s| !s.is_empty())
-                        .map(grpc_client::DeploymentId::from),
-                    state_filters: query_params
-                        .status
-                        .iter()
-                        .flat_map(|list| list.0.iter())
-                        .map(|status| status.to_grpc() as i32)
-                        .collect(),
-                };
-                debug!("Fetching executions with query: {req:?}");
-                let response = execution_client.list_executions(req).await;
+                let mut rest_query = vec![
+                    ("show_derived", query_params.show_derived.to_string()),
+                    ("hide_finished", query_params.hide_finished.to_string()),
+                    ("length", page_size.to_string()),
+                    ("including_cursor", query_params.include_cursor.to_string()),
+                    (
+                        "direction",
+                        match query_params.direction.unwrap_or_default() {
+                            Direction::Older => "older",
+                            Direction::Newer => "newer",
+                        }
+                        .to_string(),
+                    ),
+                ];
+                if let Some(cursor) = query_params.cursor {
+                    let value = match cursor {
+                        ExecutionsCursor::ExecutionId(id) => id.id,
+                        ExecutionsCursor::CreatedAt(date) => date.to_rfc3339(),
+                    };
+                    rest_query.push(("cursor", value));
+                }
+                if let Some(value) = query_params.ffqn_prefix {
+                    rest_query.push(execution_function_filter(value));
+                }
+                for (key, value) in [
+                    ("execution_id_prefix", query_params.execution_id_prefix),
+                    ("component_digest", query_params.component_digest),
+                    ("deployment_id", query_params.deployment_id),
+                ] {
+                    if let Some(value) = value.filter(|value| !value.is_empty()) {
+                        rest_query.push((key, value));
+                    }
+                }
+                if let Some(status) = query_params.status {
+                    for value in status.0 {
+                        rest_query.push(("state", value.as_str().to_string()));
+                    }
+                }
+                debug!("Fetching executions with query: {rest_query:?}");
+                let response = rest::executions::list(&rest_query).await;
 
                 match response {
-                    Ok(resp) => response_state.set(Some(resp.into_inner())),
+                    Ok(executions) => response_state.set(Some(executions)),
                     Err(e) => {
                         error!("Failed to list executions: {:?}", e);
                         notifications.push(Notification::error(format!(
                             "Failed to list executions: {}",
-                            e.message()
+                            e
                         )));
                     }
                 }
@@ -905,7 +860,7 @@ pub fn execution_list_page() -> Html {
 
     // Render logic
     if let Some(response) = response_state.deref() {
-        let rows = response.executions.iter().map(|execution| {
+        let rows = response.iter().map(|execution| {
             let ffqn = FunctionFqn::from(
                 execution.function_name.clone().expect("function_name missing"),
             );
@@ -990,7 +945,7 @@ pub fn execution_list_page() -> Html {
             .map(|cursor| cursor.as_type())
             .unwrap_or_default();
 
-        let newer_page_query = if let Some(exe) = response.executions.first() {
+        let newer_page_query = if let Some(exe) = response.first() {
             let mut query = query.clone();
             query.cursor = Some(ExecutionsCursor::from_summary(exe, cursor_type));
             query.direction = Some(Direction::Newer);
@@ -1005,7 +960,7 @@ pub fn execution_list_page() -> Html {
         } else {
             None
         };
-        let older_page_query = if let Some(exe) = response.executions.last() {
+        let older_page_query = if let Some(exe) = response.last() {
             let mut query = query.clone();
             query.cursor = Some(ExecutionsCursor::from_summary(exe, cursor_type));
             query.direction = Some(Direction::Older);

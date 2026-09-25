@@ -36,7 +36,6 @@
             gh
             jq
             just
-            protobuf
             rustToolchain
             dart-sass # SCSS compiler for styles
             trunk

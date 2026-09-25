@@ -1,13 +1,11 @@
 use crate::{
     components::notification::{Notification, NotificationContext},
-    grpc::grpc_client::{
-        self, DeploymentId, DeploymentStatus, RuntimeConfigCheck,
-        deployment_repository_client::DeploymentRepositoryClient,
-        switch_deployment_response::Outcome,
-    },
+    grpc::grpc_client::{DeploymentId, DeploymentStatus},
+    rest,
 };
 use gloo::timers::callback::Timeout;
 use log::error;
+use serde::Deserialize;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
@@ -24,6 +22,13 @@ pub struct DeploymentActionsProps {
 enum ArmedAction {
     Apply,
     Enqueue,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SwitchResult {
+    Success { ok: String },
+    Failure { err: String },
 }
 
 /// Buttons to apply a deployment immediately or enqueue it for the next server restart.
@@ -84,42 +89,34 @@ pub fn deployment_actions(
                 let in_flight = in_flight.clone();
                 in_flight.set(true);
                 spawn_local(async move {
-                    let mut client = DeploymentRepositoryClient::new(crate::auth::client());
-                    let response = client
-                        .switch_deployment(grpc_client::SwitchDeploymentRequest {
-                            deployment_id: Some(deployment_id),
-                            runtime_config_check: if allow_unavailable {
-                                RuntimeConfigCheck::AllowUnavailable as i32
-                            } else {
-                                RuntimeConfigCheck::Strict as i32
-                            },
-                            apply,
-                        })
-                        .await;
+                    let response = rest::put::<_, SwitchResult>(
+                        &format!("/v1/deployments/{}/switch", deployment_id.id),
+                        &serde_json::json!({
+                            "allow_unavailable_runtime_config": allow_unavailable,
+                            "apply": apply,
+                        }),
+                    )
+                    .await;
                     in_flight.set(false);
                     match response {
-                        Ok(resp) => {
-                            match resp.into_inner().outcome() {
-                                Outcome::SwitchOutcomeSwitched => {
-                                    notifications.push(Notification::success(
-                                        "Apply succeeded, the deployment is now live",
-                                    ))
-                                }
-                                Outcome::SwitchOutcomeRestartRequired => {
-                                    notifications.push(Notification::info(
-                                        "Deployment enqueued, restart the server to apply it",
-                                    ))
-                                }
-                                Outcome::SwitchOutcomeUnspecified => notifications
+                        Ok(SwitchResult::Success { ok }) => {
+                            match ok.as_str() {
+                                "switched" => notifications.push(Notification::success(
+                                    "Apply succeeded, the deployment is now live",
+                                )),
+                                "restart_required" => notifications.push(Notification::info(
+                                    "Deployment enqueued, restart the server to apply it",
+                                )),
+                                _ => notifications
                                     .push(Notification::info("Deployment switch finished")),
                             }
                             on_switched.emit(());
                         }
-                        Err(e) => {
+                        Ok(SwitchResult::Failure { err: e }) | Err(e) => {
                             error!("Failed to switch deployment: {e:?}");
                             notifications.push(Notification::error(format!(
                                 "Failed to switch deployment: {}",
-                                e.message()
+                                e
                             )));
                         }
                     }
@@ -177,5 +174,17 @@ pub fn deployment_actions(
                 </button>
             }
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn switch_error_body_is_reported_as_failure() {
+        let outcome: SwitchResult = serde_json::from_str(r#"{"err":"component not found"}"#)
+            .expect("the API error body must be recognized");
+        assert!(matches!(outcome, SwitchResult::Failure { err } if err == "component not found"));
     }
 }

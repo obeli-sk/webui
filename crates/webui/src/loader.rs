@@ -5,6 +5,7 @@ use crate::grpc::{
     grpc_client::{self, ComponentId, DeploymentId},
     ifc_fqn::IfcFqn,
 };
+use crate::rest;
 use hashbrown::HashMap;
 use log::debug;
 use std::rc::Rc;
@@ -17,19 +18,10 @@ pub struct LoadedComponents {
 }
 
 /// Fetches all components from the server.
-pub async fn load_components() -> Result<LoadedComponents, tonic::Status> {
-    let mut fn_repo_client = grpc_client::function_repository_client::FunctionRepositoryClient::new(
-        crate::auth::client(),
-    );
-    let mut response = fn_repo_client
-        .list_components(grpc_client::ListComponentsRequest {
-            extensions: true,
-            ..Default::default()
-        })
-        .await?
-        .into_inner();
-    debug!("Got gRPC ListComponentsResponse");
-    response.components.sort_by(|a, b| {
+pub async fn load_components() -> Result<LoadedComponents, String> {
+    let mut components = rest::components::list(None, None).await?;
+    debug!("Got REST components");
+    components.sort_by(|a, b| {
         a.component_id
             .as_ref()
             .expect("`component_id` is sent")
@@ -41,8 +33,7 @@ pub async fn load_components() -> Result<LoadedComponents, tonic::Status> {
                     .name,
             )
     });
-    let components_by_id: HashMap<_, _> = response
-        .components
+    let components_by_id: HashMap<_, _> = components
         .into_iter()
         .map(|component| {
             (
@@ -72,16 +63,8 @@ pub async fn load_components() -> Result<LoadedComponents, tonic::Status> {
 }
 
 /// Fetches the current deployment ID from the server.
-pub async fn get_current_deployment_id() -> Result<DeploymentId, tonic::Status> {
-    let mut deployment_client =
-        grpc_client::deployment_repository_client::DeploymentRepositoryClient::new(
-            crate::auth::client(),
-        );
-    let response = deployment_client
-        .get_current_deployment_id(grpc_client::GetCurrentDeploymentIdRequest {})
-        .await?
-        .into_inner();
-    Ok(response
-        .deployment_id
-        .expect("`deployment_id` is sent by server"))
+pub async fn get_current_deployment_id() -> Result<DeploymentId, String> {
+    rest::get::<String>("/v1/deployment-id", &[])
+        .await
+        .map(DeploymentId::from)
 }

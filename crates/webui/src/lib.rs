@@ -3,6 +3,7 @@ pub mod auth;
 pub mod components;
 pub mod grpc;
 pub mod loader;
+pub mod rest;
 pub mod tree;
 pub mod util;
 

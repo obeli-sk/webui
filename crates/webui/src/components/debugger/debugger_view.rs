@@ -13,10 +13,10 @@ use crate::{
     },
     grpc::{
         grpc_client::{
-            self, ComponentId, ExecutionEvent, ExecutionId, GetBacktraceResponse,
-            GetBacktraceSourceRequest, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
+            self, ComponentId, ExecutionEvent, ExecutionId, GetBacktraceResponse, JoinSetId,
+            JoinSetResponseEvent, ResponseWithCursor,
             execution_event::{self, history_event},
-            get_backtrace_request, join_set_response_event,
+            join_set_response_event,
         },
         version::VersionType,
     },
@@ -349,39 +349,21 @@ pub fn debugger_view(
                 wasm_bindgen_futures::spawn_local(async move {
                     let hook_id: Rc<str> = Rc::from(format!("{hook_id} {}", trace_id()));
                     info!("[{hook_id}] GetBacktraceRequest {execution_id} {version:?}");
-                    let mut execution_client =
-                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
-                    let backtrace_response = execution_client
-                        .get_backtrace(tonic::Request::new(grpc_client::GetBacktraceRequest {
-                            execution_id: Some(execution_id.clone()),
-                            filter: Some(if version > 0 {
-                                get_backtrace_request::Filter::Specific(
-                                    get_backtrace_request::Specific { version },
-                                )
-                            } else {
-                                get_backtrace_request::Filter::First(
-                                    get_backtrace_request::First {},
-                                )
-                            }),
-                        }))
-                        .await;
+                    let backtrace_response =
+                        crate::rest::executions::backtrace(&execution_id.id, version).await;
                     trace!("[{hook_id}] Got backtrace_response {backtrace_response:?}");
-                    let backtrace_response = backtrace_response
-                        .map(|resp| resp.into_inner())
-                        .map_err(|err| {
-                            if err.code() == tonic::Code::NotFound {
-                                BacktraceError::NotFound
-                            } else {
-                                error!("Failed to get backtrace: {:?}", err);
-                                notifications.push(Notification::error(format!(
-                                    "Failed to load backtrace: {}",
-                                    err.message()
-                                )));
-                                BacktraceError::Other
-                            }
-                        });
+                    let backtrace_response = backtrace_response.map_err(|err| {
+                        if err.starts_with("HTTP 404:") {
+                            BacktraceError::NotFound
+                        } else {
+                            error!("Failed to get backtrace: {:?}", err);
+                            notifications.push(Notification::error(format!(
+                                "Failed to load backtrace: {}",
+                                err
+                            )));
+                            BacktraceError::Other
+                        }
+                    });
                     if let Ok(backtrace_response) = &backtrace_response {
                         let component_id = backtrace_response
                             .component_id
@@ -437,27 +419,19 @@ pub fn debugger_view(
                 let sources_state = sources_state.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     trace!("[{trace_id}] `GetBacktraceSourceRequest` start {component_id} {file}");
-                    let mut execution_client =
-                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
-                    let backtrace_src_response = execution_client
-                        .get_backtrace_source(tonic::Request::new(GetBacktraceSourceRequest {
-                            component_id: Some(component_id.clone()),
-                            file: file.clone(),
-                        }))
-                        .await;
+                    let backtrace_src_response =
+                        crate::rest::deployments::component_source(&component_id, &file).await;
                     let source_code_state = match backtrace_src_response {
                         Err(err) => {
                             log::info!("[{trace_id}] Cannot obtain source `{file}` - {err:?}");
                             SourceCodeState::NotFoundOrErr
                         }
-                        Ok(ok) => {
+                        Ok(content) => {
                             let language = PathBuf::from(&file)
                                 .extension()
                                 .map(|e| e.to_string_lossy().to_string());
                             SourceCodeState::Found(Rc::from(highlight_code_line_by_line(
-                                &ok.into_inner().content,
+                                &content,
                                 language.as_deref(),
                             )))
                         }
@@ -912,18 +886,17 @@ pub fn debugger_view(
 
             populating_backtraces.set(true);
             wasm_bindgen_futures::spawn_local(async move {
-                let mut client =
-                    grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                        crate::auth::client(),
-                    );
-                match client
-                    .persist_execution_backtraces(grpc_client::PersistExecutionBacktracesRequest {
-                        execution_id: Some(execution_id.clone()),
-                    })
-                    .await
-                {
+                #[derive(serde::Deserialize)]
+                struct PersistResult {
+                    persisted_backtrace_count: u32,
+                }
+                let result: Result<PersistResult, String> = crate::rest::put_empty(&format!(
+                    "/v1/executions/{execution_id}/backtrace/persist"
+                ))
+                .await;
+                match result {
                     Ok(response) => {
-                        let count = response.into_inner().persisted_backtrace_count;
+                        let count = response.persisted_backtrace_count;
                         if count == 0 {
                             notifications
                                 .push(Notification::info("No new backtraces were persisted"));
@@ -941,7 +914,7 @@ pub fn debugger_view(
                         error!("Failed to persist backtraces for {execution_id}: {err:?}");
                         notifications.push(Notification::error(format!(
                             "Failed to populate backtraces: {}",
-                            err.message()
+                            err
                         )));
                     }
                 }
@@ -1024,27 +997,17 @@ fn on_state_change(
         let notifications = notifications.clone();
         wasm_bindgen_futures::spawn_local(async move {
             trace!("list_execution_events {cursors:?}");
-            let mut execution_client =
-                grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                    crate::auth::client(),
-                );
-            let response = execution_client
-                .list_execution_events_and_responses(
-                    grpc_client::ListExecutionEventsAndResponsesRequest {
-                        execution_id: Some(execution_id.clone()),
-                        version_from: cursors.version_from,
-                        events_length: PAGE,
-                        responses_cursor_from: cursors.responses_cursor_from,
-                        responses_length: PAGE,
-                        responses_including_cursor: cursors.responses_cursor_from == 0,
-                        include_backtrace_id: true,
-                    },
-                )
-                .await;
+            let response = crate::rest::events::history_page(
+                &execution_id.id,
+                cursors.version_from,
+                cursors.responses_cursor_from,
+                PAGE,
+            )
+            .await;
 
             match response {
                 Ok(resp) => {
-                    let server_resp = resp.into_inner();
+                    let server_resp = resp;
                     debug!(
                         "{execution_id} Got {} events, {} responses",
                         server_resp.events.len(),
@@ -1086,7 +1049,7 @@ fn on_state_change(
                     error!("Failed to list execution events: {:?}", e);
                     notifications.push(Notification::error(format!(
                         "Failed to load debugger data: {}",
-                        e.message()
+                        e
                     )));
                 }
             }

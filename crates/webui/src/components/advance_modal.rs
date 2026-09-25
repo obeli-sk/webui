@@ -19,10 +19,8 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{
             self, CapturedBacktrace, CapturedWrite, ComponentId, CreateExecutionRequest,
-            ExecutionId, GetBacktraceSourceRequest, JoinSetResponseEvent,
-            ListExecutionEventsRequest, captured_write,
+            ExecutionId, JoinSetResponseEvent, captured_write,
             execution_event::{self, history_event},
-            execution_repository_client::ExecutionRepositoryClient,
         },
     },
     tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData},
@@ -481,24 +479,10 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                 for id in needed {
                     let fetched_child_created = fetched_child_created.clone();
                     spawn_local(async move {
-                        let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-                        let result = client
-                            .list_execution_events(ListExecutionEventsRequest {
-                                execution_id: Some(id.clone()),
-                                version_from: 0,
-                                length: 1,
-                                include_backtrace_id: false,
-                            })
-                            .await;
+                        let result = crate::rest::events::child_created(&id.id).await;
                         match result {
-                            Ok(resp) => {
-                                if let Some(execution_event::Event::Created(created)) = resp
-                                    .into_inner()
-                                    .events
-                                    .into_iter()
-                                    .next()
-                                    .and_then(|e| e.event)
-                                {
+                            Ok(created) => {
+                                if let Some(created) = created {
                                     let mut next = (*fetched_child_created).clone();
                                     next.insert(id, created);
                                     fetched_child_created.set(next);
@@ -589,21 +573,16 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                             sources.set(next);
                         }
 
-                        let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-                        let result = client
-                            .get_backtrace_source(tonic::Request::new(GetBacktraceSourceRequest {
-                                component_id: Some(component_id.clone()),
-                                file: file.clone(),
-                            }))
-                            .await;
+                        let result =
+                            crate::rest::deployments::component_source(&component_id, &file).await;
 
                         let state = match result {
-                            Ok(resp) => {
+                            Ok(content) => {
                                 let language = PathBuf::from(&file)
                                     .extension()
                                     .map(|e| e.to_string_lossy().to_string());
                                 SourceState::Found(Rc::from(highlight_code_line_by_line(
-                                    &resp.into_inner().content,
+                                    &content,
                                     language.as_deref(),
                                 )))
                             }

@@ -13,6 +13,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use futures::FutureExt as _;
+use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use std::rc::Rc;
@@ -152,65 +153,82 @@ async fn run_status_subscription(
     on_status_change: Option<Callback<grpc_client::execution_status::Status>>,
 ) {
     let send_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
-    let mut execution_client =
-        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-            crate::auth::client(),
-        );
-    let mut response_stream = match execution_client
-        .get_status(grpc_client::GetStatusRequest {
-            execution_id: Some(execution_id.clone()),
-            follow: true,
-            send_finished_status,
-        })
-        .await
-    {
-        Ok(response) => response.into_inner(),
-        Err(err) => {
-            error!("[{connection_id}] Failed to get status for {execution_id:?}: {err:?}");
-            return;
-        }
-    };
     let mut cancel_rx = cancel_rx.fuse();
+    let mut last_status = None;
     loop {
-        let next_message = futures::select! {
-            next_message = response_stream.message().fuse() => next_message,
+        let summary = futures::select! {
+            result = crate::rest::executions::get(&execution_id.id).fuse() => result,
             _ =  &mut cancel_rx => break,
         };
-        match next_message {
-            Ok(Some(status)) => {
-                let status = status
-                    .message
-                    .expect("GetStatusResponse.message is sent by the server");
-                trace!("[{connection_id}] <ExecutionStatus /> Got {status:?}");
-                // Call on_summary callback if this is a Summary message
-                if let get_status_response::Message::Summary(ref summary) = status
-                    && let Some(ref callback) = on_summary
-                {
-                    callback.emit(summary.clone());
+        match summary {
+            Ok(summary) => {
+                let current_status = summary
+                    .current_status
+                    .as_ref()
+                    .and_then(|status| status.status.clone());
+                if last_status.is_none() {
+                    if let Some(callback) = &on_summary {
+                        callback.emit(summary.clone());
+                    }
+                    status_state.dispatch(StatusStateAction::Update {
+                        execution_id: execution_id.clone(),
+                        message: get_status_response::Message::Summary(summary.clone()),
+                    });
                 }
-                // Call on_status_change callback with the current status
-                if let Some(ref callback) = on_status_change
-                    && let Some(current_status) = extract_status(&status)
-                {
-                    callback.emit(current_status);
+                if current_status != last_status {
+                    if let (Some(callback), Some(status)) = (&on_status_change, &current_status) {
+                        callback.emit(status.clone());
+                    }
+                    if let Some(status) = &summary.current_status {
+                        status_state.dispatch(StatusStateAction::Update {
+                            execution_id: execution_id.clone(),
+                            message: get_status_response::Message::CurrentStatus(status.clone()),
+                        });
+                    }
+                    last_status = current_status;
                 }
-                // Call on_finished callback if the execution has finished
-                if is_finished_any(&status)
-                    && let FinishedStatusMode::RequestAndNotify(ref callback) = finished_status
-                {
-                    callback.emit(());
+                let is_finished = matches!(
+                    last_status,
+                    Some(grpc_client::execution_status::Status::Finished(_))
+                );
+                if is_finished {
+                    if send_finished_status {
+                        match crate::rest::executions::finished_status(&execution_id.id, &summary)
+                            .await
+                        {
+                            Ok(detail) => {
+                                status_state.dispatch(StatusStateAction::Update {
+                                    execution_id: execution_id.clone(),
+                                    message: get_status_response::Message::FinishedStatus(detail),
+                                });
+                                if let FinishedStatusMode::RequestAndNotify(ref callback) =
+                                    finished_status
+                                {
+                                    callback.emit(());
+                                }
+                                break;
+                            }
+                            Err(err) => {
+                                error!(
+                                    "[{connection_id}] Failed to load finished status for {execution_id}: {err}"
+                                );
+                            }
+                        }
+                    } else {
+                        if let FinishedStatusMode::RequestAndNotify(ref callback) = finished_status
+                        {
+                            callback.emit(());
+                        }
+                        break;
+                    }
                 }
-                status_state.dispatch(StatusStateAction::Update {
-                    execution_id: execution_id.clone(),
-                    message: status,
-                });
             }
-            Ok(None) => break,
-            Err(err) => {
-                error!("[{connection_id}] Error wile listening to status updates: {err:?}");
-                break;
-            }
+            Err(err) => error!("[{connection_id}] Failed to get status for {execution_id}: {err}"),
         }
+        futures::select! {
+            _ = TimeoutFuture::new(1_000).fuse() => {},
+            _ = &mut cancel_rx => break,
+        };
     }
     debug!("[{connection_id}] <ExecutionStatus /> Ended subscription");
 }
