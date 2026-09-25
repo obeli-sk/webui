@@ -444,15 +444,9 @@ pub fn execution_header(
                             let is_blocked = is_blocked.clone();
                             let notifications = notifications.clone();
                             spawn_local(async move {
-                                let mut client = ExecutionRepositoryClient::new(
-                                    crate::auth::client(),
-                                );
-                                match client
-                                    .unpause_execution(grpc_client::UnpauseExecutionRequest {
-                                        execution_id: Some(execution_id.clone()),
-                                    })
-                                    .await
-                                {
+                                match crate::rest::put_action(&format!(
+                                    "/v1/executions/{execution_id}/unpause"
+                                )).await {
                                     Ok(_) => {
                                         debug!("Unpause requested for execution {}", execution_id);
                                         notifications.push(Notification::success(
@@ -464,8 +458,7 @@ pub fn execution_header(
                                             "Failed to unpause execution {}: {:?}",
                                             execution_id, e
                                         );
-                                        notifications
-                                            .push(Notification::error(e.message().to_string()));
+                                        notifications.push(Notification::error(e));
                                     }
                                 }
                                 modal_writes.set(None);
