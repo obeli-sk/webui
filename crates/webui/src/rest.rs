@@ -3,6 +3,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 pub mod components;
 pub mod deployments;
+pub mod events;
 pub mod executions;
 
 pub struct ActionResult {

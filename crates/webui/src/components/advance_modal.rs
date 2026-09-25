@@ -19,9 +19,8 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{
             self, CapturedBacktrace, CapturedWrite, ComponentId, CreateExecutionRequest,
-            ExecutionId, JoinSetResponseEvent, ListExecutionEventsRequest, captured_write,
+            ExecutionId, JoinSetResponseEvent, captured_write,
             execution_event::{self, history_event},
-            execution_repository_client::ExecutionRepositoryClient,
         },
     },
     tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData},
@@ -480,24 +479,10 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                 for id in needed {
                     let fetched_child_created = fetched_child_created.clone();
                     spawn_local(async move {
-                        let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-                        let result = client
-                            .list_execution_events(ListExecutionEventsRequest {
-                                execution_id: Some(id.clone()),
-                                version_from: 0,
-                                length: 1,
-                                include_backtrace_id: false,
-                            })
-                            .await;
+                        let result = crate::rest::events::child_created(&id.id).await;
                         match result {
-                            Ok(resp) => {
-                                if let Some(execution_event::Event::Created(created)) = resp
-                                    .into_inner()
-                                    .events
-                                    .into_iter()
-                                    .next()
-                                    .and_then(|e| e.event)
-                                {
+                            Ok(created) => {
+                                if let Some(created) = created {
                                     let mut next = (*fetched_child_created).clone();
                                     next.insert(id, created);
                                     fetched_child_created.set(next);

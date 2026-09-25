@@ -263,27 +263,10 @@ fn fetch_child_created(
     notifications: NotificationContext,
 ) {
     wasm_bindgen_futures::spawn_local(async move {
-        let mut execution_client =
-            grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                crate::auth::client(),
-            );
-        let response = execution_client
-            .list_execution_events(grpc_client::ListExecutionEventsRequest {
-                execution_id: Some(child_execution_id.clone()),
-                version_from: 0,
-                length: 1,
-                include_backtrace_id: false,
-            })
-            .await;
+        let response = crate::rest::events::child_created(&child_execution_id.id).await;
         match response {
-            Ok(resp) => {
-                if let Some(execution_event::Event::Created(created)) = resp
-                    .into_inner()
-                    .events
-                    .into_iter()
-                    .next()
-                    .and_then(|e| e.event)
-                {
+            Ok(created) => {
+                if let Some(created) = created {
                     log_state.dispatch(ExecutionLogAction::SaveChildCreated {
                         execution_id: child_execution_id,
                         created: Box::new(created),
@@ -294,7 +277,7 @@ fn fetch_child_created(
                 error!("Failed to list child execution created event: {:?}", e);
                 notifications.push(Notification::error(format!(
                     "Failed to load child execution: {}",
-                    e.message()
+                    e
                 )));
             }
         }
