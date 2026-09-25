@@ -4,7 +4,6 @@ members = [
     "obelisk/crates/val-json",
     "crates/webui",
     "crates/webui-proxy",
-    "crates/webui-wkt-types",
 ]
 
 [workspace.package]
@@ -62,7 +61,6 @@ derive_more = { version = "2.1.1", features = [
 futures = { version = "0.3.32", default-features = false }
 hashbrown = { version = "0.16.1", features = ["serde"] }
 indexmap = { version = "2.13", features = ["serde"] }
-prost-wkt-types = { package = "webui-wkt-types", path = "crates/webui-wkt-types" }
 prost = "0.14.3"
 rand = "0.9"
 schemars = { version = "1.2.1", features = ["indexmap2", "chrono04"] }

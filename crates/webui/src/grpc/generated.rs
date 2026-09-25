@@ -65,7 +65,7 @@ pub mod list_executions_request {
             #[prost(message, tag = "1")]
             ExecutionId(super::super::ExecutionId),
             #[prost(message, tag = "2")]
-            CreatedAt(::prost_wkt_types::Timestamp),
+            CreatedAt(crate::grpc::wkt_types::Timestamp),
         }
     }
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -180,9 +180,9 @@ pub struct ExecutionSummary {
     #[prost(message, optional, tag = "3")]
     pub current_status: ::core::option::Option<ExecutionStatus>,
     #[prost(message, optional, tag = "4")]
-    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(message, optional, tag = "5")]
-    pub first_scheduled_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub first_scheduled_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(message, optional, tag = "6")]
     pub component_digest: ::core::option::Option<ContentDigest>,
     #[prost(message, optional, tag = "7")]
@@ -366,7 +366,7 @@ pub struct ComponentRetryConfig {
     #[prost(uint32, optional, tag = "1")]
     pub max_retries: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "2")]
-    pub retry_exp_backoff: ::core::option::Option<::prost_wkt_types::Duration>,
+    pub retry_exp_backoff: ::core::option::Option<crate::grpc::wkt_types::Duration>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SubmitRequest {
@@ -375,7 +375,7 @@ pub struct SubmitRequest {
     #[prost(message, optional, tag = "2")]
     pub function_name: ::core::option::Option<FunctionName>,
     #[prost(message, optional, tag = "3")]
-    pub params: ::core::option::Option<::prost_wkt_types::Any>,
+    pub params: ::core::option::Option<crate::grpc::wkt_types::Any>,
     /// If true, create the execution in paused state so it won't be picked up
     /// by an executor until explicitly unpaused or advanced.
     #[prost(bool, tag = "4")]
@@ -435,7 +435,7 @@ pub struct StubRequest {
     #[prost(message, optional, tag = "1")]
     pub execution_id: ::core::option::Option<ExecutionId>,
     #[prost(message, optional, tag = "4")]
-    pub return_value: ::core::option::Option<::prost_wkt_types::Any>,
+    pub return_value: ::core::option::Option<crate::grpc::wkt_types::Any>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StubResponse {}
@@ -463,26 +463,26 @@ pub mod execution_status {
         #[prost(message, optional, tag = "2")]
         pub run_id: ::core::option::Option<super::RunId>,
         #[prost(message, optional, tag = "3")]
-        pub lock_expires_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub lock_expires_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct PendingAt {
         #[prost(message, optional, tag = "1")]
-        pub scheduled_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub scheduled_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     }
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct BlockedByJoinSet {
         #[prost(message, optional, tag = "1")]
         pub join_set_id: ::core::option::Option<super::JoinSetId>,
         #[prost(message, optional, tag = "2")]
-        pub lock_expires_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub lock_expires_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
         #[prost(bool, tag = "3")]
         pub closing: bool,
     }
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Finished {
         #[prost(message, optional, tag = "4")]
-        pub finished_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub finished_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
         #[prost(message, optional, tag = "5")]
         pub result_kind: ::core::option::Option<super::ResultKind>,
     }
@@ -530,11 +530,11 @@ pub mod result_kind {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FinishedStatus {
     #[prost(message, optional, tag = "1")]
-    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(message, optional, tag = "2")]
-    pub scheduled_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub scheduled_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(message, optional, tag = "3")]
-    pub finished_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub finished_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(message, optional, tag = "4")]
     pub value: ::core::option::Option<SupportedFunctionResult>,
 }
@@ -550,12 +550,12 @@ pub mod supported_function_result {
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct OkPayload {
         #[prost(message, optional, tag = "1")]
-        pub return_value: ::core::option::Option<::prost_wkt_types::Any>,
+        pub return_value: ::core::option::Option<crate::grpc::wkt_types::Any>,
     }
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct ErrorPayload {
         #[prost(message, optional, tag = "1")]
-        pub return_value: ::core::option::Option<::prost_wkt_types::Any>,
+        pub return_value: ::core::option::Option<crate::grpc::wkt_types::Any>,
     }
     /// FinishedExecutionFailure
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -600,7 +600,7 @@ pub mod get_status_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExecutionEvent {
     #[prost(message, optional, tag = "1")]
-    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(uint32, tag = "2")]
     pub version: u32,
     #[prost(uint32, optional, tag = "10")]
@@ -618,9 +618,9 @@ pub mod execution_event {
         #[prost(message, optional, tag = "1")]
         pub function_name: ::core::option::Option<super::FunctionName>,
         #[prost(message, optional, tag = "2")]
-        pub params: ::core::option::Option<::prost_wkt_types::Any>,
+        pub params: ::core::option::Option<crate::grpc::wkt_types::Any>,
         #[prost(message, optional, tag = "3")]
-        pub scheduled_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub scheduled_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
         #[prost(message, optional, tag = "4")]
         pub component_id: ::core::option::Option<super::ComponentId>,
         #[prost(message, optional, tag = "5")]
@@ -646,7 +646,7 @@ pub mod execution_event {
         #[prost(message, optional, tag = "2")]
         pub deployment_id: ::core::option::Option<super::DeploymentId>,
         #[prost(message, optional, tag = "3")]
-        pub lock_expires_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub lock_expires_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
         #[prost(string, tag = "4")]
         pub run_id: ::prost::alloc::string::String,
         #[prost(string, tag = "5")]
@@ -657,7 +657,7 @@ pub mod execution_event {
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct Unlocked {
         #[prost(message, optional, tag = "1")]
-        pub backoff_expires_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub backoff_expires_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
         #[prost(string, tag = "2")]
         pub reason: ::prost::alloc::string::String,
     }
@@ -668,14 +668,14 @@ pub mod execution_event {
         #[prost(string, optional, tag = "2")]
         pub detail: ::core::option::Option<::prost::alloc::string::String>,
         #[prost(message, optional, tag = "3")]
-        pub backoff_expires_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub backoff_expires_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
         #[prost(message, repeated, tag = "4")]
         pub http_client_traces: ::prost::alloc::vec::Vec<super::HttpClientTrace>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct TemporarilyTimedOut {
         #[prost(message, optional, tag = "1")]
-        pub backoff_expires_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub backoff_expires_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
         #[prost(message, repeated, tag = "2")]
         pub http_client_traces: ::prost::alloc::vec::Vec<super::HttpClientTrace>,
     }
@@ -750,7 +750,7 @@ pub mod execution_event {
         #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
         pub struct Persist {
             #[prost(message, optional, tag = "1")]
-            pub data: ::core::option::Option<::prost_wkt_types::Any>,
+            pub data: ::core::option::Option<crate::grpc::wkt_types::Any>,
             #[prost(message, optional, tag = "2")]
             pub kind: ::core::option::Option<persist::PersistKind>,
             #[prost(string, tag = "3")]
@@ -813,7 +813,7 @@ pub mod execution_event {
                 #[prost(message, optional, tag = "1")]
                 pub delay_id: ::core::option::Option<super::super::super::DelayId>,
                 #[prost(message, optional, tag = "2")]
-                pub expires_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+                pub expires_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
                 #[prost(message, optional, tag = "3")]
                 pub scheduled_at: ::core::option::Option<delay_request::ScheduledAt>,
                 #[prost(bool, tag = "4")]
@@ -833,12 +833,12 @@ pub mod execution_event {
                     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
                     pub struct At {
                         #[prost(message, optional, tag = "1")]
-                        pub at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+                        pub at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
                     }
                     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
                     pub struct In {
                         #[prost(message, optional, tag = "1")]
-                        pub r#in: ::core::option::Option<::prost_wkt_types::Duration>,
+                        pub r#in: ::core::option::Option<crate::grpc::wkt_types::Duration>,
                     }
                     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
                     pub enum Variant {
@@ -862,7 +862,7 @@ pub mod execution_event {
                     super::super::super::FunctionName,
                 >,
                 #[prost(message, optional, tag = "3")]
-                pub params: ::core::option::Option<::prost_wkt_types::Any>,
+                pub params: ::core::option::Option<crate::grpc::wkt_types::Any>,
                 #[prost(message, optional, tag = "6")]
                 pub rejected_params: ::core::option::Option<
                     child_execution_request::RejectedParams,
@@ -957,7 +957,7 @@ pub mod execution_event {
             #[prost(message, optional, tag = "1")]
             pub join_set_id: ::core::option::Option<super::super::JoinSetId>,
             #[prost(message, optional, tag = "2")]
-            pub run_expires_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+            pub run_expires_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
             #[prost(bool, tag = "3")]
             pub closing: bool,
             #[prost(message, optional, tag = "4")]
@@ -1098,12 +1098,12 @@ pub mod execution_event {
                 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
                 pub struct At {
                     #[prost(message, optional, tag = "1")]
-                    pub at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+                    pub at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
                 }
                 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
                 pub struct In {
                     #[prost(message, optional, tag = "1")]
-                    pub r#in: ::core::option::Option<::prost_wkt_types::Duration>,
+                    pub r#in: ::core::option::Option<crate::grpc::wkt_types::Duration>,
                 }
                 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Oneof)]
                 pub enum Variant {
@@ -1248,13 +1248,13 @@ pub mod execution_event {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HttpClientTrace {
     #[prost(message, optional, tag = "1")]
-    pub sent_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub sent_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(string, tag = "2")]
     pub uri: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub method: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
-    pub finished_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub finished_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     /// present iif finished_at is sent.
     #[prost(oneof = "http_client_trace::Result", tags = "5, 6")]
     pub result: ::core::option::Option<http_client_trace::Result>,
@@ -1293,7 +1293,7 @@ pub struct ListExecutionEventsResponse {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct JoinSetResponseEvent {
     #[prost(message, optional, tag = "1")]
-    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(message, optional, tag = "2")]
     pub join_set_id: ::core::option::Option<JoinSetId>,
     #[prost(oneof = "join_set_response_event::Response", tags = "3, 4")]
@@ -1726,9 +1726,9 @@ pub struct CreateExecutionRequest {
     #[prost(message, optional, tag = "2")]
     pub function_name: ::core::option::Option<FunctionName>,
     #[prost(message, optional, tag = "3")]
-    pub params: ::core::option::Option<::prost_wkt_types::Any>,
+    pub params: ::core::option::Option<crate::grpc::wkt_types::Any>,
     #[prost(message, optional, tag = "4")]
-    pub scheduled_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub scheduled_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(message, optional, tag = "5")]
     pub component_id: ::core::option::Option<ComponentId>,
     #[prost(message, optional, tag = "6")]
@@ -1738,7 +1738,7 @@ pub struct CreateExecutionRequest {
     #[prost(message, optional, tag = "8")]
     pub parent_join_set_id: ::core::option::Option<JoinSetId>,
     #[prost(message, optional, tag = "9")]
-    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(map = "string, string", tag = "10")]
     pub metadata: ::std::collections::HashMap<
         ::prost::alloc::string::String,
@@ -1758,7 +1758,7 @@ pub struct ReplayExecutionResponse {
     pub replayed_event_count: u64,
     /// Time spent executing the workflow replay after loading its execution log.
     #[prost(message, optional, tag = "6")]
-    pub replay_duration: ::core::option::Option<::prost_wkt_types::Duration>,
+    pub replay_duration: ::core::option::Option<crate::grpc::wkt_types::Duration>,
     /// Highest persisted execution-event version included in the replay log. Response records use a
     /// separate cursor and are not represented by this version.
     #[prost(uint32, tag = "7")]
@@ -1923,7 +1923,7 @@ pub mod list_logs_response {
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct LogEntry {
         #[prost(message, optional, tag = "1")]
-        pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+        pub created_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
         #[prost(message, optional, tag = "4")]
         pub run_id: ::core::option::Option<super::RunId>,
         #[prost(message, optional, tag = "5")]
@@ -2051,9 +2051,9 @@ pub struct Deployment {
     #[prost(enumeration = "DeploymentStatus", tag = "2")]
     pub status: i32,
     #[prost(message, optional, tag = "3")]
-    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(message, optional, tag = "4")]
-    pub last_active_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub last_active_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     /// deployment manifest (`deployment.toml`). Present when requested.
     #[prost(string, optional, tag = "5")]
     pub deployment_toml: ::core::option::Option<::prost::alloc::string::String>,
@@ -2303,7 +2303,7 @@ pub mod retain_executions_request {
         #[prost(uint32, tag = "1")]
         RetainCount(u32),
         #[prost(message, tag = "4")]
-        MaxAge(::prost_wkt_types::Duration),
+        MaxAge(crate::grpc::wkt_types::Duration),
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -2344,7 +2344,7 @@ pub mod retain_deployments_request {
         #[prost(uint32, tag = "1")]
         RetainCount(u32),
         #[prost(message, tag = "6")]
-        MaxAge(::prost_wkt_types::Duration),
+        MaxAge(crate::grpc::wkt_types::Duration),
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -2367,7 +2367,7 @@ pub struct SystemEvent {
     #[prost(string, tag = "1")]
     pub event_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "2")]
-    pub created_at: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_at: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     #[prost(enumeration = "SystemEventLevel", tag = "3")]
     pub level: i32,
     #[prost(string, tag = "4")]
@@ -2399,10 +2399,10 @@ pub struct ListSystemEventsRequest {
     pub node_run_id: ::core::option::Option<::prost::alloc::string::String>,
     /// Inclusive lower bound of `created_at`, millisecond precision.
     #[prost(message, optional, tag = "7")]
-    pub created_from: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_from: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
     /// Exclusive upper bound of `created_at`, millisecond precision.
     #[prost(message, optional, tag = "8")]
-    pub created_to: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    pub created_to: ::core::option::Option<crate::grpc::wkt_types::Timestamp>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSystemEventsResponse {
@@ -2448,7 +2448,7 @@ pub struct GetNodeRunIdResponse {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RetainSystemEventsRequest {
     #[prost(message, optional, tag = "1")]
-    pub max_age: ::core::option::Option<::prost_wkt_types::Duration>,
+    pub max_age: ::core::option::Option<crate::grpc::wkt_types::Duration>,
     #[prost(uint32, tag = "2")]
     pub batch_size: u32,
 }

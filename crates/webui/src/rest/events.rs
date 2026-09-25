@@ -1,3 +1,4 @@
+use crate::grpc::wkt_types;
 use crate::grpc::{ffqn::FunctionFqn, grpc_client as grpc};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, de::DeserializeOwned};
@@ -94,16 +95,13 @@ fn variant(value: &Value) -> Result<(&str, &Value), String> {
     Ok((name, data))
 }
 
-fn timestamp(value: &Value) -> Result<prost_wkt_types::Timestamp, String> {
+fn timestamp(value: &Value) -> Result<wkt_types::Timestamp, String> {
     let datetime: DateTime<Utc> =
         serde_json::from_value(value.clone()).map_err(|err| err.to_string())?;
     Ok(datetime.into())
 }
 
-fn timestamp_field(
-    value: &Value,
-    name: &str,
-) -> Result<Option<prost_wkt_types::Timestamp>, String> {
+fn timestamp_field(value: &Value, name: &str) -> Result<Option<wkt_types::Timestamp>, String> {
     value.get(name).map(timestamp).transpose()
 }
 
@@ -127,8 +125,8 @@ fn component(value: &Value) -> Result<grpc::ComponentId, String> {
     })
 }
 
-fn json_any(value: &Value, type_url: &str) -> Result<prost_wkt_types::Any, String> {
-    Ok(prost_wkt_types::Any {
+fn json_any(value: &Value, type_url: &str) -> Result<wkt_types::Any, String> {
+    Ok(wkt_types::Any {
         type_url: type_url.to_string(),
         value: serde_json::to_vec(value).map_err(|err| err.to_string())?,
     })
@@ -395,10 +393,10 @@ fn optional_function(value: &Value, name: &str) -> Result<Option<grpc::FunctionN
         .transpose()
 }
 
-fn duration(value: &Value) -> Result<prost_wkt_types::Duration, String> {
+fn duration(value: &Value) -> Result<wkt_types::Duration, String> {
     let value: std::time::Duration =
         serde_json::from_value(value.clone()).map_err(|err| err.to_string())?;
-    Ok(prost_wkt_types::Duration {
+    Ok(wkt_types::Duration {
         seconds: value
             .as_secs()
             .try_into()
@@ -431,7 +429,7 @@ fn map_history(value: &Value) -> Result<grpc::execution_event::HistoryEvent, Str
                 .get("value")
                 .filter(|v| !v.is_null())
                 .map(|v| {
-                    Ok::<_, String>(prost_wkt_types::Any {
+                    Ok::<_, String>(wkt_types::Any {
                         type_url: "unknown".to_string(),
                         value: serde_json::from_value(v.clone()).map_err(|err| err.to_string())?,
                     })
@@ -488,8 +486,8 @@ fn schedule_at(
 ) -> Result<
     (
         String,
-        Option<prost_wkt_types::Timestamp>,
-        Option<prost_wkt_types::Duration>,
+        Option<wkt_types::Timestamp>,
+        Option<wkt_types::Duration>,
     ),
     String,
 > {
@@ -764,7 +762,7 @@ impl TryFrom<Created> for grpc::execution_event::Created {
         };
         Ok(Self {
             function_name: Some(ffqn.into()),
-            params: Some(prost_wkt_types::Any {
+            params: Some(wkt_types::Any {
                 type_url: format!("urn:obelisk:json:params:{}", value.ffqn),
                 value: serde_json::to_vec(&value.params).map_err(|err| err.to_string())?,
             }),

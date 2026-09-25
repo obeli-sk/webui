@@ -3343,7 +3343,6 @@ dependencies = [
  "wasm-bindgen-test",
  "wasm-logger",
  "web-sys",
- "webui-wkt-types",
  "wit-component",
  "wit-parser 0.254.0",
  "yew",
@@ -3355,14 +3354,6 @@ name = "webui-proxy"
 version = "0.28.1"
 dependencies = [
  "wstd",
-]
-
-[[package]]
-name = "webui-wkt-types"
-version = "0.28.1"
-dependencies = [
- "chrono",
- "prost",
 ]
 
 [[package]]

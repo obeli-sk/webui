@@ -1,3 +1,4 @@
+use crate::grpc::wkt_types;
 use crate::grpc::{ffqn::FunctionFqn, grpc_client as grpc};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -175,11 +176,11 @@ pub async fn finished_status(
     })
 }
 
-fn payload(value: &Value) -> Result<Option<prost_wkt_types::Any>, String> {
+fn payload(value: &Value) -> Result<Option<wkt_types::Any>, String> {
     if value.is_null() {
         Ok(None)
     } else {
-        Ok(Some(prost_wkt_types::Any {
+        Ok(Some(wkt_types::Any {
             type_url: String::new(),
             value: serde_json::to_vec(value).map_err(|error| error.to_string())?,
         }))
@@ -229,7 +230,7 @@ impl TryFrom<ExecutionWithState> for grpc::ExecutionSummary {
     }
 }
 
-fn timestamp(value: &Value, key: &str) -> Result<prost_wkt_types::Timestamp, String> {
+fn timestamp(value: &Value, key: &str) -> Result<wkt_types::Timestamp, String> {
     let raw = value
         .get(key)
         .and_then(Value::as_str)

@@ -1,4 +1,5 @@
 use crate::grpc::grpc_client as grpc;
+use crate::grpc::wkt_types;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::{cell::RefCell, collections::HashMap};
@@ -57,7 +58,7 @@ pub async fn replay(id: &str) -> Result<grpc::ReplayExecutionResponse, String> {
     Ok(grpc::ReplayExecutionResponse {
         outcome: Some(outcome),
         replayed_event_count,
-        replay_duration: Some(prost_wkt_types::Duration {
+        replay_duration: Some(wkt_types::Duration {
             seconds: (replay_duration_ms / 1000).try_into().unwrap_or(i64::MAX),
             nanos: ((replay_duration_ms % 1000) * 1_000_000) as i32,
         }),
@@ -141,7 +142,7 @@ fn map_create(value: &Value) -> Result<grpc::CreateExecutionRequest, String> {
     Ok(grpc::CreateExecutionRequest {
         execution_id: Some(id(value, "execution_id")?),
         function_name: Some(super::events::function_from_json(&ffqn)?),
-        params: Some(prost_wkt_types::Any {
+        params: Some(wkt_types::Any {
             type_url: format!("urn:obelisk:json:params:{ffqn}"),
             value: serde_json::to_vec(&params).map_err(|err| err.to_string())?,
         }),

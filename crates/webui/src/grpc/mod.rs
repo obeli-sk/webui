@@ -16,6 +16,7 @@ pub mod ifc_fqn;
 pub mod join_set_id;
 pub mod pkg_fqn;
 pub mod version;
+pub mod wkt_types;
 
 pub const NAMESPACE_OBELISK: &str = "obelisk"; // TODO: unify with concepts
 pub const SUFFIX_PKG_EXT: &str = "-obelisk-ext"; // TODO: unify with concepts
