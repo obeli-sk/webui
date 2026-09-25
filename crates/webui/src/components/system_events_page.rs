@@ -1,9 +1,8 @@
 use crate::{
     app::{AppState, Route},
     components::notification::{Notification, NotificationContext},
-    grpc::grpc_client::{
-        self, SystemEvent, SystemEventLevel, admin_repository_client::AdminRepositoryClient,
-    },
+    grpc::grpc_client::{self, SystemEventLevel},
+    rest,
     util::time::{RelativeAgo, format_date},
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -94,10 +93,23 @@ pub struct SystemEventQuery {
     id: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 struct EventPage {
     events: Vec<SystemEvent>,
     next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct SystemEvent {
+    event_id: String,
+    node_run_id: String,
+    created_at: DateTime<Utc>,
+    level: String,
+    code: String,
+    message: String,
+    execution_id: Option<String>,
+    deployment_id: Option<String>,
+    details: serde_json::Value,
 }
 
 fn selected_levels(query: &SystemEventQuery) -> Vec<SystemEventLevel> {
@@ -115,10 +127,10 @@ fn parse_utc(value: &str) -> Result<DateTime<Utc>, String> {
         .map_err(|_| format!("invalid UTC date and time `{value}`"))
 }
 
-fn parse_bound(value: Option<&String>) -> Result<Option<prost_wkt_types::Timestamp>, String> {
+fn parse_bound(value: Option<&String>) -> Result<Option<String>, String> {
     value
         .filter(|value| !value.is_empty())
-        .map(|value| parse_utc(value).map(prost_wkt_types::Timestamp::from))
+        .map(|value| parse_utc(value).map(|time| time.to_rfc3339()))
         .transpose()
 }
 
@@ -139,29 +151,29 @@ fn level_label(level: SystemEventLevel) -> &'static str {
     }
 }
 
-fn pretty_details(details: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(details)
-        .and_then(|value| serde_json::to_string_pretty(&value))
-        .unwrap_or_else(|_| details.to_string())
-}
-
 fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
-    let created_at = event.created_at.map(DateTime::from);
+    let created_at = event.created_at;
     let execution = event.execution_id.as_ref().map(|execution_id| {
         html! {
-            <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
-                <code>{execution_id.to_string()}</code>
+            <Link<Route> to={Route::ExecutionTrace { execution_id: grpc_client::ExecutionId { id: execution_id.clone() } }}>
+                <code>{execution_id}</code>
             </Link<Route>>
         }
     });
     let deployment = event.deployment_id.as_ref().map(|deployment_id| {
         html! {
-            <Link<Route> to={Route::DeploymentDetail { deployment_id: deployment_id.clone() }}>
-                <code>{deployment_id.to_string()}</code>
+            <Link<Route> to={Route::DeploymentDetail { deployment_id: grpc_client::DeploymentId { id: deployment_id.clone() } }}>
+                <code>{deployment_id}</code>
             </Link<Route>>
         }
     });
-    let level = event.level();
+    let level = match event.level.as_str() {
+        "debug" => SystemEventLevel::Debug,
+        "info" => SystemEventLevel::Info,
+        "warning" => SystemEventLevel::Warning,
+        "error" => SystemEventLevel::Error,
+        _ => SystemEventLevel::Unspecified,
+    };
     html! {
         <article class="system-event-list-item">
             <div class="system-event-heading">
@@ -169,13 +181,11 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
                     {level_label(level)}
                 </span>
                 <code class="system-event-code">{&event.code}</code>
-                <time title={created_at.map(|at| format!("{} UTC", format_date(at))).unwrap_or_default()}>
-                    if let Some(created_at) = created_at {
-                        if absolute_time {
-                            {format!("{} UTC", format_date(created_at))}
-                        } else {
-                            <RelativeAgo target={created_at} />
-                        }
+                <time title={format!("{} UTC", format_date(created_at))}>
+                    if absolute_time {
+                        {format!("{} UTC", format_date(created_at))}
+                    } else {
+                        <RelativeAgo target={created_at} />
                     }
                 </time>
             </div>
@@ -191,10 +201,10 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
                 {deployment}
                 {execution}
             </div>
-            if !event.details_json.is_empty() {
+            if !event.details.is_null() && event.details != serde_json::json!({}) {
                 <details class="system-event-details">
                     <summary>{"Details"}</summary>
-                    <pre>{pretty_details(&event.details_json)}</pre>
+                    <pre>{serde_json::to_string_pretty(&event.details).unwrap_or_default()}</pre>
                 </details>
             }
         </article>
@@ -224,17 +234,13 @@ pub fn system_events_page() -> Html {
         let notifications = notifications.clone();
         use_effect_with((), move |()| {
             spawn_local(async move {
-                let mut client = AdminRepositoryClient::new(crate::auth::client());
-                match client
-                    .get_node_run_id(grpc_client::GetNodeRunIdRequest {})
-                    .await
-                {
-                    Ok(result) => current_run_id.set(Some(result.into_inner().node_run_id)),
+                match rest::get::<String>("/v1/admin/node-run-id", &[]).await {
+                    Ok(result) => current_run_id.set(Some(result)),
                     Err(err) => {
                         error!("Failed to get current node run ID: {err:?}");
                         notifications.push(Notification::error(format!(
                             "Failed to get current node run ID: {}",
-                            err.message()
+                            err
                         )));
                     }
                 }
@@ -254,20 +260,24 @@ pub fn system_events_page() -> Html {
                 if let Some(event_id) = query.id.clone() {
                     response.set(None);
                     spawn_local(async move {
-                        let mut client = AdminRepositoryClient::new(crate::auth::client());
-                        match client
-                            .get_system_event(grpc_client::GetSystemEventRequest { event_id })
-                            .await
+                        let event_id = js_sys::encode_uri_component(&event_id)
+                            .as_string()
+                            .expect("encoded event ID is a string");
+                        match rest::get::<SystemEvent>(
+                            &format!("/v1/admin/system-events/{event_id}"),
+                            &[],
+                        )
+                        .await
                         {
                             Ok(result) => response.set(Some(EventPage {
-                                events: result.into_inner().event.into_iter().collect(),
+                                events: vec![result],
                                 next_cursor: None,
                             })),
                             Err(err) => {
                                 error!("Failed to get system event: {err:?}");
                                 notifications.push(Notification::error(format!(
                                     "Failed to get system event: {}",
-                                    err.message()
+                                    err
                                 )));
                                 response.set(Some(EventPage {
                                     events: Vec::new(),
@@ -305,9 +315,8 @@ pub fn system_events_page() -> Html {
                 } else {
                     query
                         .deployment_id
-                        .as_ref()
-                        .map(|id| grpc_client::DeploymentId::from(id.clone()))
-                        .or_else(|| current_deployment_id.clone())
+                        .clone()
+                        .or_else(|| current_deployment_id.as_ref().map(|id| id.id.clone()))
                 };
                 let levels = selected_levels(query);
                 // Selecting every level is the same as not filtering, so ask for all of them at once.
@@ -322,20 +331,30 @@ pub fn system_events_page() -> Html {
                     let mut events = Vec::new();
                     let mut has_more = false;
                     for level in requested_levels {
-                        let request = grpc_client::ListSystemEventsRequest {
-                            level: (level != SystemEventLevel::Unspecified).then_some(level as i32),
-                            code: query.code.clone().filter(|value| !value.is_empty()),
-                            deployment_id: deployment_id.clone(),
-                            before_event_id: query.before.clone(),
-                            limit: PAGE_SIZE,
-                            node_run_id: node_run_id.clone(),
-                            created_from,
-                            created_to,
-                        };
-                        let mut client = AdminRepositoryClient::new(crate::auth::client());
-                        match client.list_system_events(request).await {
-                            Ok(result) => {
-                                let mut page = result.into_inner();
+                        let mut params = vec![("limit", PAGE_SIZE.to_string())];
+                        if level != SystemEventLevel::Unspecified {
+                            params.push(("level", level_label(level).to_lowercase()));
+                        }
+                        if let Some(value) = query.code.as_ref().filter(|value| !value.is_empty()) {
+                            params.push(("code", value.clone()));
+                        }
+                        if let Some(value) = deployment_id.as_ref() {
+                            params.push(("deployment_id", value.clone()));
+                        }
+                        if let Some(value) = query.before.as_ref() {
+                            params.push(("before", value.clone()));
+                        }
+                        if let Some(value) = node_run_id.as_ref() {
+                            params.push(("node_run_id", value.clone()));
+                        }
+                        if let Some(value) = created_from.as_ref() {
+                            params.push(("created_from", value.clone()));
+                        }
+                        if let Some(value) = created_to.as_ref() {
+                            params.push(("created_to", value.clone()));
+                        }
+                        match rest::get::<EventPage>("/v1/admin/system-events", &params).await {
+                            Ok(mut page) => {
                                 has_more |= page.next_cursor.is_some();
                                 events.append(&mut page.events);
                             }
@@ -343,7 +362,7 @@ pub fn system_events_page() -> Html {
                                 error!("Failed to list system events: {err:?}");
                                 notifications.push(Notification::error(format!(
                                     "Failed to list system events: {}",
-                                    err.message()
+                                    err
                                 )));
                                 return;
                             }

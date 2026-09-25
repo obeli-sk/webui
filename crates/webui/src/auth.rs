@@ -21,7 +21,7 @@ thread_local! {
     static AUTH_REQUIRED_PENDING: RefCell<bool> = const { RefCell::new(false) };
 }
 
-fn token() -> Option<String> {
+pub(crate) fn token() -> Option<String> {
     web_sys::window()?
         .local_storage()
         .ok()??
@@ -29,7 +29,7 @@ fn token() -> Option<String> {
         .ok()?
 }
 
-fn auth_required() {
+pub(crate) fn auth_required() {
     AUTH_REQUIRED_PENDING.with(|pending| *pending.borrow_mut() = true);
     ON_AUTH_REQUIRED.with(|callback| {
         if let Some(callback) = callback.borrow().as_ref() {
