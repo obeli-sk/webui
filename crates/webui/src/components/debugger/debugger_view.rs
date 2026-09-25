@@ -16,7 +16,7 @@ use crate::{
             self, ComponentId, ExecutionEvent, ExecutionId, GetBacktraceResponse, JoinSetId,
             JoinSetResponseEvent, ResponseWithCursor,
             execution_event::{self, history_event},
-            get_backtrace_request, join_set_response_event,
+            join_set_response_event,
         },
         version::VersionType,
     },
@@ -349,39 +349,21 @@ pub fn debugger_view(
                 wasm_bindgen_futures::spawn_local(async move {
                     let hook_id: Rc<str> = Rc::from(format!("{hook_id} {}", trace_id()));
                     info!("[{hook_id}] GetBacktraceRequest {execution_id} {version:?}");
-                    let mut execution_client =
-                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
-                    let backtrace_response = execution_client
-                        .get_backtrace(tonic::Request::new(grpc_client::GetBacktraceRequest {
-                            execution_id: Some(execution_id.clone()),
-                            filter: Some(if version > 0 {
-                                get_backtrace_request::Filter::Specific(
-                                    get_backtrace_request::Specific { version },
-                                )
-                            } else {
-                                get_backtrace_request::Filter::First(
-                                    get_backtrace_request::First {},
-                                )
-                            }),
-                        }))
-                        .await;
+                    let backtrace_response =
+                        crate::rest::executions::backtrace(&execution_id.id, version).await;
                     trace!("[{hook_id}] Got backtrace_response {backtrace_response:?}");
-                    let backtrace_response = backtrace_response
-                        .map(|resp| resp.into_inner())
-                        .map_err(|err| {
-                            if err.code() == tonic::Code::NotFound {
-                                BacktraceError::NotFound
-                            } else {
-                                error!("Failed to get backtrace: {:?}", err);
-                                notifications.push(Notification::error(format!(
-                                    "Failed to load backtrace: {}",
-                                    err.message()
-                                )));
-                                BacktraceError::Other
-                            }
-                        });
+                    let backtrace_response = backtrace_response.map_err(|err| {
+                        if err.starts_with("HTTP 404:") {
+                            BacktraceError::NotFound
+                        } else {
+                            error!("Failed to get backtrace: {:?}", err);
+                            notifications.push(Notification::error(format!(
+                                "Failed to load backtrace: {}",
+                                err
+                            )));
+                            BacktraceError::Other
+                        }
+                    });
                     if let Ok(backtrace_response) = &backtrace_response {
                         let component_id = backtrace_response
                             .component_id

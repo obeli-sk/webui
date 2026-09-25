@@ -4,6 +4,94 @@ use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Deserialize)]
+struct Backtrace {
+    component_id: BacktraceComponentId,
+    version_min_including: u32,
+    version_max_excluding: u32,
+    wasm_backtrace: BacktraceFrames,
+}
+
+#[derive(Deserialize)]
+struct BacktraceComponentId {
+    component_type: String,
+    name: String,
+    component_digest: String,
+}
+
+#[derive(Deserialize)]
+struct BacktraceFrames {
+    frames: Vec<BacktraceFrame>,
+}
+
+#[derive(Deserialize)]
+struct BacktraceFrame {
+    module: String,
+    func_name: String,
+    symbols: Vec<BacktraceSymbol>,
+}
+
+#[derive(Deserialize)]
+struct BacktraceSymbol {
+    func_name: Option<String>,
+    file: Option<String>,
+    line: Option<u32>,
+    col: Option<u32>,
+}
+
+pub async fn backtrace(id: &str, version: u32) -> Result<grpc::GetBacktraceResponse, String> {
+    let version = if version == 0 {
+        "first".to_string()
+    } else {
+        version.to_string()
+    };
+    let response: Backtrace = super::get(
+        &format!("/v1/executions/{id}/backtrace"),
+        &[("version", version)],
+    )
+    .await?;
+    let component_type = match response.component_id.component_type.as_str() {
+        "workflow" => grpc::ComponentType::Workflow,
+        "activity" => grpc::ComponentType::Activity,
+        "activity_stub" => grpc::ComponentType::ActivityStub,
+        "webhook_endpoint" => grpc::ComponentType::WebhookEndpoint,
+        "cron" => grpc::ComponentType::Cron,
+        other => return Err(format!("Unknown component type: {other}")),
+    };
+    Ok(grpc::GetBacktraceResponse {
+        component_id: Some(grpc::ComponentId {
+            component_type: component_type as i32,
+            name: response.component_id.name,
+            digest: Some(grpc::ContentDigest {
+                digest: response.component_id.component_digest,
+            }),
+        }),
+        wasm_backtrace: Some(grpc::WasmBacktrace {
+            frames: response
+                .wasm_backtrace
+                .frames
+                .into_iter()
+                .map(|frame| grpc::FrameInfo {
+                    module: frame.module,
+                    func_name: frame.func_name,
+                    symbols: frame
+                        .symbols
+                        .into_iter()
+                        .map(|symbol| grpc::FrameSymbol {
+                            func_name: symbol.func_name,
+                            file: symbol.file,
+                            line: symbol.line,
+                            col: symbol.col,
+                        })
+                        .collect(),
+                })
+                .collect(),
+            version_min_including: response.version_min_including,
+            version_max_excluding: response.version_max_excluding,
+        }),
+    })
+}
+
+#[derive(Deserialize)]
 pub struct ExecutionWithState {
     execution_id: String,
     ffqn: String,
