@@ -5,6 +5,7 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{self, ExecutionId},
     },
+    rest,
     util::wit_type_formatter::format_wit_type,
 };
 use log::{debug, error, trace, warn};
@@ -144,7 +145,8 @@ pub fn execution_submit_form(
                 .enumerate()
                 .map(|(idx, param_ref)| {
                     let param_value = param_ref.cast::<HtmlTextAreaElement>().unwrap().value();
-                    serde_json::from_str(&param_value).map_err(|err| (idx, err))
+                    serde_json::from_str::<serde_json::Value>(&param_value)
+                        .map_err(|err| (idx, err))
                 })
                 .collect::<Result<Vec<_>, _>>()
             {
@@ -171,24 +173,14 @@ pub fn execution_submit_form(
                 let request_processing_state = request_processing_state.clone();
                 let paused = *paused_state;
                 async move {
-                    let mut client =
-                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
                     let execution_id = ExecutionId::generate();
-                    let response = client
-                        .submit(grpc_client::SubmitRequest {
-                            execution_id: Some(execution_id.clone()),
-                            params: Some(prost_wkt_types::Any {
-                                type_url: format!("urn:obelisk:json:params:{ffqn}"),
-                                value: serde_json::Value::Array(params).to_string().into_bytes(),
-                            }),
-                            function_name: Some(grpc_client::FunctionName::from(ffqn)),
-                            paused,
-                        })
-                        .await;
+                    let response = rest::put::<_, serde_json::Value>(
+                        &format!("/v1/executions/{execution_id}"),
+                        &json!({ "ffqn": ffqn.to_string(), "params": params, "paused": paused }),
+                    )
+                    .await;
                     request_processing_state.set(false); // reenable the submit button
-                    trace!("Got gRPC {response:?}");
+                    trace!("Got REST {response:?}");
                     match response {
                         Ok(_response) => navigator.push(&Route::ExecutionTrace { execution_id }),
                         Err(err) => {

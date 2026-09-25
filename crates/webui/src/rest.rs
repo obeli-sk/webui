@@ -17,6 +17,25 @@ pub async fn get<T: DeserializeOwned>(path: &str, query: &[(&str, String)]) -> R
     decode(response).await
 }
 
+pub async fn get_text(path: &str, query: &[(&str, String)]) -> Result<String, String> {
+    let mut request = Request::get(&format!("{}{}", crate::BASE_URL, path))
+        .query(query.iter().map(|(key, value)| (*key, value.as_str())));
+    if let Some(token) = crate::auth::token() {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+    let response = request.send().await.map_err(|error| error.to_string())?;
+    if response.status() == 401 {
+        crate::auth::auth_required();
+    }
+    let status = response.status();
+    let body = response.text().await.map_err(|error| error.to_string())?;
+    if status >= 400 {
+        Err(format!("HTTP {status}: {body}"))
+    } else {
+        Ok(body)
+    }
+}
+
 pub async fn put<B: Serialize + ?Sized, T: DeserializeOwned>(
     path: &str,
     body: &B,

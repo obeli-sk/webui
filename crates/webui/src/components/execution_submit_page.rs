@@ -10,6 +10,7 @@ use crate::{
         grpc_client::{self, ExecutionId},
         ifc_fqn::IfcFqn,
     },
+    rest,
     util::{wit_highlighter, wit_type_formatter::format_wit_type},
 };
 use log::{debug, error, trace, warn};
@@ -191,22 +192,15 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
         let component_id = component_id.clone();
         use_effect_with(ffqn.clone(), move |_ffqn| {
             wasm_bindgen_futures::spawn_local(async move {
-                let mut fn_client =
-                    grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                        crate::auth::client(),
-                    );
-                match fn_client
-                    .get_wit(grpc_client::GetWitRequest {
-                        component_digest: Some(
-                            component_id.digest.clone().expect("`digest` is sent"),
-                        ),
-                        ..Default::default()
-                    })
-                    .await
-                {
-                    Ok(response) => wit_state.set(response.into_inner().content),
+                let digest = &component_id
+                    .digest
+                    .as_ref()
+                    .expect("`digest` is sent")
+                    .digest;
+                match rest::get_text(&format!("/v1/components/{digest}/wit"), &[]).await {
+                    Ok(response) => wit_state.set(Some(response)),
                     Err(e) => {
-                        log::error!("Failed to fetch WIT: {}", e.message());
+                        log::error!("Failed to fetch WIT: {e}");
                     }
                 }
             });
@@ -345,29 +339,17 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                 let request_processing_state = request_processing_state.clone();
                 let paused = *paused_state;
                 async move {
-                    let mut client =
-                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
                     let execution_id = ExecutionId::generate();
                     let params_json = serde_json::Value::Array(submit_params);
-                    let type_url = format!("urn:obelisk:json:params:{submit_ffqn}");
                     log::info!(
-                        "Submitting execution: ffqn={submit_ffqn}, type_url={type_url}, params={params_json}, paused={paused}"
+                        "Submitting execution: ffqn={submit_ffqn}, params={params_json}, paused={paused}"
                     );
-                    let response = client
-                        .submit(grpc_client::SubmitRequest {
-                            execution_id: Some(execution_id.clone()),
-                            params: Some(prost_wkt_types::Any {
-                                type_url,
-                                value: params_json.to_string().into_bytes(),
-                            }),
-                            function_name: Some(grpc_client::FunctionName::from(submit_ffqn)),
-                            paused,
-                        })
-                        .await;
+                    let response = rest::put::<_, serde_json::Value>(
+                        &format!("/v1/executions/{execution_id}"),
+                        &json!({ "ffqn": submit_ffqn.to_string(), "params": params_json, "paused": paused }),
+                    ).await;
                     request_processing_state.set(false);
-                    trace!("Got gRPC {response:?}");
+                    trace!("Got REST {response:?}");
                     match response {
                         Ok(_response) => navigator.push(&Route::ExecutionTrace { execution_id }),
                         Err(err) => {
