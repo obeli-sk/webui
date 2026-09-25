@@ -13,8 +13,8 @@ use crate::{
     },
     grpc::{
         grpc_client::{
-            self, ComponentId, ExecutionEvent, ExecutionId, GetBacktraceResponse,
-            GetBacktraceSourceRequest, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
+            self, ComponentId, ExecutionEvent, ExecutionId, GetBacktraceResponse, JoinSetId,
+            JoinSetResponseEvent, ResponseWithCursor,
             execution_event::{self, history_event},
             get_backtrace_request, join_set_response_event,
         },
@@ -437,27 +437,19 @@ pub fn debugger_view(
                 let sources_state = sources_state.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     trace!("[{trace_id}] `GetBacktraceSourceRequest` start {component_id} {file}");
-                    let mut execution_client =
-                        grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
-                    let backtrace_src_response = execution_client
-                        .get_backtrace_source(tonic::Request::new(GetBacktraceSourceRequest {
-                            component_id: Some(component_id.clone()),
-                            file: file.clone(),
-                        }))
-                        .await;
+                    let backtrace_src_response =
+                        crate::rest::deployments::component_source(&component_id, &file).await;
                     let source_code_state = match backtrace_src_response {
                         Err(err) => {
                             log::info!("[{trace_id}] Cannot obtain source `{file}` - {err:?}");
                             SourceCodeState::NotFoundOrErr
                         }
-                        Ok(ok) => {
+                        Ok(content) => {
                             let language = PathBuf::from(&file)
                                 .extension()
                                 .map(|e| e.to_string_lossy().to_string());
                             SourceCodeState::Found(Rc::from(highlight_code_line_by_line(
-                                &ok.into_inner().content,
+                                &content,
                                 language.as_deref(),
                             )))
                         }
@@ -912,18 +904,17 @@ pub fn debugger_view(
 
             populating_backtraces.set(true);
             wasm_bindgen_futures::spawn_local(async move {
-                let mut client =
-                    grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                        crate::auth::client(),
-                    );
-                match client
-                    .persist_execution_backtraces(grpc_client::PersistExecutionBacktracesRequest {
-                        execution_id: Some(execution_id.clone()),
-                    })
-                    .await
-                {
+                #[derive(serde::Deserialize)]
+                struct PersistResult {
+                    persisted_backtrace_count: u32,
+                }
+                let result: Result<PersistResult, String> = crate::rest::put_empty(&format!(
+                    "/v1/executions/{execution_id}/backtrace/persist"
+                ))
+                .await;
+                match result {
                     Ok(response) => {
-                        let count = response.into_inner().persisted_backtrace_count;
+                        let count = response.persisted_backtrace_count;
                         if count == 0 {
                             notifications
                                 .push(Notification::info("No new backtraces were persisted"));
@@ -941,7 +932,7 @@ pub fn debugger_view(
                         error!("Failed to persist backtraces for {execution_id}: {err:?}");
                         notifications.push(Notification::error(format!(
                             "Failed to populate backtraces: {}",
-                            err.message()
+                            err
                         )));
                     }
                 }

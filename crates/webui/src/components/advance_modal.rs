@@ -19,8 +19,7 @@ use crate::{
         ffqn::FunctionFqn,
         grpc_client::{
             self, CapturedBacktrace, CapturedWrite, ComponentId, CreateExecutionRequest,
-            ExecutionId, GetBacktraceSourceRequest, JoinSetResponseEvent,
-            ListExecutionEventsRequest, captured_write,
+            ExecutionId, JoinSetResponseEvent, ListExecutionEventsRequest, captured_write,
             execution_event::{self, history_event},
             execution_repository_client::ExecutionRepositoryClient,
         },
@@ -589,21 +588,16 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                             sources.set(next);
                         }
 
-                        let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-                        let result = client
-                            .get_backtrace_source(tonic::Request::new(GetBacktraceSourceRequest {
-                                component_id: Some(component_id.clone()),
-                                file: file.clone(),
-                            }))
-                            .await;
+                        let result =
+                            crate::rest::deployments::component_source(&component_id, &file).await;
 
                         let state = match result {
-                            Ok(resp) => {
+                            Ok(content) => {
                                 let language = PathBuf::from(&file)
                                     .extension()
                                     .map(|e| e.to_string_lossy().to_string());
                                 SourceState::Found(Rc::from(highlight_code_line_by_line(
-                                    &resp.into_inner().content,
+                                    &content,
                                     language.as_deref(),
                                 )))
                             }
