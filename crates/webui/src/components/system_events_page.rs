@@ -1,6 +1,9 @@
 use crate::{
     app::{AppState, Route},
-    components::notification::{Notification, NotificationContext},
+    components::{
+        notification::{Notification, NotificationContext},
+        system_nav::SystemNav,
+    },
     grpc::grpc_client::{self, SystemEventLevel},
     rest,
     util::time::{RelativeAgo, format_date},
@@ -499,6 +502,7 @@ pub fn system_events_page() -> Html {
     };
     html! {
         <main>
+            <SystemNav active={Route::SystemEvents} />
             <h1>{"System events"}</h1>
             <div class="system-event-filters">
                 <div class="system-event-filter-group">
