@@ -25,8 +25,10 @@ enum ArmedAction {
 }
 
 #[derive(Deserialize)]
-struct SwitchResult {
-    ok: String,
+#[serde(untagged)]
+enum SwitchResult {
+    Success { ok: String },
+    Failure { err: String },
 }
 
 /// Buttons to apply a deployment immediately or enqueue it for the next server restart.
@@ -97,8 +99,8 @@ pub fn deployment_actions(
                     .await;
                     in_flight.set(false);
                     match response {
-                        Ok(outcome) => {
-                            match outcome.ok.as_str() {
+                        Ok(SwitchResult::Success { ok }) => {
+                            match ok.as_str() {
                                 "switched" => notifications.push(Notification::success(
                                     "Apply succeeded, the deployment is now live",
                                 )),
@@ -110,7 +112,7 @@ pub fn deployment_actions(
                             }
                             on_switched.emit(());
                         }
-                        Err(e) => {
+                        Ok(SwitchResult::Failure { err: e }) | Err(e) => {
                             error!("Failed to switch deployment: {e:?}");
                             notifications.push(Notification::error(format!(
                                 "Failed to switch deployment: {}",
@@ -172,5 +174,17 @@ pub fn deployment_actions(
                 </button>
             }
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn switch_error_body_is_reported_as_failure() {
+        let outcome: SwitchResult = serde_json::from_str(r#"{"err":"component not found"}"#)
+            .expect("the API error body must be recognized");
+        assert!(matches!(outcome, SwitchResult::Failure { err } if err == "component not found"));
     }
 }
