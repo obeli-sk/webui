@@ -1,18 +1,6 @@
-use std::{
-    cell::RefCell,
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
-use tonic::{
-    body::Body,
-    codegen::{Service, http},
-};
-use tonic_web_wasm_client::{Client, Error, ResponseBody};
+use std::cell::RefCell;
 use web_sys::{HtmlInputElement, SubmitEvent};
 use yew::prelude::*;
-
-use crate::BASE_URL;
 
 const TOKEN_STORAGE_KEY: &str = "obelisk-api-token";
 
@@ -36,47 +24,6 @@ pub(crate) fn auth_required() {
             callback.emit(());
         }
     });
-}
-
-#[derive(Clone)]
-pub struct AuthenticatedClient(Client);
-
-pub fn client() -> AuthenticatedClient {
-    AuthenticatedClient(Client::new(BASE_URL.to_string()))
-}
-
-impl Service<http::Request<Body>> for AuthenticatedClient {
-    type Response = http::Response<ResponseBody>;
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.0.poll_ready(cx)
-    }
-
-    fn call(&mut self, mut request: http::Request<Body>) -> Self::Future {
-        if let Some(token) = token()
-            && let Ok(mut value) = format!("Bearer {token}").parse::<http::HeaderValue>()
-        {
-            value.set_sensitive(true);
-            request
-                .headers_mut()
-                .insert(http::header::AUTHORIZATION, value);
-        }
-
-        let future = self.0.call(request);
-        Box::pin(async move {
-            let response = future.await?;
-            if response
-                .headers()
-                .get("grpc-status")
-                .is_some_and(|status| status == "16")
-            {
-                auth_required();
-            }
-            Ok(response)
-        })
-    }
 }
 
 #[derive(Properties, PartialEq)]

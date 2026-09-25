@@ -34,11 +34,6 @@ serde_with.workspace = true
 similar.workspace = true
 syntect = { workspace = true, features = ["html"] }
 toml.workspace = true
-tonic = { workspace = true, default-features = false, features = [
-    "codegen",
-] }
-tonic-prost.workspace = true
-tonic-web-wasm-client.workspace = true
 ulid.workspace = true
 wasm-bindgen-futures.workspace = true
 wasm-bindgen.workspace = true

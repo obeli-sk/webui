@@ -17,7 +17,7 @@ fn main() {
         .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")
         .build_server(false)
         .build_transport(false)
-        .build_client(true)
+        .build_client(false)
         .compile_protos(&[obelisk_proto], &[proto_path])
         .unwrap();
     let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();

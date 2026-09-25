@@ -1,2 +1,2 @@
 #![allow(clippy::large_enum_variant)]
-tonic::include_proto!("obelisk");
+include!(concat!(env!("OUT_DIR"), "/obelisk.rs"));
