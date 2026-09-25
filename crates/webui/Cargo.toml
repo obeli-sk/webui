@@ -49,7 +49,6 @@ once_cell.workspace = true
 [build-dependencies]
 cargo_metadata.workspace = true
 syntect = { workspace = true, features = ["html"] }
-tonic-prost-build.workspace = true
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true

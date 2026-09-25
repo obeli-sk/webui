@@ -41,7 +41,7 @@ sudo systemctl restart nix-daemon.service
 nix develop
 ```
 
-This provides all necessary tools: Rust toolchain with WASM targets, trunk, protobuf, etc.
+This provides the Rust toolchain with WASM targets and Trunk.
 
 ### Without Nix
 
@@ -59,7 +59,7 @@ webui/
 │   │   │   ├── grpc/       # Protobuf view types and helpers
 │   │   │   ├── rest/       # REST response adapters
 │   │   │   └── util/       # Utilities (time formatting, colors)
-│   │   ├── build.rs        # Proto compilation, CSS generation
+│   │   ├── build.rs        # CSS generation
 │   │   └── Trunk.toml      # Trunk bundler configuration
 │   └── webui-proxy/        # Static asset server and same origin API gateway
 ├── obelisk/                # Git submodule with obelisk proto definitions - IMPORTANT: no changes to submodule
@@ -117,7 +117,7 @@ This creates:
 
 ## REST API
 
-The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for response adapters. `build.rs` still compiles message types from `obelisk/proto/obelisk.proto` for existing UI view models, but generates no gRPC clients.
+The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for response adapters. Existing UI view models use message types checked into `crates/webui/src/grpc/generated.rs`; builds generate no gRPC code.
 
 The `rest` module adds the bearer token and opens the authentication dialog for HTTP 401 responses.
 

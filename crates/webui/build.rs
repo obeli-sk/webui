@@ -1,25 +1,8 @@
 use cargo_metadata::camino::Utf8PathBuf;
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{fs::File, io::Write};
 use syntect::{highlighting::ThemeSet, html::ClassStyle};
 
 fn main() {
-    let workspace_dir = get_workspace_dir();
-    let proto_path = workspace_dir.join("obelisk/proto");
-    let obelisk_proto = proto_path.join("obelisk.proto");
-    assert!(obelisk_proto.exists());
-    println!("cargo:rerun-if-changed={}", obelisk_proto.display());
-
-    tonic_prost_build::configure()
-        .protoc_arg("--experimental_allow_proto3_optional") // not needed anymore with protoc  25.3
-        .compile_well_known_types(true)
-        .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp")
-        .extern_path(".google.protobuf.Duration", "::prost_wkt_types::Duration")
-        .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")
-        .build_server(false)
-        .build_transport(false)
-        .build_client(false)
-        .compile_protos(&[obelisk_proto], &[proto_path])
-        .unwrap();
     let pkg_name = std::env::var("CARGO_PKG_NAME").unwrap();
     generate_syntect_css(&pkg_name);
 }
@@ -49,8 +32,4 @@ fn generate_syntect_css(webui_package_name: &str) {
         css_file.write_all(content.as_bytes()).unwrap();
         css_file.flush().unwrap();
     }
-}
-
-fn get_workspace_dir() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_WORKSPACE_DIR").unwrap())
 }
