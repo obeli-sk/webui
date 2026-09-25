@@ -2,10 +2,13 @@ use crate::{
     components::execution_header::{ExecutionHeader, ExecutionLink},
     components::notification::{Notification, NotificationContext},
     grpc::grpc_client::{self, ExecutionId},
+    rest,
     util::time::format_date,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::DateTime;
 use log::debug;
+use serde::Deserialize;
 use std::rc::Rc;
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
@@ -51,6 +54,122 @@ struct LogsState {
     request_generation: u64,
 }
 
+#[derive(Deserialize)]
+struct RestLogRow {
+    cursor: String,
+    run_id: String,
+    execution_id: String,
+    #[serde(flatten)]
+    entry: RestLogEntry,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum RestLogEntry {
+    Log {
+        created_at: DateTime<chrono::Utc>,
+        level: RestLogLevel,
+        message: String,
+    },
+    Stream {
+        created_at: DateTime<chrono::Utc>,
+        payload: String,
+        stream_type: RestStreamType,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RestLogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RestStreamType {
+    Stdout,
+    Stderr,
+}
+
+fn decode_logs(
+    rows: Vec<RestLogRow>,
+    page_size: usize,
+) -> Result<grpc_client::ListLogsResponse, String> {
+    use grpc_client::list_logs_response::{LogEntry, log_entry::Entry};
+
+    let next_page_token = if rows.len() == page_size {
+        rows.last()
+            .map(|row| row.cursor.clone())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let logs = rows
+        .into_iter()
+        .map(|row| {
+            let (created_at, entry) = match row.entry {
+                RestLogEntry::Log {
+                    created_at,
+                    level,
+                    message,
+                } => {
+                    let level = match level {
+                        RestLogLevel::Trace => 1,
+                        RestLogLevel::Debug => 2,
+                        RestLogLevel::Info => 3,
+                        RestLogLevel::Warn => 4,
+                        RestLogLevel::Error => 5,
+                    };
+                    (
+                        created_at,
+                        Entry::Log(grpc_client::list_logs_response::log_entry::LogVariant {
+                            level,
+                            message,
+                        }),
+                    )
+                }
+                RestLogEntry::Stream {
+                    created_at,
+                    payload,
+                    stream_type,
+                } => {
+                    let payload = STANDARD
+                        .decode(payload)
+                        .map_err(|error| error.to_string())?;
+                    let stream_type = match stream_type {
+                        RestStreamType::Stdout => grpc_client::LogStreamType::Stdout as i32,
+                        RestStreamType::Stderr => grpc_client::LogStreamType::Stderr as i32,
+                    };
+                    (
+                        created_at,
+                        Entry::Stream(grpc_client::list_logs_response::log_entry::StreamVariant {
+                            payload,
+                            stream_type,
+                        }),
+                    )
+                }
+            };
+            Ok(LogEntry {
+                created_at: Some(created_at.into()),
+                entry: Some(entry),
+                run_id: Some(grpc_client::RunId { id: row.run_id }),
+                execution_id: Some(ExecutionId {
+                    id: row.execution_id,
+                }),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(grpc_client::ListLogsResponse {
+        logs,
+        next_page_token,
+        prev_page_token: None,
+    })
+}
+
 impl Default for LogsState {
     fn default() -> Self {
         Self {
@@ -81,8 +200,7 @@ impl Reducible for LogsState {
                 request_generation: self.request_generation.wrapping_add(1),
             }),
             LogsAction::LoadMore => {
-                if self.fetch_state == LogsFetchState::Pending {
-                    debug!("LoadMore: Already pending");
+                if self.fetch_state == LogsFetchState::Pending || self.next_page_token.is_empty() {
                     return self;
                 }
                 let mut this = self.as_ref().clone();
@@ -358,24 +476,22 @@ fn fetch_logs_page(
     notifications: NotificationContext,
 ) {
     wasm_bindgen_futures::spawn_local(async move {
-        let mut execution_client =
-            grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                crate::auth::client(),
-            );
-        const PAGE_SIZE: i32 = 200;
+        const PAGE_SIZE: usize = 200;
         debug!("Requesting logs page `{page_token}`");
-        let result = execution_client
-            .list_logs(grpc_client::ListLogsRequest {
-                execution_id: Some(execution_id.clone()),
-                page_size: PAGE_SIZE,
-                page_token,
-                show_logs: true,
-                show_streams: true,
-                levels: Vec::new(),
-                stream_types: Vec::new(),
-                show_derived,
-            })
-            .await;
+        let mut query = vec![
+            ("length", PAGE_SIZE.to_string()),
+            ("direction", "newer".to_string()),
+            ("show_derived", show_derived.to_string()),
+        ];
+        if !page_token.is_empty() {
+            query.push(("cursor", page_token));
+        }
+        let result = rest::get::<Vec<RestLogRow>>(
+            &format!("/v1/executions/{}/logs", execution_id.id),
+            &query,
+        )
+        .await
+        .and_then(|rows| decode_logs(rows, PAGE_SIZE));
 
         match result {
             Ok(response) => {
@@ -383,14 +499,14 @@ fn fetch_logs_page(
                     execution_id,
                     show_derived,
                     request_generation,
-                    response: response.into_inner(),
+                    response,
                 });
             }
             Err(err) => {
                 log::error!("Failed to fetch logs: {err:?}");
                 notifications.push(Notification::error(format!(
                     "Failed to fetch logs: {}",
-                    err.message()
+                    err
                 )));
                 logs_state.dispatch(LogsAction::FetchError {
                     execution_id,
@@ -411,4 +527,30 @@ fn request_matches(
     state.execution_id.as_ref() == Some(execution_id)
         && state.show_derived == show_derived
         && state.request_generation == request_generation
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grpc_client::list_logs_response::log_entry::Entry;
+
+    #[test]
+    fn rest_log_page_decodes_entries_and_cursor() {
+        let rows: Vec<RestLogRow> = serde_json::from_str(
+            r#"[
+                {"cursor":"first","run_id":"Run_1","execution_id":"E_1","type":"log","created_at":"2026-09-25T12:00:00Z","level":"warn","message":"warning"},
+                {"cursor":"second","run_id":"Run_2","execution_id":"E_1.0","type":"stream","created_at":"2026-09-25T12:00:01Z","stream_type":"stdout","payload":"aGk="}
+            ]"#,
+        )
+        .unwrap();
+        let page = decode_logs(rows, 2).unwrap();
+        assert_eq!(page.next_page_token, "second");
+        assert_eq!(page.logs[0].run_id.as_ref().unwrap().id, "Run_1");
+        assert!(
+            matches!(&page.logs[0].entry, Some(Entry::Log(log)) if log.level == 4 && log.message == "warning")
+        );
+        assert!(
+            matches!(&page.logs[1].entry, Some(Entry::Stream(stream)) if stream.payload == b"hi" && stream.stream_type == grpc_client::LogStreamType::Stdout as i32)
+        );
+    }
 }
