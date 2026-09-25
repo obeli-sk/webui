@@ -388,18 +388,15 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                 let upgraded_digest = upgraded_digest.clone();
 
                 async move {
-                    let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-
-                    let result = client
-                        .upgrade_execution_component(
-                            grpc_client::UpgradeExecutionComponentRequest {
-                                execution_id: Some(execution_id.clone()),
-                                expected_component_digest: Some(effective_digest),
-                                new_component_digest: Some(new_digest.clone()),
-                                skip_determinism_check: skip_determinism,
-                            },
-                        )
-                        .await;
+                    let result = rest::put::<_, serde_json::Value>(
+                        &format!("/v1/executions/{execution_id}/upgrade"),
+                        &serde_json::json!({
+                            "old": effective_digest.digest,
+                            "new": new_digest.digest,
+                            "skip_determinism_check": skip_determinism,
+                        }),
+                    )
+                    .await;
 
                     loading_state.set(false);
 
@@ -419,7 +416,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                         }
                         Err(e) => {
                             error!("Failed to upgrade execution {}: {:?}", execution_id, e);
-                            notifications.push(Notification::error(e.message().to_string()));
+                            notifications.push(Notification::error(e));
                         }
                     }
                 }
