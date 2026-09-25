@@ -302,27 +302,17 @@ fn on_state_change(
         let log_state = log_state.clone();
         let notifications = notifications.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            let mut execution_client =
-                grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                    crate::auth::client(),
-                );
-            let response = execution_client
-                .list_execution_events_and_responses(
-                    grpc_client::ListExecutionEventsAndResponsesRequest {
-                        execution_id: Some(execution_id.clone()),
-                        version_from: cursors.version_from,
-                        events_length: PAGE,
-                        responses_cursor_from: cursors.responses_cursor_from,
-                        responses_length: PAGE,
-                        responses_including_cursor: cursors.responses_cursor_from == 0,
-                        include_backtrace_id: true,
-                    },
-                )
-                .await;
+            let response = crate::rest::events::history_page(
+                &execution_id.id,
+                cursors.version_from,
+                cursors.responses_cursor_from,
+                PAGE,
+            )
+            .await;
 
             match response {
                 Ok(resp) => {
-                    let server_resp = resp.into_inner();
+                    let server_resp = resp;
                     let last_event = server_resp.events.last();
                     let is_finished = matches!(
                         last_event.and_then(|e| e.event.as_ref()),
@@ -356,7 +346,7 @@ fn on_state_change(
                     error!("Failed to list execution events: {:?}", e);
                     notifications.push(Notification::error(format!(
                         "Failed to load execution events: {}",
-                        e.message()
+                        e
                     )));
                 }
             }
