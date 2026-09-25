@@ -297,6 +297,8 @@ fn status(value: &Value) -> Result<grpc::execution_status::Status, String> {
                 .ok_or_else(|| "Missing finished result kind".to_string())?;
             let result_kind = if kind == "ok" {
                 grpc::result_kind::Value::Ok(grpc::result_kind::Ok {})
+            } else if kind.get("err").and_then(Value::as_str) == Some("error") {
+                grpc::result_kind::Value::Error(grpc::result_kind::Error {})
             } else if let Some(error) = kind.get("err") {
                 let failure = error
                     .get("execution_failure")
@@ -321,6 +323,33 @@ fn status(value: &Value) -> Result<grpc::execution_status::Status, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn execution_summary_maps_finished_function_error() {
+        let execution: ExecutionWithState = serde_json::from_str(
+            r#"{
+                "execution_id":"E_123", "ffqn":"test:pkg/ifc.run",
+                "pending_state":{"status":"finished", "version":4,
+                    "finished_at":"2026-09-25T12:00:01Z",
+                    "result_kind":{"err":"error"}},
+                "created_at":"2026-09-25T12:00:00Z",
+                "first_scheduled_at":"2026-09-25T12:00:00Z",
+                "component_digest":"sha256:abc", "component_type":"workflow",
+                "deployment_id":"Dep_123"
+            }"#,
+        )
+        .unwrap();
+        let summary: grpc::ExecutionSummary = execution.try_into().unwrap();
+        let Some(grpc::execution_status::Status::Finished(finished)) =
+            summary.current_status.unwrap().status
+        else {
+            panic!("expected finished status")
+        };
+        assert_eq!(
+            finished.result_kind.unwrap().value,
+            Some(grpc::result_kind::Value::Error(grpc::result_kind::Error {}))
+        );
+    }
 
     #[test]
     fn execution_summary_maps_finished_failure() {
