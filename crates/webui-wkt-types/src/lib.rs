@@ -39,3 +39,18 @@ pub struct Any {
     #[prost(bytes = "vec", tag = "2")]
     pub value: Vec<u8>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timestamp_round_trips_across_unix_epoch() {
+        for (seconds, nanos) in [(-1, 750_000_000), (0, 250_000_000), (1_780_000_000, 123)] {
+            let original = DateTime::<Utc>::from_timestamp(seconds, nanos).unwrap();
+            let encoded = Timestamp::from(original);
+            assert_eq!((encoded.seconds, encoded.nanos), (seconds, nanos as i32));
+            assert_eq!(DateTime::<Utc>::from(encoded), original);
+        }
+    }
+}
