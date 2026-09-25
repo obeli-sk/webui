@@ -2,6 +2,7 @@ use crate::{
     app::query::BacktraceVersionsPath,
     auth::AuthProvider,
     components::{
+        app_config_page::AppConfigPage,
         component_list_page::ComponentListPage,
         debugger::debugger_view::DebuggerView,
         deployment_detail_page::DeploymentDetailPage,
@@ -184,6 +185,8 @@ pub enum Route {
     },
     #[at("/admin/system-events")]
     SystemEvents,
+    #[at("/admin/app-config")]
+    AppConfig,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -226,6 +229,7 @@ impl Route {
                 html! { <LogsPage {execution_id} />}
             }
             Route::SystemEvents => html! { <SystemEventsPage /> },
+            Route::AppConfig => html! { <AppConfigPage /> },
             Route::NotFound => html! { <NotFound /> },
         }
     }
@@ -361,7 +365,7 @@ fn app_inner(
                             {"Executions"}
                         </Link<Route>>
                         <Link<Route> to={Route::SystemEvents }>
-                            {"System events"}
+                            {"System"}
                         </Link<Route>>
                         <Link<Route> classes="nav-submit" to={Route::ExecutionNew }>
                             {"Submit"}

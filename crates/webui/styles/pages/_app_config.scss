@@ -1,0 +1,21 @@
+@use '../base/variables' as *;
+
+.system-nav {
+  display: flex;
+  gap: $spacing-lg;
+  margin-bottom: $spacing-lg;
+
+  a.active {
+    font-weight: bold;
+    text-decoration: underline;
+  }
+}
+
+.app-config-policy {
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.app-config-digest {
+  overflow-wrap: anywhere;
+}

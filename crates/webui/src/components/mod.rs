@@ -1,4 +1,5 @@
 pub mod advance_modal;
+pub mod app_config_page;
 pub mod code;
 pub mod component_list_page;
 pub mod component_tree;
@@ -26,4 +27,5 @@ pub mod json_tree;
 pub mod not_found;
 pub mod notification;
 pub mod system_events_page;
+pub mod system_nav;
 pub mod trace;
