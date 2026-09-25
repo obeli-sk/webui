@@ -8,7 +8,7 @@ This document provides guidelines for AI agents working on this repository.
 
 This is the Web UI for Obelisk, built with:
 - **Yew** - Rust framework for building web applications compiled to WebAssembly
-- **gRPC-Web** - Communication with the Obelisk server via `tonic-web-wasm-client`
+- **REST API** - Browser requests to the Obelisk `/v1` API via `gloo::net::http`
 - **Custom tree component** - Custom tree/icon components (in `crates/webui/src/tree/`)
 - **Trunk** - WASM web application bundler
 
@@ -56,11 +56,12 @@ webui/
 │   │   ├── src/
 │   │   │   ├── app.rs      # Routes and main App component
 │   │   │   ├── components/ # UI components (pages, widgets)
-│   │   │   ├── grpc/       # gRPC client and type helpers
+│   │   │   ├── grpc/       # Protobuf view types and helpers
+│   │   │   ├── rest/       # REST response adapters
 │   │   │   └── util/       # Utilities (time formatting, colors)
 │   │   ├── build.rs        # Proto compilation, CSS generation
 │   │   └── Trunk.toml      # Trunk bundler configuration
-│   └── webui-proxy/        # Development proxy server
+│   └── webui-proxy/        # Static asset server and same origin API gateway
 ├── obelisk/                # Git submodule with obelisk proto definitions - IMPORTANT: no changes to submodule
 │   └── proto/
 │       └── obelisk.proto   # gRPC service definitions
@@ -70,7 +71,8 @@ webui/
 ### Key Directories
 
 - `crates/webui/src/components/` - Yew components for pages and UI elements
-- `crates/webui/src/grpc/` - gRPC client (`grpc_client.rs`) and type wrappers
+- `crates/webui/src/rest/` - REST request and response adapters
+- `crates/webui/src/grpc/` - Generated protobuf view types and helpers, with no client transport
 - `crates/webui/src/app.rs` - Route definitions and main App component
 
 ## Building and Running
@@ -108,47 +110,16 @@ This creates:
    - Add render case in `Route::render()`
    - Add navigation link in the `App` component if needed
 
-4. **gRPC client usage**:
+4. **REST API usage**:
    ```rust
-   use crate::grpc::grpc_client::{self, service_client::ServiceClient};
-   use tonic_web_wasm_client::Client;
-   use crate::BASE_URL;
-
-   let mut client = ServiceClient::new(Client::new(BASE_URL.to_string()));
-   let response = client.method(Request { ... }).await;
+   let response: serde_json::Value = crate::rest::get("/v1/executions", &[]).await?;
    ```
 
-## gRPC Services
+## REST API
 
-The proto definitions are in `obelisk/proto/obelisk.proto`. Available services:
+The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for response adapters. `build.rs` still compiles message types from `obelisk/proto/obelisk.proto` for existing UI view models, but generates no gRPC clients.
 
-- `ExecutionRepository` - Execution management:
-  - `ListExecutions`, `ListExecutionEvents`, `GetStatus` - Query executions
-  - `Submit`, `Stub`, `CancelExecution`, `CancelDelay` - Control executions
-  - `ReplayExecution` - Replay a workflow execution
-  - `UpgradeExecutionComponent` - Upgrade workflow to new component version
-- `FunctionRepository` - Component and function listing, WIT retrieval
-- `DeploymentRepository` - Deployment state listing
-
-The proto is compiled in `build.rs` and available via `crate::grpc::grpc_client`.
-
-### Using gRPC Clients
-
-```rust
-use crate::grpc::grpc_client::{
-    self,
-    execution_repository_client::ExecutionRepositoryClient,
-};
-use tonic_web_wasm_client::Client;
-use crate::BASE_URL;
-
-let mut client = ExecutionRepositoryClient::new(Client::new(BASE_URL.to_string()));
-let response = client.replay_execution(grpc_client::ReplayExecutionRequest {
-    execution_id: Some(execution_id),
-}).await;
-```
-
-All gRPC calls are made via `tonic-web-wasm-client` which works in the browser WASM environment.
+The `rest` module adds the bearer token and opens the authentication dialog for HTTP 401 responses.
 
 ### Key Types
 
@@ -162,7 +133,7 @@ All gRPC calls are made via `tonic-web-wasm-client` which works in the browser W
 For paginated lists, follow the pattern in `execution_list_page.rs`:
 
 1. Use URL query parameters for filter/pagination state
-2. Define cursor types matching the gRPC pagination messages
+2. Define cursor types matching the REST pagination parameters
 3. Use `use_effect_with` to fetch data when query changes
 4. Provide "Newer" / "Older" navigation buttons
 
@@ -252,9 +223,9 @@ notifications.push(Notification::info("Processing..."));
 
 ### Guidelines
 
-- **Always notify on gRPC errors** - When any RPC call fails, push an error notification
+- **Always notify on REST errors** - When a request fails, push an error notification
 - **Use success notifications sparingly** - Only for user-initiated actions (button clicks, form submissions)
-- **Include error details** - Use `e.message()` from tonic errors for context
+- **Include error details** - Show the returned HTTP error message for context
 - **Connection status** - The app automatically notifies when server connection is lost/restored
 
 ### Implementation

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Rebuild webui and webui-proxy, then push the proxy WASM component to Docker Hub.
+# Rebuild WebUI and its serving component, then push the WASM component to Docker Hub.
 
 set -exuo pipefail
 cd "$(dirname "$0")/.."
