@@ -8,7 +8,7 @@ fn main() {
     wasm_bindgen_futures::spawn_local(async move {
         let loaded = match load_components().await {
             Ok(loaded) => loaded,
-            Err(status) if status.code() == tonic::Code::Unauthenticated => Default::default(),
+            Err(status) if status.starts_with("HTTP 401:") => Default::default(),
             Err(status) => panic!("cannot load components: {status}"),
         };
         let deployment_id = get_current_deployment_id().await.ok();

@@ -18,6 +18,7 @@ use crate::{
         grpc_client::{self, ComponentFileRole, ComponentId, FunctionDetail},
         ifc_fqn::IfcFqn,
     },
+    rest,
     util::wit_highlighter,
 };
 use hashbrown::HashSet;
@@ -176,20 +177,13 @@ pub fn component_list_page(
                 }
                 let deployment_id = deployment_id.clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let mut fn_client =
-                        grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
-                    let response = fn_client
-                        .list_components(grpc_client::ListComponentsRequest {
-                            component_digest: component_id.digest.clone(),
-                            deployment_id: deployment_id.map(|id| grpc_client::DeploymentId { id }),
-                            extensions: true,
-                            ..Default::default()
-                        })
-                        .await;
+                    let digest = component_id
+                        .digest
+                        .as_ref()
+                        .map(|digest| digest.digest.as_str());
+                    let response = rest::components::list(deployment_id.as_deref(), digest).await;
                     match response {
-                        Ok(resp) => match resp.into_inner().components.into_iter().next() {
+                        Ok(resp) => match resp.into_iter().next() {
                             Some(component) => component_state.set(Some(Rc::new(component))),
                             None => notifications.push(Notification::error(
                                 "Component not found in this deployment".to_string(),
@@ -199,7 +193,7 @@ pub fn component_list_page(
                             error!("Failed to fetch component: {e:?}");
                             notifications.push(Notification::error(format!(
                                 "Failed to fetch component: {}",
-                                e.message()
+                                e
                             )));
                         }
                     }
@@ -247,35 +241,28 @@ pub fn component_list_page(
                     .collect::<HashSet<_>>();
                 let deployment_id = deployment_id.clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let mut fn_client =
-                        grpc_client::function_repository_client::FunctionRepositoryClient::new(
-                            crate::auth::client(),
-                        );
-                    let response = fn_client
-                        .get_wit(grpc_client::GetWitRequest {
-                            component_digest: Some(component_digest),
-                            deployment_id: deployment_id.map(|id| grpc_client::DeploymentId { id }),
-                        })
-                        .await;
+                    let query = deployment_id
+                        .map(|id| vec![("deployment_id", id)])
+                        .unwrap_or_default();
+                    let response = rest::get_text(
+                        &format!("/v1/components/{}/wit", component_digest.digest),
+                        &query,
+                    )
+                    .await;
                     match response {
-                        Ok(resp) => {
-                            if let Some(wit) = resp.into_inner().content {
-                                let rendered =
-                                    wit_highlighter::print_all(&wit, render_ffqn_with_links)
-                                        .unwrap_or_else(|err| {
-                                            warn!("Cannot render WIT, showing raw text - {err:?}");
-                                            wit_highlighter::print_raw(&wit)
-                                        });
-                                wit_state.set(Some(rendered));
-                            } // else - no WIT is associated with the component.
+                        Ok(wit) => {
+                            let rendered = wit_highlighter::print_all(&wit, render_ffqn_with_links)
+                                .unwrap_or_else(|err| {
+                                    warn!("Cannot render WIT, showing raw text - {err:?}");
+                                    wit_highlighter::print_raw(&wit)
+                                });
+                            wit_state.set(Some(rendered));
                             wit_loaded.set(true);
                         }
                         Err(e) => {
                             error!("Failed to get WIT: {:?}", e);
-                            notifications.push(Notification::error(format!(
-                                "Failed to get WIT: {}",
-                                e.message()
-                            )));
+                            notifications
+                                .push(Notification::error(format!("Failed to get WIT: {}", e)));
                             wit_loaded.set(true);
                         }
                     }
@@ -322,24 +309,18 @@ pub fn component_list_page(
                     .name
                     .clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let mut client =
-                        grpc_client::deployment_repository_client::DeploymentRepositoryClient::new(
-                            crate::auth::client(),
-                        );
-                    let response = client
-                        .get_deployment(grpc_client::GetDeploymentRequest {
-                            deployment_id: Some(deployment_id),
-                            include_generated_metadata: Some(false),
-                        })
-                        .await;
+                    let response = rest::get::<serde_json::Value>(
+                        &format!("/v1/deployments/{}", deployment_id.id),
+                        &[("include_generated_metadata", "false".to_string())],
+                    )
+                    .await;
                     match response {
                         Ok(response) => {
                             let result = response
-                                .into_inner()
-                                .deployment
-                                .and_then(|deployment| deployment.deployment_toml)
+                                .get("deployment_toml")
+                                .and_then(serde_json::Value::as_str)
                                 .map(|manifest| {
-                                    let manifest = toml::from_str::<serde_json::Value>(&manifest)
+                                    let manifest = toml::from_str::<serde_json::Value>(manifest)
                                         .map_err(|error| error.to_string())?;
                                     let sources = build_sections_from_manifest(&manifest)
                                         .into_iter()
@@ -374,9 +355,9 @@ pub fn component_list_page(
                             error!("Failed to load component configuration: {error:?}");
                             notifications.push(Notification::error(format!(
                                 "Failed to load component configuration: {}",
-                                error.message()
+                                error
                             )));
-                            deployment_config.set(Some(Err(error.message().to_string())));
+                            deployment_config.set(Some(Err(error)));
                         }
                     }
                 });

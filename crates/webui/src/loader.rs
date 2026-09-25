@@ -18,19 +18,10 @@ pub struct LoadedComponents {
 }
 
 /// Fetches all components from the server.
-pub async fn load_components() -> Result<LoadedComponents, tonic::Status> {
-    let mut fn_repo_client = grpc_client::function_repository_client::FunctionRepositoryClient::new(
-        crate::auth::client(),
-    );
-    let mut response = fn_repo_client
-        .list_components(grpc_client::ListComponentsRequest {
-            extensions: true,
-            ..Default::default()
-        })
-        .await?
-        .into_inner();
-    debug!("Got gRPC ListComponentsResponse");
-    response.components.sort_by(|a, b| {
+pub async fn load_components() -> Result<LoadedComponents, String> {
+    let mut components = rest::components::list(None, None).await?;
+    debug!("Got REST components");
+    components.sort_by(|a, b| {
         a.component_id
             .as_ref()
             .expect("`component_id` is sent")
@@ -42,8 +33,7 @@ pub async fn load_components() -> Result<LoadedComponents, tonic::Status> {
                     .name,
             )
     });
-    let components_by_id: HashMap<_, _> = response
-        .components
+    let components_by_id: HashMap<_, _> = components
         .into_iter()
         .map(|component| {
             (
