@@ -364,7 +364,9 @@ fn map_response(value: Value) -> Result<grpc::ResponseWithCursor, String> {
                 child_execution_id: Some(grpc::ExecutionId {
                     id: field(payload, "child_execution_id")?,
                 }),
-                value: Some(result(payload.get("result").ok_or("Missing child result")?)?),
+                value: Some(result(
+                    payload.get("result").ok_or("Missing child result")?,
+                )?),
             })
         }
         other => return Err(format!("Unknown response type: {other}")),
@@ -674,6 +676,32 @@ fn map_stub(value: &Value) -> Result<grpc::execution_event::history_event::Stub,
         retval_hash: field(value, "retval_hash")?,
         result: Some(result),
     })
+}
+
+pub(super) fn append_event(value: &Value, version: u32) -> Result<grpc::ExecutionEvent, String> {
+    HistoryRecord {
+        created_at: field(value, "created_at")?,
+        version,
+        backtrace_id: None,
+        event: field(value, "event")?,
+    }
+    .try_into()
+}
+
+pub(super) fn component_from_json(value: &Value) -> Result<grpc::ComponentId, String> {
+    component(value)
+}
+
+pub(super) fn result_from_json(value: &Value) -> Result<grpc::SupportedFunctionResult, String> {
+    result(value)
+}
+
+pub(super) fn join_set_id_from_json(value: &str) -> Result<grpc::JoinSetId, String> {
+    parse_join_set_id(value)
+}
+
+pub(super) fn function_from_json(value: &str) -> Result<grpc::FunctionName, String> {
+    function(value)
 }
 
 #[derive(Deserialize)]

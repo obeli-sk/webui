@@ -44,11 +44,17 @@ pub async fn backtrace(id: &str, version: u32) -> Result<grpc::GetBacktraceRespo
     } else {
         version.to_string()
     };
-    let response: Backtrace = super::get(
+    let response: Value = super::get(
         &format!("/v1/executions/{id}/backtrace"),
         &[("version", version)],
     )
     .await?;
+    backtrace_from_json(&response)
+}
+
+pub(super) fn backtrace_from_json(value: &Value) -> Result<grpc::GetBacktraceResponse, String> {
+    let response: Backtrace =
+        serde_json::from_value(value.clone()).map_err(|err| err.to_string())?;
     let component_type = match response.component_id.component_type.as_str() {
         "workflow" => grpc::ComponentType::Workflow,
         "activity" => grpc::ComponentType::Activity,

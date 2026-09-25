@@ -9,7 +9,7 @@ use crate::components::notification::{Notification, NotificationContext};
 use crate::grpc::ffqn::FunctionFqn;
 use crate::grpc::grpc_client::{
     self, CapturedWrite, ComponentType, ContentDigest, ExecutionId, ExecutionSummary,
-    captured_write, execution_repository_client::ExecutionRepositoryClient, execution_status,
+    captured_write, execution_status,
 };
 use crate::grpc::version::VersionType;
 use gloo::timers::callback::Interval;
@@ -321,20 +321,11 @@ pub fn execution_header(
                             let on_advanced = on_advanced.clone();
                             let advanced_version = last_version_of(&execution_id, &writes);
                             spawn_local(async move {
-                                let mut client = ExecutionRepositoryClient::new(
-                                    crate::auth::client(),
-                                );
-                                let result = client
-                                    .advance_execution(grpc_client::AdvanceExecutionRequest {
-                                        execution_id: Some(execution_id.clone()),
-                                        captured_writes: writes,
-                                        persist_backtrace: true,
-                                    })
-                                    .await;
+                                let result = crate::rest::replay::advance(&execution_id.id, &writes).await;
                                 match result {
                                     Ok(resp) => {
                                         use grpc_client::advance_execution_response;
-                                        let inner = resp.into_inner();
+                                        let inner = resp;
                                         match inner.result {
                                             Some(advance_execution_response::Result::Success(
                                                 _,
@@ -417,11 +408,11 @@ pub fn execution_header(
                                     }
                                     Err(e) => {
                                         error!(
-                                            "Advance RPC failed for {}: {:?}",
+                                            "Advance failed for {}: {:?}",
                                             execution_id, e
                                         );
                                         notifications.push(Notification::error(
-                                            e.message().to_string(),
+                                            e,
                                         ));
                                     }
                                 }

@@ -5,10 +5,7 @@ use crate::{
     components::notification::{Notification, NotificationContext},
     grpc::{
         ffqn::FunctionFqn,
-        grpc_client::{
-            self, ContentDigest, ExecutionId,
-            execution_repository_client::ExecutionRepositoryClient,
-        },
+        grpc_client::{self, ContentDigest, ExecutionId},
     },
     rest,
 };
@@ -36,17 +33,11 @@ pub async fn call_replay(
     execution_id: &ExecutionId,
     notifications: &NotificationContext,
 ) -> Option<grpc_client::ReplayExecutionResponse> {
-    let mut client = ExecutionRepositoryClient::new(crate::auth::client());
-    match client
-        .replay_execution(grpc_client::ReplayExecutionRequest {
-            execution_id: Some(execution_id.clone()),
-        })
-        .await
-    {
-        Ok(resp) => Some(resp.into_inner()),
+    match rest::replay::replay(&execution_id.id).await {
+        Ok(resp) => Some(resp),
         Err(e) => {
             error!("Failed to replay execution {}: {:?}", execution_id, e);
-            notifications.push(Notification::error(e.message().to_string()));
+            notifications.push(Notification::error(e));
             None
         }
     }
