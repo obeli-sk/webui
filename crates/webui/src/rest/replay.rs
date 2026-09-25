@@ -96,8 +96,14 @@ fn map_failure(value: &Value) -> Result<grpc::supported_function_result::Executi
     };
     Ok(grpc::supported_function_result::ExecutionFailure {
         kind: kind as i32,
-        reason: get(value, "reason")?,
-        detail: get(value, "detail")?,
+        reason: value
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        detail: value
+            .get("detail")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 

@@ -174,8 +174,14 @@ fn result(value: &Value) -> Result<grpc::SupportedFunctionResult, String> {
             (
                 ResultValue::ExecutionFailure(ExecutionFailure {
                     kind: kind as i32,
-                    reason: field(data, "reason")?,
-                    detail: field(data, "detail")?,
+                    reason: data
+                        .get("reason")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    detail: data
+                        .get("detail")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
                 }),
                 None,
             )
@@ -812,6 +818,19 @@ fn parse_join_set_id(value: &str) -> Result<grpc::JoinSetId, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancelled_result_without_optional_details_maps_to_trace() {
+        let value = serde_json::json!({"execution_failure": {"kind": "cancelled"}});
+        let mapped = result(&value).unwrap();
+        let Some(grpc::supported_function_result::Value::ExecutionFailure(failure)) = mapped.value
+        else {
+            panic!("expected execution failure")
+        };
+        assert_eq!(failure.kind, grpc::ExecutionFailureKind::Cancelled as i32);
+        assert_eq!(failure.reason, None);
+        assert_eq!(failure.detail, None);
+    }
 
     #[test]
     fn created_event_preserves_parent_and_json_params() {
