@@ -391,40 +391,16 @@ pub fn collapsible_source(
                     };
                     let file = file.clone();
                     wasm_bindgen_futures::spawn_local(async move {
-                        let mut client =
-                            grpc_client::execution_repository_client::ExecutionRepositoryClient::new(
-                                crate::auth::client(),
-                            );
-                        let response = client
-                            .get_backtrace_source(grpc_client::GetBacktraceSourceRequest {
-                                component_id: Some(component_id),
-                                file,
-                            })
-                            .await;
-                        fetched.set(Some(Rc::new(
-                            response
-                                .map(|resp| resp.into_inner().content)
-                                .map_err(|err| err.message().to_string()),
-                        )));
+                        let response =
+                            crate::rest::deployments::component_source(&component_id, &file).await;
+                        fetched.set(Some(Rc::new(response)));
                     });
                 }
                 SourceContent::FetchFile { digest } => {
                     let digest = digest.clone();
                     wasm_bindgen_futures::spawn_local(async move {
-                        let mut client =
-                            grpc_client::deployment_repository_client::DeploymentRepositoryClient::new(
-                                crate::auth::client(),
-                            );
-                        let response = client
-                            .get_file(grpc_client::GetFileRequest { digest })
-                            .await;
-                        fetched.set(Some(Rc::new(
-                            response
-                                .map(|resp| {
-                                    String::from_utf8_lossy(&resp.into_inner().content).into_owned()
-                                })
-                                .map_err(|err| err.message().to_string()),
-                        )));
+                        let response = crate::rest::deployments::file(&digest).await;
+                        fetched.set(Some(Rc::new(response)));
                     });
                 }
                 _ => {}

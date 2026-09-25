@@ -62,6 +62,26 @@ pub async fn get(id: &str) -> Result<grpc::Deployment, String> {
     record.try_into()
 }
 
+pub async fn file(digest: &str) -> Result<String, String> {
+    let bytes = super::get_bytes(&format!("/v1/files/{digest}")).await?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+pub async fn component_source(
+    component_id: &grpc::ComponentId,
+    file: &str,
+) -> Result<String, String> {
+    let digest = component_id
+        .digest
+        .as_ref()
+        .ok_or_else(|| "component has no digest".to_string())?;
+    super::get_text(
+        &format!("/v1/components/{}/source", digest.digest),
+        &[("file", file.to_string())],
+    )
+    .await
+}
+
 pub async fn list(
     cursor: Option<&str>,
     direction: &str,
