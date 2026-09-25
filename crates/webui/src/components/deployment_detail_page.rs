@@ -6,12 +6,8 @@ use crate::{
         execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
         notification::{Notification, NotificationContext},
     },
-    grpc::grpc_client::{
-        self, DeploymentExecutionSummary, DeploymentId, DeploymentStatus,
-        deployment_repository_client::DeploymentRepositoryClient,
-        function_repository_client::FunctionRepositoryClient,
-        list_deployments_request::{OlderThan, Pagination},
-    },
+    grpc::grpc_client::{self, DeploymentExecutionSummary, DeploymentId, DeploymentStatus},
+    rest,
     util::time::format_date,
 };
 use chrono::DateTime;
@@ -100,40 +96,22 @@ pub fn deployment_detail_page(
             move |(deployment_id, _)| {
                 let deployment_id = deployment_id.clone();
                 spawn_local(async move {
-                    let mut client = DeploymentRepositoryClient::new(crate::auth::client());
-                    match client
-                        .get_deployment(grpc_client::GetDeploymentRequest {
-                            deployment_id: Some(deployment_id.clone()),
-                            include_generated_metadata: Some(false),
-                        })
-                        .await
-                    {
+                    match rest::deployments::get(&deployment_id.id).await {
                         Ok(resp) => {
-                            deployment_state.set(resp.into_inner().deployment);
+                            deployment_state.set(Some(resp));
                         }
                         Err(e) => {
                             error!("Failed to get deployment: {e:?}");
                             notifications.push(Notification::error(format!(
                                 "Failed to get deployment: {}",
-                                e.message()
+                                e
                             )));
                         }
                     }
                     // Resolve component IDs of this deployment for links and source fetching.
-                    let mut fn_client = FunctionRepositoryClient::new(crate::auth::client());
-                    match fn_client
-                        .list_components(grpc_client::ListComponentsRequest {
-                            function_name: None,
-                            component_digest: None,
-                            extensions: false,
-                            deployment_id: Some(deployment_id),
-                        })
-                        .await
-                    {
-                        Ok(resp) => {
-                            let map = resp
-                                .into_inner()
-                                .components
+                    match rest::components::list(Some(&deployment_id.id), None).await {
+                        Ok(components) => {
+                            let map = components
                                 .into_iter()
                                 .filter_map(|component| {
                                     let name = component.component_id.as_ref()?.name.clone();
@@ -163,26 +141,19 @@ pub fn deployment_detail_page(
                 let show_derived = *show_derived;
                 execution_summary.set(None);
                 spawn_local(async move {
-                    let mut client = DeploymentRepositoryClient::new(crate::auth::client());
-                    let response = client
-                        .list_deployments(grpc_client::ListDeploymentsRequest {
-                            pagination: Some(Pagination::OlderThan(OlderThan {
-                                length: 1,
-                                cursor: Some(deployment_id.clone()),
-                                including_cursor: true,
-                            })),
-                            include_deployment_toml: false,
-                            include_derived: show_derived,
-                            include_execution_counts: true,
-                            include_component_summary: false,
-                        })
-                        .await;
+                    let response = rest::deployments::list(
+                        Some(&deployment_id.id),
+                        "older",
+                        1,
+                        true,
+                        show_derived,
+                        false,
+                    )
+                    .await;
                     match response {
                         Ok(response) => {
                             let summary =
                                 response
-                                    .into_inner()
-                                    .deployments
                                     .into_iter()
                                     .find(|summary| {
                                         summary.deployment.as_ref().and_then(|deployment| {
@@ -196,7 +167,7 @@ pub fn deployment_detail_page(
                             error!("Failed to load deployment execution summary: {e:?}");
                             notifications.push(Notification::error(format!(
                                 "Failed to load deployment execution summary: {}",
-                                e.message()
+                                e
                             )));
                         }
                     }

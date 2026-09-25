@@ -5,10 +5,9 @@ use crate::{
         notification::{Notification, NotificationContext},
     },
     grpc::grpc_client::{
-        self, DeploymentComponentType, DeploymentId, DeploymentStatus, DeploymentSummary,
-        deployment_repository_client::DeploymentRepositoryClient,
-        list_deployments_request::{NewerThan, OlderThan, Pagination},
+        DeploymentComponentType, DeploymentId, DeploymentStatus, DeploymentSummary,
     },
+    rest,
     util::time::{RelativeAgo, format_date},
 };
 use chrono::DateTime;
@@ -73,10 +72,6 @@ impl FromStr for DeploymentCursor {
 }
 
 impl DeploymentCursor {
-    fn into_grpc_deployment_id(self) -> DeploymentId {
-        DeploymentId { id: self.0 }
-    }
-
     fn from_deployment(deployment: &DeploymentSummary) -> Self {
         DeploymentCursor(
             deployment
@@ -146,47 +141,29 @@ pub fn deployment_list_page() -> Html {
             let query_params = query_params.clone();
 
             spawn_local(async move {
-                let mut deployment_client = DeploymentRepositoryClient::new(crate::auth::client());
-
                 let page_size = 10;
-
-                let cursor = query_params
-                    .cursor
-                    .as_ref()
-                    .map(|c| c.clone().into_grpc_deployment_id());
-
-                // Determine pagination based on direction
-                let pagination = match query_params.direction.unwrap_or_default() {
-                    Direction::Older => Some(Pagination::OlderThan(OlderThan {
-                        cursor,
-                        length: page_size,
-                        including_cursor: query_params.include_cursor,
-                    })),
-                    Direction::Newer => Some(Pagination::NewerThan(NewerThan {
-                        cursor,
-                        length: page_size,
-                        including_cursor: query_params.include_cursor,
-                    })),
+                let direction = match query_params.direction.unwrap_or_default() {
+                    Direction::Older => "older",
+                    Direction::Newer => "newer",
                 };
-
-                // Send request
-                let req = grpc_client::ListDeploymentsRequest {
-                    pagination,
-                    include_deployment_toml: false,
-                    include_derived: false,
-                    include_execution_counts: true,
-                    include_component_summary: true,
-                };
-                debug!("Fetching deployments with query: {req:?}");
-                let response = deployment_client.list_deployments(req).await;
+                debug!("Fetching deployments with direction: {direction}");
+                let response = rest::deployments::list(
+                    query_params.cursor.as_ref().map(|cursor| cursor.0.as_str()),
+                    direction,
+                    page_size,
+                    query_params.include_cursor,
+                    false,
+                    true,
+                )
+                .await;
 
                 match response {
-                    Ok(resp) => response_state.set(Some(resp.into_inner())),
+                    Ok(deployments) => response_state.set(Some(deployments)),
                     Err(e) => {
                         error!("Failed to list deployments: {:?}", e);
                         notifications.push(Notification::error(format!(
                             "Failed to list deployments: {}",
-                            e.message()
+                            e
                         )));
                     }
                 }
@@ -205,9 +182,7 @@ pub fn deployment_list_page() -> Html {
 
     // Render logic
     if let Some(response) = response_state.deref() {
-        let rows = response
-            .deployments
-            .iter()
+        let rows = response.iter()
             .map(|deployment_summary| {
                 let deployment = deployment_summary
                     .deployment
@@ -393,7 +368,7 @@ pub fn deployment_list_page() -> Html {
         let navigator_for_diff = navigator.clone();
 
         // Calculate cursors for pagination
-        let newer_page_query = if let Some(deployment) = response.deployments.first() {
+        let newer_page_query = if let Some(deployment) = response.first() {
             let mut query = query.clone();
             query.cursor = Some(DeploymentCursor::from_deployment(deployment));
             query.direction = Some(Direction::Newer);
@@ -409,7 +384,7 @@ pub fn deployment_list_page() -> Html {
             None
         };
 
-        let older_page_query = if let Some(deployment) = response.deployments.last() {
+        let older_page_query = if let Some(deployment) = response.last() {
             let mut query = query.clone();
             query.cursor = Some(DeploymentCursor::from_deployment(deployment));
             query.direction = Some(Direction::Older);

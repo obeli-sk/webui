@@ -2,6 +2,7 @@ use gloo::net::http::Request;
 use serde::{Serialize, de::DeserializeOwned};
 
 pub mod components;
+pub mod deployments;
 
 pub struct ActionResult {
     pub status: u16,
