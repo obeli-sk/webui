@@ -5,6 +5,7 @@ use crate::grpc::{
     grpc_client::{self, ComponentId, DeploymentId},
     ifc_fqn::IfcFqn,
 };
+use crate::rest;
 use hashbrown::HashMap;
 use log::debug;
 use std::rc::Rc;
@@ -72,16 +73,8 @@ pub async fn load_components() -> Result<LoadedComponents, tonic::Status> {
 }
 
 /// Fetches the current deployment ID from the server.
-pub async fn get_current_deployment_id() -> Result<DeploymentId, tonic::Status> {
-    let mut deployment_client =
-        grpc_client::deployment_repository_client::DeploymentRepositoryClient::new(
-            crate::auth::client(),
-        );
-    let response = deployment_client
-        .get_current_deployment_id(grpc_client::GetCurrentDeploymentIdRequest {})
-        .await?
-        .into_inner();
-    Ok(response
-        .deployment_id
-        .expect("`deployment_id` is sent by server"))
+pub async fn get_current_deployment_id() -> Result<DeploymentId, String> {
+    rest::get::<String>("/v1/deployment-id", &[])
+        .await
+        .map(DeploymentId::from)
 }
