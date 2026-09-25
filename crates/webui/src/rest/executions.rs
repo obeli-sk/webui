@@ -26,6 +26,84 @@ pub async fn get(id: &str) -> Result<grpc::ExecutionSummary, String> {
     execution.try_into()
 }
 
+pub async fn finished_status(
+    id: &str,
+    summary: &grpc::ExecutionSummary,
+) -> Result<grpc::FinishedStatus, String> {
+    let retval: Value = super::get(&format!("/v1/executions/{id}"), &[]).await?;
+    let value = if let Some(ok) = retval.get("ok") {
+        grpc::supported_function_result::Value::Ok(grpc::supported_function_result::OkPayload {
+            return_value: payload(ok)?,
+        })
+    } else if let Some(err) = retval.get("err") {
+        grpc::supported_function_result::Value::Error(
+            grpc::supported_function_result::ErrorPayload {
+                return_value: payload(err)?,
+            },
+        )
+    } else if let Some(failure) = retval.get("execution_failed") {
+        let kind = failure
+            .get("kind")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "Missing execution failure kind".to_string())?;
+        grpc::supported_function_result::Value::ExecutionFailure(
+            grpc::supported_function_result::ExecutionFailure {
+                kind: failure_kind(kind)? as i32,
+                reason: failure
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                detail: failure
+                    .get("detail")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            },
+        )
+    } else {
+        return Err(format!("Unexpected execution result: {retval}"));
+    };
+    let finished_at = match summary
+        .current_status
+        .as_ref()
+        .and_then(|s| s.status.as_ref())
+    {
+        Some(grpc::execution_status::Status::Finished(finished)) => finished.finished_at,
+        _ => None,
+    };
+    Ok(grpc::FinishedStatus {
+        created_at: summary.created_at,
+        scheduled_at: summary.first_scheduled_at,
+        finished_at,
+        value: Some(grpc::SupportedFunctionResult {
+            value: Some(value),
+            wit_type_inline: None,
+        }),
+    })
+}
+
+fn payload(value: &Value) -> Result<Option<prost_wkt_types::Any>, String> {
+    if value.is_null() {
+        Ok(None)
+    } else {
+        Ok(Some(prost_wkt_types::Any {
+            type_url: String::new(),
+            value: serde_json::to_vec(value).map_err(|error| error.to_string())?,
+        }))
+    }
+}
+
+fn failure_kind(value: &str) -> Result<grpc::ExecutionFailureKind, String> {
+    Ok(match value {
+        "timed_out" => grpc::ExecutionFailureKind::TimedOut,
+        "nondeterminism_detected" => grpc::ExecutionFailureKind::NondeterminismDetected,
+        "out_of_fuel" => grpc::ExecutionFailureKind::OutOfFuel,
+        "cancelled" => grpc::ExecutionFailureKind::Cancelled,
+        "uncategorized" => grpc::ExecutionFailureKind::Uncategorized,
+        "value_too_large" => grpc::ExecutionFailureKind::ValueTooLarge,
+        other => return Err(format!("Unknown execution failure kind: {other}")),
+    })
+}
+
 impl TryFrom<ExecutionWithState> for grpc::ExecutionSummary {
     type Error = String;
 
@@ -129,15 +207,7 @@ fn status(value: &Value) -> Result<grpc::execution_status::Status, String> {
                     .get("execution_failure")
                     .and_then(Value::as_str)
                     .ok_or_else(|| format!("Unknown finished result: {kind}"))?;
-                let failure_kind = match failure {
-                    "timed_out" => grpc::ExecutionFailureKind::TimedOut,
-                    "nondeterminism_detected" => grpc::ExecutionFailureKind::NondeterminismDetected,
-                    "out_of_fuel" => grpc::ExecutionFailureKind::OutOfFuel,
-                    "cancelled" => grpc::ExecutionFailureKind::Cancelled,
-                    "uncategorized" => grpc::ExecutionFailureKind::Uncategorized,
-                    "value_too_large" => grpc::ExecutionFailureKind::ValueTooLarge,
-                    other => return Err(format!("Unknown execution failure kind: {other}")),
-                };
+                let failure_kind = failure_kind(failure)?;
                 grpc::result_kind::Value::ExecutionFailureKind(failure_kind as i32)
             } else {
                 return Err(format!("Unknown finished result: {kind}"));
