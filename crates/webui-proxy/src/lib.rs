@@ -60,7 +60,7 @@ async fn proxy(server_req: Request<Body>, target_url: Uri) -> Result<Response<Bo
     // Send the request.
     let client_resp = client.send(client_req).await?;
     // Copy headers from `client_resp` to `server_resp`.
-    let mut server_resp = Response::builder();
+    let mut server_resp = Response::builder().status(client_resp.status());
     for (key, value) in client_resp.headers() {
         server_resp
             .headers_mut()
