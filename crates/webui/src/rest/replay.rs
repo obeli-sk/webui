@@ -11,7 +11,14 @@ thread_local! {
 pub async fn replay(id: &str) -> Result<grpc::ReplayExecutionResponse, String> {
     let (_, response): (u16, Value) =
         super::put_empty_allow_conflict(&format!("/v1/executions/{id}/replay")).await?;
-    let kind: String = get(&response, "type")?;
+    replay_from_json(id, &response)
+}
+
+fn replay_from_json(id: &str, response: &Value) -> Result<grpc::ReplayExecutionResponse, String> {
+    if let Some(error) = response.get("err").and_then(Value::as_str) {
+        return Err(format!("Replay failed: {error}"));
+    }
+    let kind: String = get(response, "type")?;
     let replayed_event_count = response
         .get("replayed_event_count")
         .and_then(Value::as_u64)
@@ -27,7 +34,7 @@ pub async fn replay(id: &str) -> Result<grpc::ReplayExecutionResponse, String> {
     use grpc::replay_execution_response as outcome;
     let outcome = match kind.as_str() {
         "advanceable" => {
-            let raw: Vec<Value> = get(&response, "captured_writes")?;
+            let raw: Vec<Value> = get(response, "captured_writes")?;
             let captured_writes = raw.iter().map(map_write).collect::<Result<_, _>>()?;
             CAPTURED_WRITES.with(|cache| {
                 cache.borrow_mut().insert(id.to_string(), raw);
@@ -37,7 +44,7 @@ pub async fn replay(id: &str) -> Result<grpc::ReplayExecutionResponse, String> {
         "finished" => outcome::Outcome::Finished(outcome::Finished { result: None }),
         "blocked" => outcome::Outcome::Blocked(outcome::Blocked {}),
         "replay_failed" => {
-            let raw: Vec<Value> = get(&response, "captured_writes")?;
+            let raw: Vec<Value> = get(response, "captured_writes")?;
             let captured_writes = raw.iter().map(map_write).collect::<Result<_, _>>()?;
             CAPTURED_WRITES.with(|cache| {
                 cache.borrow_mut().insert(id.to_string(), raw);
@@ -48,7 +55,7 @@ pub async fn replay(id: &str) -> Result<grpc::ReplayExecutionResponse, String> {
                 .map(map_failure)
                 .transpose()?;
             outcome::Outcome::ReplayFailed(outcome::ReplayFailed {
-                error: get(&response, "error")?,
+                error: get(response, "error")?,
                 captured_writes,
                 failure,
             })
@@ -386,6 +393,15 @@ pub async fn advance(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_component_is_reported_as_replay_error() {
+        let response = serde_json::json!({"err": "component not found"});
+        assert_eq!(
+            replay_from_json("E_123", &response).unwrap_err(),
+            "Replay failed: component not found"
+        );
+    }
 
     #[test]
     fn captured_delay_pause_is_applied_to_rest_write() {
