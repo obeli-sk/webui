@@ -75,7 +75,7 @@ jobs:
           TAG: ${{ github.event.inputs.tag }}
 
       - name: Update embedded asset hash
-        run: ./scripts/update-embedded-assets-hash.sh
+        run: ./scripts/update-embedded-assets-hash.sh webui
         working-directory: ${{ steps.obelisk-clone.outputs.obelisk_dir }}
 
       # Step 3: Push webui version bump to obelisk main
