@@ -9,11 +9,14 @@
 
 use gloo::timers::callback::Timeout;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use yew::prelude::*;
 
 /// Default time in milliseconds before a notification auto-dismisses
 const AUTO_DISMISS_MS: u32 = 5000;
+/// Must match the fade-out transition in `_notifications.scss`
+const FADE_OUT_MS: u32 = 300;
 
 /// Unique identifier for notifications
 type NotificationId = u32;
@@ -98,19 +101,73 @@ impl NotificationBuilder {
     }
 }
 
+enum NotificationAction {
+    Push(Notification),
+    FadeOut(NotificationId),
+    Remove(NotificationId),
+}
+
+#[derive(Default, PartialEq)]
+struct Notifications(Vec<Notification>);
+
+impl Reducible for Notifications {
+    type Action = NotificationAction;
+
+    fn reduce(self: Rc<Self>, action: Self::Action) -> Rc<Self> {
+        let mut list = self.0.clone();
+        match action {
+            NotificationAction::Push(notification) => list.push(notification),
+            NotificationAction::FadeOut(id) => {
+                if let Some(notification) = list.iter_mut().find(|n| n.id == id) {
+                    notification.fading_out = true;
+                }
+            }
+            NotificationAction::Remove(id) => list.retain(|n| n.id != id),
+        }
+        Rc::new(Notifications(list))
+    }
+}
+
+/// Pending auto-dismiss timers, dropping a `Timeout` cancels it.
+#[derive(Clone)]
+struct DismissTimers {
+    state: UseReducerHandle<Notifications>,
+    timers: Rc<RefCell<HashMap<NotificationId, Timeout>>>,
+}
+
+impl DismissTimers {
+    fn schedule(&self, id: NotificationId) {
+        let this = self.clone();
+        let timeout = Timeout::new(AUTO_DISMISS_MS, move || this.dismiss(id));
+        self.timers.borrow_mut().insert(id, timeout);
+    }
+
+    fn pause(&self, id: NotificationId) {
+        self.timers.borrow_mut().remove(&id);
+    }
+
+    /// Start the fade-out animation, then remove the notification.
+    fn dismiss(&self, id: NotificationId) {
+        self.state.dispatch(NotificationAction::FadeOut(id));
+        let this = self.clone();
+        Timeout::new(FADE_OUT_MS, move || {
+            this.state.dispatch(NotificationAction::Remove(id));
+            this.timers.borrow_mut().remove(&id);
+        })
+        .forget();
+    }
+}
+
 /// Context for managing notifications throughout the application
 #[derive(Clone)]
 pub struct NotificationContext {
-    state: UseStateHandle<Vec<Notification>>,
+    timers: DismissTimers,
     next_id: Rc<RefCell<NotificationId>>,
-    /// Callback to schedule removal after timeout
-    schedule_removal: Callback<NotificationId>,
 }
 
 impl PartialEq for NotificationContext {
     fn eq(&self, other: &Self) -> bool {
-        // Compare by the current notification list
-        *self.state == *other.state
+        self.timers.state == other.timers.state
     }
 }
 
@@ -126,33 +183,10 @@ impl NotificationContext {
         if builder.level == NotificationLevel::Error {
             log::error!("Notification: {}", builder.message);
         }
-        let notification = builder.build(id);
-
-        let mut notifications = (*self.state).clone();
-        notifications.push(notification);
-        self.state.set(notifications);
-
-        // Schedule auto-removal
-        self.schedule_removal.emit(id);
-    }
-
-    /// Dismiss a notification by ID (starts fade-out animation)
-    pub fn dismiss(&self, id: NotificationId) {
-        let mut notifications = (*self.state).clone();
-        if let Some(notification) = notifications.iter_mut().find(|n| n.id == id) {
-            notification.fading_out = true;
-        }
-        self.state.set(notifications);
-    }
-
-    /// Remove a notification immediately (after fade-out animation completes)
-    pub fn remove(&self, id: NotificationId) {
-        let notifications: Vec<_> = (*self.state)
-            .iter()
-            .filter(|n| n.id != id)
-            .cloned()
-            .collect();
-        self.state.set(notifications);
+        self.timers
+            .state
+            .dispatch(NotificationAction::Push(builder.build(id)));
+        self.timers.schedule(id);
     }
 }
 
@@ -165,70 +199,40 @@ pub struct NotificationProviderProps {
 /// Provider component that wraps the application and provides notification context
 #[component(NotificationProvider)]
 pub fn notification_provider(props: &NotificationProviderProps) -> Html {
-    let notifications_state = use_state(Vec::<Notification>::new);
+    let state = use_reducer(Notifications::default);
     let next_id = use_mut_ref(|| 0u32);
-    let timeouts = use_mut_ref(Vec::<(NotificationId, Timeout)>::new);
-
-    // Create callback for scheduling removal
-    let schedule_removal = {
-        let notifications_state = notifications_state.clone();
-        let timeouts = timeouts.clone();
-        Callback::from(move |id: NotificationId| {
-            let notifications_state = notifications_state.clone();
-            let timeouts_for_store = timeouts.clone();
-
-            // First timeout: start fade-out animation
-            let timeout = Timeout::new(AUTO_DISMISS_MS, move || {
-                // Mark as fading out
-                let mut notifications = (*notifications_state).clone();
-                if let Some(notification) = notifications.iter_mut().find(|n| n.id == id) {
-                    notification.fading_out = true;
-                }
-                notifications_state.set(notifications);
-
-                // Second timeout: remove after animation.
-                // `Timeout::forget()` so it is not cancelled when dropped.
-                let notifications_state = notifications_state.clone();
-                Timeout::new(300, move || {
-                    let notifications: Vec<_> = (*notifications_state)
-                        .iter()
-                        .filter(|n| n.id != id)
-                        .cloned()
-                        .collect();
-                    notifications_state.set(notifications);
-                })
-                .forget();
-            });
-
-            timeouts_for_store.borrow_mut().push((id, timeout));
-        })
+    let timer_map = use_mut_ref(HashMap::new);
+    let timers = DismissTimers {
+        state: state.clone(),
+        timers: timer_map,
     };
 
-    let context = NotificationContext {
-        state: notifications_state.clone(),
-        next_id,
-        schedule_removal,
-    };
-
-    // Create dismiss callback for the toast component
     let on_dismiss = {
-        let context = context.clone();
-        Callback::from(move |id: NotificationId| {
-            context.dismiss(id);
-            // Remove after animation
-            let context = context.clone();
-            let _timeout = Timeout::new(300, move || {
-                context.remove(id);
-            });
+        let timers = timers.clone();
+        Callback::from(move |id| {
+            timers.pause(id);
+            timers.dismiss(id);
         })
     };
+    let on_hover = {
+        let timers = timers.clone();
+        Callback::from(move |id| timers.pause(id))
+    };
+    let on_unhover = {
+        let timers = timers.clone();
+        Callback::from(move |id| timers.schedule(id))
+    };
+
+    let context = NotificationContext { timers, next_id };
 
     html! {
         <ContextProvider<NotificationContext> context={context}>
             { props.children.clone() }
             <NotificationToast
-                notifications={(*notifications_state).clone()}
-                on_dismiss={on_dismiss}
+                notifications={state.0.clone()}
+                {on_dismiss}
+                {on_hover}
+                {on_unhover}
             />
         </ContextProvider<NotificationContext>>
     }
@@ -239,6 +243,8 @@ pub fn notification_provider(props: &NotificationProviderProps) -> Html {
 struct NotificationToastProps {
     notifications: Vec<Notification>,
     on_dismiss: Callback<NotificationId>,
+    on_hover: Callback<NotificationId>,
+    on_unhover: Callback<NotificationId>,
 }
 
 /// Component that renders the notification toasts
@@ -254,6 +260,14 @@ fn notification_toast(props: &NotificationToastProps) -> Html {
                 let id = notification.id;
                 let on_dismiss = props.on_dismiss.clone();
                 let onclick = Callback::from(move |_| on_dismiss.emit(id));
+                let onmouseenter = props.on_hover.reform(move |_| id);
+                let fading_out = notification.fading_out;
+                let on_unhover = props.on_unhover.clone();
+                let onmouseleave = Callback::from(move |_| {
+                    if !fading_out {
+                        on_unhover.emit(id);
+                    }
+                });
 
                 let class = classes!(
                     "notification-toast",
@@ -262,7 +276,7 @@ fn notification_toast(props: &NotificationToastProps) -> Html {
                 );
 
                 html! {
-                    <div class={class} key={notification.id}>
+                    <div class={class} key={notification.id} {onmouseenter} {onmouseleave}>
                         <span class="notification-icon">{ notification.level.icon() }</span>
                         <span class="notification-message">{ &notification.message }</span>
                         <button

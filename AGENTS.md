@@ -232,7 +232,7 @@ notifications.push(Notification::info("Processing..."));
 
 - `NotificationProvider` wraps the app in `app.rs`
 - `NotificationContext` is available to all components via `use_context`
-- Notifications auto-dismiss after 5 seconds with fade-out animation
+- Notifications auto-dismiss after 5 seconds with fade-out animation; hovering a notification pauses its timer
 - Users can manually dismiss via the X button
 - Styles in `styles/components/_notifications.scss`
 
