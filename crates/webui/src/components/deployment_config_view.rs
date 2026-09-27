@@ -151,8 +151,12 @@ fn backtrace_sources(table: &Value) -> Vec<SourceView> {
 }
 
 /// The script source of a JS/exec component: inline `content`, or its `location`
-/// resolved to an OCI image, a CAS blob (by `content_digest`), or an external path.
-fn script_source(table: &Value, inline_extension: Option<&str>) -> Option<SourceView> {
+/// resolved to an OCI image, a deployment-owned file, or an external path.
+fn script_source(
+    table: &Value,
+    inline_extension: Option<&str>,
+    files: &[grpc_client::FileRef],
+) -> Option<SourceView> {
     if let Some(content) = table.get("content").and_then(Value::as_str) {
         let file_name = table.get("location").and_then(Value::as_str).map_or_else(
             || {
@@ -180,11 +184,12 @@ fn script_source(table: &Value, inline_extension: Option<&str>) -> Option<Source
         });
     }
     let file_name = file_name_of(location);
-    match table.get("content_digest").and_then(Value::as_str) {
-        Some(digest) => Some(SourceView {
+    let path = deployment_relative_path(location);
+    match files.iter().find(|file| file.path == path) {
+        Some(file) => Some(SourceView {
             file_name,
             content: SourceContent::FetchFile {
-                digest: digest.to_string(),
+                digest: file.digest.clone(),
             },
             metadata: None,
         }),
@@ -207,8 +212,21 @@ fn file_name_of(location: &str) -> String {
         .to_string()
 }
 
-/// Build the per-section view model from a parsed `deployment.toml` manifest.
-pub fn build_sections_from_manifest(manifest: &Value) -> Vec<SectionView> {
+/// Normalize a `location` the way the server keys `files[].path` (drops `.` and empty segments).
+fn deployment_relative_path(location: &str) -> String {
+    location
+        .split('/')
+        .filter(|segment| !segment.is_empty() && *segment != ".")
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Build the per-section view model from a parsed `deployment.toml` manifest and the
+/// deployment-owned `files` it references.
+pub fn build_sections_from_manifest(
+    manifest: &Value,
+    files: &[grpc_client::FileRef],
+) -> Vec<SectionView> {
     let mut sections = Vec::new();
     for (toml_key, title) in MANIFEST_SECTIONS {
         let Some(tables) = manifest.get(toml_key).and_then(Value::as_array) else {
@@ -226,7 +244,7 @@ pub fn build_sections_from_manifest(manifest: &Value) -> Vec<SectionView> {
                 let mut sources = Vec::new();
                 if has_script {
                     let inline_extension = toml_key.ends_with("_js").then_some("js");
-                    if let Some(source) = script_source(table, inline_extension) {
+                    if let Some(source) = script_source(table, inline_extension, files) {
                         sources.push(source);
                     }
                     strip_path(&mut config, &["content"]);
@@ -631,12 +649,15 @@ mod tests {
 
     #[test]
     fn activity_vm_is_rendered_as_a_component_section() {
-        let sections = build_sections_from_manifest(&json!({
-            "activity_vm": [{
-                "name": "sandboxed-task",
-                "nix": { "packages": ["hello"] }
-            }]
-        }));
+        let sections = build_sections_from_manifest(
+            &json!({
+                "activity_vm": [{
+                    "name": "sandboxed-task",
+                    "nix": { "packages": ["hello"] }
+                }]
+            }),
+            &[],
+        );
 
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].toml_key, "activity_vm");
