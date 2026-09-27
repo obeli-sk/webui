@@ -309,28 +309,27 @@ pub fn component_list_page(
                     .name
                     .clone();
                 wasm_bindgen_futures::spawn_local(async move {
-                    let response = rest::get::<serde_json::Value>(
-                        &format!("/v1/deployments/{}", deployment_id.id),
-                        &[("include_generated_metadata", "false".to_string())],
-                    )
-                    .await;
+                    let response = rest::deployments::get(&deployment_id.id).await;
                     match response {
-                        Ok(response) => {
-                            let result = response
-                                .get("deployment_toml")
-                                .and_then(serde_json::Value::as_str)
+                        Ok(deployment) => {
+                            let result = deployment
+                                .deployment_toml
+                                .as_deref()
                                 .map(|manifest| {
                                     let manifest = toml::from_str::<serde_json::Value>(manifest)
                                         .map_err(|error| error.to_string())?;
-                                    let sources = build_sections_from_manifest(&manifest)
-                                        .into_iter()
-                                        .find_map(|section| {
-                                            section
-                                                .components
-                                                .into_iter()
-                                                .find(|component| component.name == component_name)
-                                                .map(|component| component.sources)
-                                        });
+                                    let sources =
+                                        build_sections_from_manifest(&manifest, &deployment.files)
+                                            .into_iter()
+                                            .find_map(|section| {
+                                                section
+                                                    .components
+                                                    .into_iter()
+                                                    .find(|component| {
+                                                        component.name == component_name
+                                                    })
+                                                    .map(|component| component.sources)
+                                            });
                                     Ok(MANIFEST_SECTIONS.iter().find_map(|(toml_key, _)| {
                                         manifest
                                             .get(toml_key)

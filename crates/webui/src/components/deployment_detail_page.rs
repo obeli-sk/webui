@@ -219,7 +219,7 @@ pub fn deployment_detail_page(
 
     // A deployment is empty when its manifest parses but yields no component sections.
     let is_empty = matches!(&parsed_manifest, Some(Ok(manifest))
-        if build_sections_from_manifest(manifest).is_empty());
+        if build_sections_from_manifest(manifest, &deployment.files).is_empty());
 
     let components_html = match &parsed_manifest {
         None => html! { <p>{"The server did not return the deployment manifest."}</p> },
@@ -237,7 +237,7 @@ pub fn deployment_detail_page(
             </>}
         }
         Some(Ok(manifest)) => {
-            let sections = build_sections_from_manifest(manifest);
+            let sections = build_sections_from_manifest(manifest, &deployment.files);
             if sections.is_empty() {
                 html! { <p>{"This deployment is empty."}</p> }
             } else {

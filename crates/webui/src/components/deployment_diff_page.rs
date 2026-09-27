@@ -341,7 +341,7 @@ async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<Deployment
         .ok_or_else(|| format!("deployment {} has no manifest", deployment_id.id))?;
     let config = toml::from_str(&deployment_toml)
         .map_err(|e| format!("cannot parse manifest of {}: {e}", deployment_id.id))?;
-    let sections = build_sections_from_manifest(&config);
+    let sections = build_sections_from_manifest(&config, &deployment.files);
 
     let components_by_name = rest::components::list(Some(&deployment_id.id), None)
         .await
