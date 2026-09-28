@@ -29,11 +29,11 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Populate the nix store without Obelisk
         run: |
-          nix develop .#noObelisk --command echo
+          nix develop --command echo
 
       - name: Bump Cargo.lock, Cargo.toml
         run: |
-          nix develop .#noObelisk --command cargo update
+          nix develop --command cargo update
 
       - name: Configure Git
         run: |

@@ -37,10 +37,10 @@ jobs:
             extra-trusted-public-keys = obeli-sk.cachix.org-1:31iM9GWSEhAXvvuTWQ7CvAcwvgRzsuJ9yJghywSd3Jw=
       - name: Populate the nix store
         run: |
-          nix develop .#noObelisk --command echo
+          nix develop --command echo
 
       - name: cargo fmt
-        run: nix develop .#noObelisk --command cargo fmt --check
+        run: nix develop --command cargo fmt --check
 
   check-dev-deps:
     runs-on: ubuntu-latest
@@ -89,10 +89,10 @@ jobs:
             extra-trusted-public-keys = obeli-sk.cachix.org-1:31iM9GWSEhAXvvuTWQ7CvAcwvgRzsuJ9yJghywSd3Jw=
       - name: Populate the nix store
         run: |
-          nix develop .#noObelisk --command echo
+          nix develop --command echo
 
       - name: cargo clippy
-        run: nix develop .#noObelisk --command cargo clippy --workspace --all-targets -- -D warnings
+        run: nix develop --command cargo clippy --workspace --all-targets -- -D warnings
 
   test:
     runs-on: ubuntu-latest
@@ -110,7 +110,7 @@ jobs:
             extra-trusted-public-keys = obeli-sk.cachix.org-1:31iM9GWSEhAXvvuTWQ7CvAcwvgRzsuJ9yJghywSd3Jw=
       - name: Populate the nix store
         run: |
-          nix develop .#noObelisk --command echo
+          nix develop --command echo
 
       - name: cargo test
-        run: nix develop .#noObelisk --command cargo test -p webui -p webui-proxy
+        run: nix develop --command cargo test -p webui -p webui-proxy

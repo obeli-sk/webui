@@ -37,7 +37,7 @@ jobs:
             extra-trusted-public-keys = obeli-sk.cachix.org-1:31iM9GWSEhAXvvuTWQ7CvAcwvgRzsuJ9yJghywSd3Jw=
 
       - name: Populate the nix store
-        run: nix develop .#withObelisk --command echo
+        run: nix develop --command echo
 
       # Step 1: Sync obelisk submodule to latest main
       - name: Sync obelisk submodule to latest main
@@ -70,7 +70,7 @@ jobs:
 
       - name: Build and push webui
         run: |
-          nix develop .#withObelisk --command ./scripts/push-webui.sh "$TAG" "${{ steps.obelisk-clone.outputs.obelisk_dir }}/crates/embedded-assets/webui-version.txt"
+          nix develop --command ./scripts/push-webui.sh "$TAG" "${{ steps.obelisk-clone.outputs.obelisk_dir }}/crates/embedded-assets/webui-version.txt"
         env:
           TAG: ${{ github.event.inputs.tag }}
 

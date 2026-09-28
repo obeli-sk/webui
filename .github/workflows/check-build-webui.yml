@@ -33,10 +33,10 @@ jobs:
             extra-trusted-public-keys = obeli-sk.cachix.org-1:31iM9GWSEhAXvvuTWQ7CvAcwvgRzsuJ9yJghywSd3Jw=
       - name: Populate the nix store
         run: |
-          nix develop .#noObelisk --command echo
+          nix develop --command echo
 
       - name: Populate the nix store
-        run: nix develop .#noObelisk --command echo
+        run: nix develop --command echo
 
       - name: Build webui + proxy
-        run: nix develop .#noObelisk --command ./scripts/push-webui.sh dry-run
+        run: nix develop --command ./scripts/push-webui.sh dry-run
