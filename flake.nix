@@ -8,16 +8,8 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
-    obelisk = {
-      url = "github:obeli-sk/obelisk/latest-rc";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        flake-utils.follows = "flake-utils";
-        rust-overlay.follows = "rust-overlay";
-      };
-    };
   };
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, obelisk }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
     flake-utils.lib.eachDefaultSystem
       (system:
         let
@@ -36,24 +28,18 @@
             gh
             jq
             just
+            oras
             rustToolchain
             dart-sass # SCSS compiler for styles
             trunk
             wasm-bindgen-cli
             yq-go
           ];
-          withObelisk = commonDeps ++ [ obelisk.packages.${system}.default ];
-          noObeliskShell = pkgs.mkShell {
-            nativeBuildInputs = commonDeps;
-          };
-          withObeliskShell = pkgs.mkShell {
-            nativeBuildInputs = withObelisk;
-          };
         in
         {
-          devShells.noObelisk = noObeliskShell;
-          devShells.withObelisk = withObeliskShell;
-          devShells.default = noObeliskShell;
+          devShells.default = pkgs.mkShell {
+            nativeBuildInputs = commonDeps;
+          };
         }
       );
 }

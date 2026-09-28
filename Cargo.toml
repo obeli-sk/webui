@@ -4,6 +4,7 @@ members = [
     "obelisk/crates/val-json",
     "crates/webui",
     "crates/webui-proxy",
+    "crates/webui-oci-config",
 ]
 
 [workspace.package]
@@ -66,6 +67,7 @@ rand = "0.9"
 schemars = { version = "1.2.1", features = ["indexmap2", "chrono04"] }
 serde = "1"
 serde_json = { version = "1.0.149", features = ["preserve_order"] }
+sha2 = "0.10"
 serde_with = "3.16.1"
 similar = "2"
 toml = { version = "1.1.2", features = ["preserve_order"] }

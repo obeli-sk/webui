@@ -3350,6 +3350,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "webui-oci-config"
+version = "0.28.1"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "sha2",
+ "wit-component",
+]
+
+[[package]]
 name = "webui-proxy"
 version = "0.28.1"
 dependencies = [

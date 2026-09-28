@@ -25,7 +25,7 @@ rm -f dev-deps.txt
 cargo upgrade --version >> dev-deps.txt
 cargo-expand --version >> dev-deps.txt
 just --version >> dev-deps.txt
-nix develop .#withObelisk --command obelisk --version >> dev-deps.txt
+oras version | awk '$1 == "Version:" { print "oras", $2 }' >> dev-deps.txt
 rustc --version >> dev-deps.txt
 
 echo "sass $(sass --version)" >> dev-deps.txt # dart-sass for SCSS compilation
