@@ -58,9 +58,9 @@ jobs:
             extra-trusted-public-keys = obeli-sk.cachix.org-1:31iM9GWSEhAXvvuTWQ7CvAcwvgRzsuJ9yJghywSd3Jw=
       - name: Populate the nix store
         run: |
-          nix develop .#withObelisk --command echo
+          nix develop --command echo
 
-      - run: nix develop .#withObelisk --command ./scripts/dev-deps.sh
+      - run: nix develop --command ./scripts/dev-deps.sh
 
       - run: cat dev-deps.txt
 
