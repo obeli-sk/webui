@@ -123,7 +123,7 @@ fn is_finished_any(msg: &get_status_response::Message) -> bool {
 }
 
 /// Extracts the execution status from a GetStatusResponse message
-fn extract_status(
+pub fn extract_status(
     msg: &get_status_response::Message,
 ) -> Option<grpc_client::execution_status::Status> {
     match msg {

@@ -258,8 +258,8 @@ pub fn system_events_page() -> Html {
         let current_run_id = current_run_id.deref().clone();
         let current_deployment_id = current_deployment_id.clone();
         use_effect_with(
-            (query, current_run_id, current_deployment_id),
-            move |(query, current_run_id, current_deployment_id)| {
+            (query, current_run_id, current_deployment_id, location.id()),
+            move |(query, current_run_id, current_deployment_id, _)| {
                 if let Some(event_id) = query.id.clone() {
                     response.set(None);
                     spawn_local(async move {

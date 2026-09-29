@@ -1,7 +1,7 @@
 use crate::{
     app::{AppState, Route},
     components::{
-        execution_status::{ExecutionStatus, StatusCacheContext, StatusState},
+        execution_status::{ExecutionStatus, StatusCacheContext, StatusState, extract_status},
         ffqn_with_links::FfqnWithLinks,
         notification::{Notification, NotificationContext},
     },
@@ -639,8 +639,6 @@ pub fn execution_list_page() -> Html {
     // State to hold the API response
     let response_state = use_state(|| None);
 
-    let refresh_counter_state = use_state(|| 0); // Force calling use_effect
-
     // Cache status to persist across pagination/refresh
     let status_cache = use_reducer_eq(StatusState::default);
 
@@ -649,18 +647,17 @@ pub fn execution_list_page() -> Html {
     let component_digest_ref = use_node_ref();
     let ffqn_prefix_state = use_state(|| query.ffqn_prefix.clone().unwrap_or_default());
 
-    // Effect: Fetch data when the URL query changes
+    // Effect: Fetch data on every navigation, even to the same URL
     {
         let query = query.clone();
         let response_state = response_state.clone();
         let prefix_ref = prefix_ref.clone();
         let deployment_id_ref = deployment_id_ref.clone();
         let component_digest_ref = component_digest_ref.clone();
-        let refresh_counter_state = refresh_counter_state.clone();
         let notifications = notifications.clone();
         let ffqn_prefix_state = ffqn_prefix_state.clone();
 
-        use_effect_with((query, *refresh_counter_state), move |(query_params, _)| {
+        use_effect_with((query, location.id()), move |(query_params, _)| {
             let query_params = query_params.clone();
 
             spawn_local(async move {
@@ -744,7 +741,6 @@ pub fn execution_list_page() -> Html {
         let prefix_ref = prefix_ref.clone();
         let deployment_id_ref = deployment_id_ref.clone();
         let component_digest_ref = component_digest_ref.clone();
-        let refresh_counter_state = refresh_counter_state.clone();
         let ffqn_prefix_state = ffqn_prefix_state.clone();
         Callback::from(move |_| {
             let mut new_query = query.clone();
@@ -771,7 +767,6 @@ pub fn execution_list_page() -> Html {
                 .value();
             new_query.component_digest = (!component_digest.is_empty()).then_some(component_digest);
 
-            refresh_counter_state.set(*refresh_counter_state + 1);
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
@@ -827,7 +822,6 @@ pub fn execution_list_page() -> Html {
         let prefix_ref = prefix_ref.clone();
         let deployment_id_ref = deployment_id_ref.clone();
         let component_digest_ref = component_digest_ref.clone();
-        let refresh_counter_state = refresh_counter_state.clone();
         let ffqn_prefix_state = ffqn_prefix_state.clone();
         Callback::from(move |ffqn_prefix: Option<String>| {
             ffqn_prefix_state.set(ffqn_prefix.clone().unwrap_or_default());
@@ -853,7 +847,6 @@ pub fn execution_list_page() -> Html {
                 .value();
             new_query.component_digest = (!component_digest.is_empty()).then_some(component_digest);
 
-            refresh_counter_state.set(*refresh_counter_state + 1);
             let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
         })
     };
@@ -875,10 +868,13 @@ pub fn execution_list_page() -> Html {
             let hide_submit = !app_state.ffqns_to_details.contains_key(&ffqn);
 
             let created_at: DateTime<Utc> = execution.created_at.expect("`created_at` is sent").into();
-            let durated = if let Some( grpc_client::ExecutionStatus{ status: Some(status),..}) = &execution.current_status
-                && let grpc_client::execution_status::Status::Finished(finished) = status
-
-             {
+            // Prefer the live status polled by `ExecutionStatus` over the fetched one.
+            let current_status = status_cache
+                .statuses
+                .get(&execution_id)
+                .and_then(extract_status)
+                .or_else(|| status.clone());
+            let durated = if let Some(grpc_client::execution_status::Status::Finished(finished)) = &current_status {
                 Some(DateTime::from(finished.finished_at.unwrap()) - DateTime::from(execution.first_scheduled_at.unwrap()))
             } else {
                 None

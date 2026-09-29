@@ -131,44 +131,47 @@ pub fn deployment_list_page() -> Html {
     // Deployment IDs selected for the diff tool.
     let selected_for_diff = use_state(BTreeSet::<String>::new);
 
-    // Effect: Fetch data when the URL query changes or deployment changes
+    // Effect: Fetch data on every navigation (even to the same URL) or deployment change
     {
         let query = query.clone();
         let response_state = response_state.clone();
         let notifications = notifications.clone();
 
-        use_effect_with((query, current_deployment_id), move |(query_params, _)| {
-            let query_params = query_params.clone();
+        use_effect_with(
+            (query, current_deployment_id, location.id()),
+            move |(query_params, _, _)| {
+                let query_params = query_params.clone();
 
-            spawn_local(async move {
-                let page_size = 10;
-                let direction = match query_params.direction.unwrap_or_default() {
-                    Direction::Older => "older",
-                    Direction::Newer => "newer",
-                };
-                debug!("Fetching deployments with direction: {direction}");
-                let response = rest::deployments::list(
-                    query_params.cursor.as_ref().map(|cursor| cursor.0.as_str()),
-                    direction,
-                    page_size,
-                    query_params.include_cursor,
-                    false,
-                    true,
-                )
-                .await;
+                spawn_local(async move {
+                    let page_size = 10;
+                    let direction = match query_params.direction.unwrap_or_default() {
+                        Direction::Older => "older",
+                        Direction::Newer => "newer",
+                    };
+                    debug!("Fetching deployments with direction: {direction}");
+                    let response = rest::deployments::list(
+                        query_params.cursor.as_ref().map(|cursor| cursor.0.as_str()),
+                        direction,
+                        page_size,
+                        query_params.include_cursor,
+                        false,
+                        true,
+                    )
+                    .await;
 
-                match response {
-                    Ok(deployments) => response_state.set(Some(deployments)),
-                    Err(e) => {
-                        error!("Failed to list deployments: {:?}", e);
-                        notifications.push(Notification::error(format!(
-                            "Failed to list deployments: {}",
-                            e
-                        )));
+                    match response {
+                        Ok(deployments) => response_state.set(Some(deployments)),
+                        Err(e) => {
+                            error!("Failed to list deployments: {:?}", e);
+                            notifications.push(Notification::error(format!(
+                                "Failed to list deployments: {}",
+                                e
+                            )));
+                        }
                     }
-                }
-            })
-        });
+                })
+            },
+        );
     }
 
     // Clicked on "Latest" - reset to default query
