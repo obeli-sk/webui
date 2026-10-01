@@ -587,7 +587,9 @@ pub fn deployment_config_view(
             if visible == 0 {
                 <p class="component-empty-state">{"No components match this name."}</p>
             }
-            {for sections.iter().filter_map(|section| {
+            // A nested fragment keeps the keyed sections out of the unkeyed siblings, otherwise
+            // filtering recreates the search input and it loses focus.
+            <>{for sections.iter().filter_map(|section| {
                 let matches = section.components.iter()
                     .filter(|component| component.name.to_lowercase().contains(&query))
                     .collect::<Vec<_>>();
@@ -612,7 +614,7 @@ pub fn deployment_config_view(
                         </section>
                     })
                 }
-            })}
+            })}</>
         </>
     }
 }
