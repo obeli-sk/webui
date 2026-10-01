@@ -9,7 +9,7 @@
 .deployments-filter {
   margin-bottom: 1em;
   padding: 1em;
-  border: 1px solid #ccc;
+  border: 1px solid $color-border-primary;
 }
 
 .deployments-filter > * {
@@ -110,7 +110,7 @@
   }
 
   &.selected {
-    background-color: rgba($color-accent-cyan, 0.16);
+    background-color: color-mix(in srgb, $color-accent-cyan 16%, transparent);
     color: $color-accent-cyan;
   }
 }

@@ -27,28 +27,28 @@
 
     // Syntax highlighting classes
     .keyword {
-      color: #0077b6;
+      color: $color-accent-cyan;
       font-weight: bold;
     }
 
     .type {
-      color: #9b59b6;
+      color: $color-accent-purple;
     }
 
     .func {
-      color: #ac9a40;
+      color: $color-status-warning;
     }
 
     .version {
-      color: #6fa5c9;
+      color: $color-accent-cyan;
     }
 
     .param {
-      color: #7f8c8d;
+      color: $color-text-secondary;
     }
 
     .case {
-      color: #2980b9;
+      color: $color-accent-cyan;
     }
   }
 }
@@ -103,7 +103,7 @@
 
   // Focused line highlight
   tr.line-focused td.line-code {
-    background-color: rgba(255, 255, 0, 0.1);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 0, 0.2);
+    background-color: color-mix(in srgb, $color-status-warning 12%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, $color-status-warning 25%, transparent);
   }
 }

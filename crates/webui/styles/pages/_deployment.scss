@@ -372,7 +372,7 @@
         }
 
         &.active {
-            color: $color-text-white;
+            color: $color-accent-cyan;
             border-bottom-color: $color-accent-cyan;
         }
     }
@@ -460,33 +460,33 @@
 
     &.current {
         background-color: $color-accent-green;
-        color: $color-bg-primary;
+        color: var(--on-status);
     }
 
     &.enqueued,
     &.changed {
-        background-color: #b58900;
-        color: $color-bg-primary;
+        background-color: $color-status-warning;
+        color: var(--on-status);
     }
 
     &.inactive {
-        background-color: #586e75;
-        color: $color-text-white;
+        background-color: $color-bg-elevated;
+        color: $color-text-primary;
     }
 
     &.added {
         background-color: $color-accent-green;
-        color: $color-bg-primary;
+        color: var(--on-status);
     }
 
     &.removed {
-        background-color: #dc322f;
-        color: $color-text-white;
+        background-color: $color-accent-red;
+        color: var(--on-status);
     }
 
     &.dangerous-exec {
         background-color: transparent;
-        border: 1px solid #dc322f;
-        color: #dc322f;
+        border: 1px solid $color-accent-red;
+        color: $color-accent-red;
     }
 }

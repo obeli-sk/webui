@@ -55,7 +55,7 @@
   &.is-created {
     border-color: $color-accent-green;
     color: $color-accent-green;
-    background: rgba($color-accent-green, 0.1);
+    background: color-mix(in srgb, $color-accent-green 10%, transparent);
   }
 
   &.is-finished {
@@ -67,7 +67,7 @@
   &.is-error {
     border-color: $color-accent-red;
     color: $color-accent-red;
-    background: rgba($color-accent-red, 0.1);
+    background: color-mix(in srgb, $color-accent-red 10%, transparent);
   }
 }
 

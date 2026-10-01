@@ -19,13 +19,13 @@
 
     &.current {
       background-color: $color-accent-green;
-      color: $color-bg-primary;
+      color: var(--on-status);
     }
 
     &.dangerous-exec {
       background-color: transparent;
-      border: 1px solid #dc322f;
-      color: #dc322f;
+      border: 1px solid $color-accent-red;
+      color: $color-accent-red;
     }
 
     &.empty {
@@ -40,7 +40,7 @@
 // Renamed from `.label` to avoid collision with syntect tokens
 // (syntect emits e.g. `class="entity name label js"` which matched the old global `.label`)
 .component-type-label {
-  background-color: $color-border-secondary;
+  background-color: $color-accent-cyan;
   color: $color-text-white;
   padding: 4px 6px;
   border-radius: $border-radius-md;

@@ -32,12 +32,12 @@
 
   // For actions that skip a safety step (e.g. enqueueing without verification).
   &.warning {
-    background-color: #b58900;
-    border-color: #b58900;
-    color: $color-bg-primary;
+    background-color: $color-status-warning;
+    border-color: $color-status-warning;
+    color: var(--on-status);
 
     &:hover:not(:disabled) {
-      background-color: #c9a227;
+      background-color: color-mix(in srgb, $color-status-warning 85%, $color-text-primary);
     }
   }
 
@@ -47,7 +47,7 @@
     color: $color-text-white;
 
     &:hover:not(:disabled) {
-      background-color: #42a5f5;
+      background-color: $color-accent-yellow;
     }
   }
 
@@ -55,10 +55,10 @@
   &.armed {
     background-color: $color-accent-red;
     border-color: $color-accent-red;
-    color: $color-bg-primary;
+    color: var(--on-status);
 
     &:hover:not(:disabled) {
-      background-color: #ff7070;
+      background-color: color-mix(in srgb, $color-accent-red 85%, $color-text-primary);
     }
   }
 }
@@ -71,7 +71,7 @@
   border: none;
   border-top: 1px solid $color-border-primary;
   background-color: $color-bg-elevated;
-  color: #ccc;
+  color: $color-text-primary;
   text-align: center;
   cursor: pointer;
   font-size: $font-size-sm;
@@ -102,7 +102,7 @@
 
   &:hover {
     background-color: $color-border-secondary;
-    color: $color-text-white;
+    color: $color-text-primary;
     text-decoration: none;
   }
 }

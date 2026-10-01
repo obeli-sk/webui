@@ -52,7 +52,7 @@
     margin-left: $spacing-sm;
     padding: 0.05rem $spacing-sm;
     border-radius: 999px;
-    background-color: rgba($color-accent-cyan, 0.12);
+    background-color: color-mix(in srgb, $color-accent-cyan 12%, transparent);
     color: $color-accent-cyan;
     font-size: $font-size-xs;
   }
@@ -78,7 +78,7 @@
 
   &:has(input:checked) {
     border-color: $color-border-secondary;
-    background-color: rgba($color-accent-cyan, 0.08);
+    background-color: color-mix(in srgb, $color-accent-cyan 8%, transparent);
     color: $color-text-primary;
   }
 
@@ -233,7 +233,7 @@
   min-width: 0;
   gap: $spacing-md;
   padding-top: $spacing-xs;
-  border-top: 1px solid rgba($color-border-primary, 0.6);
+  border-top: 1px solid color-mix(in srgb, $color-border-primary 60%, transparent);
   font-family: $font-family-mono;
   font-size: $font-size-xs;
 }

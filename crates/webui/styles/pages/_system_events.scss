@@ -42,7 +42,7 @@
 }
 
 .system-event-filter-group button.selected {
-  background: rgba($color-accent-cyan, 0.15);
+  background: color-mix(in srgb, $color-accent-cyan 15%, transparent);
   border-color: $color-accent-cyan;
   color: $color-accent-cyan;
 }

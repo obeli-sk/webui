@@ -70,7 +70,7 @@
     padding: 0.4em 0.8em;
     margin-right: 0.75rem;
     margin-bottom: $spacing-lg;
-    background-color: #3a3f4c;
+    background-color: $color-bg-elevated;
     color: $color-text-secondary;
     border-radius: $border-radius-md;
     font-size: 0.9em;
@@ -189,7 +189,7 @@
   border-radius: $border-radius-md;
 
   &:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: color-mix(in srgb, $color-text-primary 10%, transparent);
   }
 }
 
@@ -209,7 +209,7 @@
 // Linked highlight applied (via JS) to a tree node and its matching detail event at the
 // same version when the row's link button is pressed, revealing the two counterparts.
 .trace-linked-highlight {
-  background-color: rgba($color-accent-cyan, 0.18);
+  background-color: color-mix(in srgb, $color-accent-cyan 18%, transparent);
   box-shadow: inset 0 0 0 1px $color-accent-cyan;
   border-radius: $border-radius-md;
 }
@@ -231,7 +231,7 @@
   text-decoration: none;
 
   &:hover {
-    background-color: rgba($color-accent-cyan, 0.18);
+    background-color: color-mix(in srgb, $color-accent-cyan 18%, transparent);
     color: $color-accent-cyan;
     text-decoration: none;
   }
@@ -299,7 +299,7 @@
 
 .total-duration-line {
   height: 100%;
-  background-color: #ddd;
+  background-color: $color-bg-elevated;
   position: relative;
 }
 

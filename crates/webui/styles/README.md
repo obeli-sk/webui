@@ -9,6 +9,7 @@ styles/
 ├── styles.scss         # Main entry point - imports all partials
 ├── base/               # Foundation styles
 │   ├── _variables.scss # Design tokens (colors, spacing, fonts)
+│   ├── _theme.scss     # Dark and light palettes
 │   └── _reset.scss     # CSS reset and body defaults
 ├── layout/             # Page structure
 │   ├── _container.scss # Main container and pagination
@@ -38,7 +39,7 @@ styles/
 
 ## Design Tokens
 
-All design tokens are defined in `base/_variables.scss`:
+Spacing and type tokens are defined in `base/_variables.scss`. Color tokens there reference CSS custom properties from `base/_theme.scss`, so every view follows the selected theme.
 
 - **Colors**: Background, text, accent, status, and execution state colors
 - **Typography**: Font families, sizes, and line heights
@@ -52,8 +53,10 @@ All design tokens are defined in `base/_variables.scss`:
 The `styles.scss` file imports all partials using the modern `@use` syntax.
 Trunk automatically compiles this to CSS during the build process.
 
+The theme control cycles auto, light, and dark. Auto follows the operating system. Explicit choices are saved under `obelisk-webui-theme` in local storage and applied before first paint by `index.html`. Syntect light colors are generated during the Rust build into `syntect-light.css`.
+
 ## Adding New Styles
 
 1. Create a new partial in the appropriate directory
 2. Add `@use '../base/variables' as *;` at the top to access design tokens
-3. Import the partial in `main.scss`
+3. Import the partial in `styles.scss`

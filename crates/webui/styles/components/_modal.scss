@@ -235,7 +235,7 @@
   }
 
   &.selected {
-    background-color: rgba($color-accent-cyan, 0.1);
+    background-color: color-mix(in srgb, $color-accent-cyan 10%, transparent);
     border-left-color: $color-accent-cyan;
   }
 }

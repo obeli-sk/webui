@@ -1,30 +1,138 @@
-// ============================================
-// Navigation
-// ============================================
 @use '../base/variables' as *;
 
-nav {
+.app-shell { min-height: 100vh; }
+
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid $color-border-primary;
+}
+
+.app-bar-inner {
+  min-height: 4.25rem;
+  max-width: 1800px;
+  margin: auto;
+  padding: 0.65rem clamp(1rem, 2.5vw, 2.5rem);
   display: flex;
   align-items: center;
-  gap: $spacing-lg;
-  margin-bottom: $spacing-lg;
-  padding-bottom: $spacing-md;
-  border-bottom: 1px solid $color-border-primary;
+  justify-content: space-between;
+  gap: 1rem;
+}
 
-  a {
-    color: $color-accent-cyan;
+.app-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: $color-text-primary;
+  font-size: 1.15rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+
+  &:visited, &:hover { color: $color-text-primary; text-decoration: none; }
+}
+
+.app-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid $color-accent-cyan;
+  border-radius: 0.65rem;
+  color: $color-accent-cyan;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.app-brand-caption {
+  border-left: 1px solid $color-border-primary;
+  padding-left: 0.65rem;
+  color: $color-text-secondary;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.app-bar-actions { display: flex; align-items: center; gap: 0.75rem; }
+
+.theme-toggle,
+.app-bar .nav-submit {
+  min-height: 2.3rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  background: $color-bg-secondary;
+  color: $color-text-primary;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+
+  &:hover {
+    background: $color-bg-hover;
+    color: $color-text-primary;
     text-decoration: none;
-    font-weight: bold;
-    transition: color $transition-normal;
-
-    &:hover {
-      color: $color-accent-yellow;
-      text-decoration: underline;
-    }
   }
+}
 
-  .nav-submit {
-    margin-left: auto;
+.app-bar .nav-submit {
+  background: $color-accent-cyan;
+  border-color: $color-accent-cyan;
+  color: $color-text-white;
+  font-weight: 700;
+
+  &:visited, &:hover { color: $color-text-white; }
+  &:hover { background: $color-accent-yellow; }
+}
+
+.app-layout {
+  max-width: 1800px;
+  margin: auto;
+  padding: clamp(1rem, 2.5vw, 2.5rem);
+  display: grid;
+  grid-template-columns: 12.5rem minmax(0, 1fr);
+  gap: clamp(1rem, 2.5vw, 2.5rem);
+  align-items: start;
+}
+
+.app-nav {
+  position: sticky;
+  top: 6rem;
+  display: grid;
+  gap: 1.75rem;
+  padding: 0.75rem 0;
+}
+
+.app-nav-group { display: grid; gap: 0.25rem; }
+
+.app-nav-label {
+  padding: 0.25rem 0.8rem;
+  color: $color-text-muted;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.app-nav a {
+  padding: 0.6rem 0.8rem;
+  border-radius: $border-radius-md;
+  color: $color-text-secondary;
+  font-weight: 600;
+  text-decoration: none;
+
+  &:visited { color: $color-text-secondary; }
+  &:hover { background: $color-bg-secondary; color: $color-accent-cyan; }
+  &.active, &.active:visited {
+    background: color-mix(in srgb, $color-accent-cyan 12%, $color-bg-secondary);
+    color: $color-accent-cyan;
   }
 }
 
@@ -36,7 +144,17 @@ nav {
   color: $color-text-secondary;
   font-size: $font-size-sm;
 
-  .breadcrumb-separator {
-    color: $color-text-muted;
-  }
+  .breadcrumb-separator { color: $color-text-muted; }
+}
+
+@media (max-width: 850px) {
+  .app-layout { display: block; }
+  .app-nav { position: static; display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0 0 1rem; }
+  .app-nav-group { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .app-nav-label { display: none; }
+}
+
+@media (max-width: 520px) {
+  .app-brand-caption, .theme-toggle span:last-child { display: none; }
+  .app-bar .nav-submit { padding-inline: 0.55rem; }
 }
