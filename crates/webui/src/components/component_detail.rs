@@ -189,11 +189,18 @@ fn component_file_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<Source
                 },
                 metadata: Some(SourceMetadata {
                     role: component_file_role_label(role),
+                    entrypoint: role == ComponentFileRole::JsEntrypoint,
                 }),
             })
         })
         .collect::<Vec<_>>();
-    sources.sort_by(|a, b| a.file_name.cmp(&b.file_name));
+    let is_entrypoint =
+        |source: &SourceView| source.metadata.as_ref().is_some_and(|m| m.entrypoint);
+    sources.sort_by(|a, b| {
+        is_entrypoint(b)
+            .cmp(&is_entrypoint(a))
+            .then_with(|| a.file_name.cmp(&b.file_name))
+    });
     sources
 }
 
@@ -612,7 +619,7 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn component_files_become_path_sorted_fetchable_sources_with_metadata() {
+    fn component_files_become_entrypoint_first_fetchable_sources_with_metadata() {
         let files = vec![
             component_file(
                 "src/module.js",
@@ -621,7 +628,7 @@ mod tests {
                 ComponentFileRole::JsModule,
             ),
             component_file(
-                "src/entry.js",
+                "src/session.js",
                 "sha256:entry",
                 42,
                 ComponentFileRole::JsEntrypoint,
@@ -638,13 +645,14 @@ mod tests {
         let sources = component_file_sources(&files);
 
         assert_eq!(sources.len(), 2);
-        assert_eq!(sources[0].file_name, "src/entry.js");
+        assert_eq!(sources[0].file_name, "src/session.js");
         assert!(matches!(
             &sources[0].content,
             SourceContent::FetchFile { digest } if digest == "sha256:entry"
         ));
         let metadata = sources[0].metadata.as_ref().unwrap();
         assert_eq!(metadata.role, "JS entrypoint");
+        assert!(metadata.entrypoint);
         assert_eq!(sources[1].file_name, "src/module.js");
     }
 

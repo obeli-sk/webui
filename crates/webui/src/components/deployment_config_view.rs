@@ -55,6 +55,7 @@ pub struct SourceView {
 #[derive(PartialEq, Clone)]
 pub struct SourceMetadata {
     pub role: &'static str,
+    pub entrypoint: bool,
 }
 
 #[derive(PartialEq, Clone)]
@@ -512,12 +513,16 @@ pub fn collapsible_source(
 }
 
 fn source_summary(source: &SourceView) -> Html {
+    let entrypoint = source
+        .metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.entrypoint);
     html! {
-        <summary>
+        <summary class={classes!(entrypoint.then_some("entrypoint"))}>
             <span class="source-file-name">{ &source.file_name }</span>
             if let Some(metadata) = &source.metadata {
                 <span class="source-file-metadata">
-                    <span>{metadata.role}</span>
+                    <span class="source-file-role">{metadata.role}</span>
                 </span>
             }
         </summary>
