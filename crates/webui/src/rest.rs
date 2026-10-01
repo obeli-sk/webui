@@ -23,6 +23,20 @@ pub async fn get<T: DeserializeOwned>(path: &str, query: &[(&str, String)]) -> R
     decode(response).await
 }
 
+pub async fn delete<T: DeserializeOwned>(
+    path: &str,
+    query: &[(&str, String)],
+) -> Result<T, String> {
+    let mut request = Request::delete(&format!("{}{}", crate::BASE_URL, path))
+        .header("Accept", "application/json")
+        .query(query.iter().map(|(key, value)| (*key, value.as_str())));
+    if let Some(token) = crate::auth::token() {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+    let response = request.send().await.map_err(|error| error.to_string())?;
+    decode(response).await
+}
+
 pub async fn get_text(path: &str, query: &[(&str, String)]) -> Result<String, String> {
     let mut request = Request::get(&format!("{}{}", crate::BASE_URL, path))
         .query(query.iter().map(|(key, value)| (*key, value.as_str())));

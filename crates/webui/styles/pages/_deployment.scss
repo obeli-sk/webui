@@ -38,6 +38,43 @@
     }
 }
 
+.deployment-selection-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: $spacing-sm $spacing-md;
+    margin-top: $spacing-lg;
+
+    .action-button {
+        min-height: 2.4rem;
+    }
+}
+
+.deployment-delete-executions {
+    display: inline-flex;
+    align-items: center;
+    gap: $spacing-sm;
+    color: $color-text-secondary;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    input { accent-color: $color-accent-cyan; }
+}
+
+.deployment-delete-button {
+    margin-left: auto;
+
+    &.armed {
+        background-color: $color-accent-red;
+        border-color: $color-accent-red;
+        color: var(--on-status);
+    }
+}
+
+@media (max-width: 620px) {
+    .deployment-delete-button { margin-left: 0; }
+}
+
 .deployment-summary {
     min-width: 0;
 }

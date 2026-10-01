@@ -11,6 +11,7 @@ use crate::{
     util::time::{RelativeAgo, format_date},
 };
 use chrono::DateTime;
+use gloo::timers::callback::Timeout;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -128,18 +129,24 @@ pub fn deployment_list_page() -> Html {
     // State to hold the API response
     let response_state = use_state(|| None);
 
-    // Deployment IDs selected for the diff tool.
-    let selected_for_diff = use_state(BTreeSet::<String>::new);
+    // Selection serves both comparison and deletion.
+    let selected_deployments = use_state(BTreeSet::<String>::new);
+    let delete_executions = use_state(|| false);
+    let delete_armed = use_state(|| false);
+    let delete_in_flight = use_state(|| false);
+    let disarm_timer = use_mut_ref(|| None::<Timeout>);
+    let refresh = use_state(|| 0u32);
 
     // Effect: Fetch data on every navigation (even to the same URL) or deployment change
     {
         let query = query.clone();
         let response_state = response_state.clone();
         let notifications = notifications.clone();
+        let refresh = *refresh;
 
         use_effect_with(
-            (query, current_deployment_id, location.id()),
-            move |(query_params, _, _)| {
+            (query, current_deployment_id, location.id(), refresh),
+            move |(query_params, _, _, _)| {
                 let query_params = query_params.clone();
 
                 spawn_local(async move {
@@ -177,7 +184,11 @@ pub fn deployment_list_page() -> Html {
     // Clicked on "Latest" - reset to default query
     let on_latest = {
         let navigator = navigator.clone();
+        let delete_armed = delete_armed.clone();
+        let disarm_timer = disarm_timer.clone();
         Callback::from(move |_| {
+            delete_armed.set(false);
+            *disarm_timer.borrow_mut() = None;
             let new_query = DeploymentQuery::default();
             let _ = navigator.push_with_query(&Route::DeploymentList, &new_query);
         })
@@ -283,18 +294,22 @@ pub fn deployment_list_page() -> Html {
                     ..Default::default()
                 };
 
-                let on_diff_toggle = {
-                    let selected_for_diff = selected_for_diff.clone();
+                let on_selection_toggle = {
+                    let selected_deployments = selected_deployments.clone();
+                    let delete_armed = delete_armed.clone();
+                    let disarm_timer = disarm_timer.clone();
                     let deployment_id = deployment_id.clone();
                     Callback::from(move |event: Event| {
                         let input: HtmlInputElement = event.target_unchecked_into();
-                        let mut selected = selected_for_diff.deref().clone();
+                        let mut selected = selected_deployments.deref().clone();
                         if input.checked() {
                             selected.insert(deployment_id.clone());
                         } else {
                             selected.remove(&deployment_id);
                         }
-                        selected_for_diff.set(selected);
+                        selected_deployments.set(selected);
+                        delete_armed.set(false);
+                        *disarm_timer.borrow_mut() = None;
                     })
                 };
 
@@ -303,11 +318,13 @@ pub fn deployment_list_page() -> Html {
                         key={deployment_id.clone()}
                         class="deployment-list-item"
                     >
-                        <label class="deployment-compare" title="Select for comparison">
+                        <label class="deployment-compare" title="Select for comparison or deletion">
                             <input
                                 type="checkbox"
-                                checked={selected_for_diff.contains(&deployment_id)}
-                                onchange={on_diff_toggle}
+                                aria-label={format!("Select deployment {deployment_id}")}
+                                checked={selected_deployments.contains(&deployment_id)}
+                                onchange={on_selection_toggle}
+                                disabled={*delete_in_flight}
                             />
                         </label>
                         <div class="deployment-summary">
@@ -322,7 +339,7 @@ pub fn deployment_list_page() -> Html {
                                     }
                                 </Link<Route>>
                                 {status_badge}
-                            {exec_badge}
+                                {exec_badge}
                                 {empty_badge}
                             </div>
                             if description.is_some() {
@@ -359,7 +376,7 @@ pub fn deployment_list_page() -> Html {
         // Deployment IDs are `Dep_<ULID>` so the lexicographic order matches creation order;
         // diff from the older to the newer deployment.
         let diff_route = {
-            let mut selected = selected_for_diff.iter();
+            let mut selected = selected_deployments.iter();
             match (selected.next(), selected.next(), selected.next()) {
                 (Some(older), Some(newer), None) => Some(Route::DeploymentDiff {
                     from: DeploymentId { id: older.clone() },
@@ -405,10 +422,107 @@ pub fn deployment_list_page() -> Html {
 
         let on_page_change = {
             let navigator = navigator.clone();
+            let delete_armed = delete_armed.clone();
+            let disarm_timer = disarm_timer.clone();
             Callback::from(move |query: DeploymentQuery| {
+                delete_armed.set(false);
+                *disarm_timer.borrow_mut() = None;
                 let _ = navigator.push_with_query(&Route::DeploymentList, &query);
             })
         };
+
+        let on_delete_executions_change = {
+            let delete_executions = delete_executions.clone();
+            let delete_armed = delete_armed.clone();
+            let disarm_timer = disarm_timer.clone();
+            Callback::from(move |event: Event| {
+                let input: HtmlInputElement = event.target_unchecked_into();
+                delete_executions.set(input.checked());
+                delete_armed.set(false);
+                *disarm_timer.borrow_mut() = None;
+            })
+        };
+
+        let on_delete_click = {
+            let selected = selected_deployments.deref().clone();
+            let include_executions = *delete_executions;
+            let is_armed = *delete_armed;
+            let delete_armed = delete_armed.clone();
+            let delete_in_flight = delete_in_flight.clone();
+            let selected_deployments = selected_deployments.clone();
+            let disarm_timer = disarm_timer.clone();
+            let notifications = notifications.clone();
+            let refresh = refresh.clone();
+            Callback::from(move |_| {
+                if selected.is_empty() || *delete_in_flight {
+                    return;
+                }
+                if !is_armed {
+                    delete_armed.set(true);
+                    let delete_armed = delete_armed.clone();
+                    *disarm_timer.borrow_mut() = Some(Timeout::new(10000, move || {
+                        delete_armed.set(false);
+                    }));
+                } else {
+                    delete_armed.set(false);
+                    *disarm_timer.borrow_mut() = None;
+                    delete_in_flight.set(true);
+                    let selected_deployments = selected_deployments.clone();
+                    let delete_in_flight = delete_in_flight.clone();
+                    let notifications = notifications.clone();
+                    let refresh = refresh.clone();
+                    let selected = selected.clone();
+                    spawn_local(async move {
+                        let mut deleted = 0;
+                        let mut already_absent = 0;
+                        let mut removed_trees = 0;
+                        let mut failures = Vec::new();
+                        let mut failed_ids = BTreeSet::new();
+                        for deployment_id in selected {
+                            match rest::deployments::delete(&deployment_id, include_executions)
+                                .await
+                            {
+                                Ok(result) if result.deleted => {
+                                    deleted += 1;
+                                    removed_trees += result.deleted_execution_trees;
+                                }
+                                Ok(result) if result.already_deleted => already_absent += 1,
+                                Ok(_) => {
+                                    failures
+                                        .push(format!("{deployment_id}: server did not delete it"));
+                                    failed_ids.insert(deployment_id);
+                                }
+                                Err(error) => {
+                                    failures.push(format!("{deployment_id}: {error}"));
+                                    failed_ids.insert(deployment_id);
+                                }
+                            }
+                        }
+                        delete_in_flight.set(false);
+                        selected_deployments.set(failed_ids);
+                        if deleted + already_absent > 0 {
+                            let mut message = format!(
+                                "Deleted {deleted} deployment(s) and {removed_trees} execution tree(s)"
+                            );
+                            if already_absent > 0 {
+                                message.push_str(&format!("; {already_absent} already absent"));
+                            }
+                            notifications.push(Notification::success(message));
+                            refresh.set((*refresh).wrapping_add(1));
+                        }
+                        if !failures.is_empty() {
+                            notifications.push(Notification::error(format!(
+                                "Failed to delete {} deployment(s): {}",
+                                failures.len(),
+                                failures.join("; ")
+                            )));
+                        }
+                    });
+                }
+            })
+        };
+
+        let selected_count = selected_deployments.len();
 
         html! {
             <>
@@ -416,16 +530,39 @@ pub fn deployment_list_page() -> Html {
 
                 <div class="deployment-list">{ rows }</div>
 
-                <div class="pagination">
+                <div class="deployment-selection-actions">
                     if let Some(diff_route) = diff_route {
-                        <button onclick={move |_| navigator_for_diff.push(&diff_route)}>
+                        <button class="action-button" onclick={move |_| navigator_for_diff.push(&diff_route)} disabled={*delete_in_flight}>
                             {"Compare selected"}
                         </button>
                     } else {
-                        <button disabled={true} title="Select exactly two deployments">
+                        <button class="action-button" disabled={true} title="Select exactly two deployments">
                             {"Compare selected"}
                         </button>
                     }
+                    <label class="deployment-delete-executions">
+                        <input type="checkbox" checked={*delete_executions}
+                            onchange={on_delete_executions_change} disabled={*delete_in_flight} />
+                        {"Also delete execution trees"}
+                    </label>
+                    <button class={classes!("action-button", "deployment-delete-button", (*delete_armed).then_some("armed"))}
+                        onclick={on_delete_click} disabled={selected_count == 0 || *delete_in_flight}
+                        title={if *delete_executions {
+                            "Delete selected deployments and their execution trees; running executions remain protected"
+                        } else {
+                            "Delete selected deployments without deleting execution trees"
+                        }}>
+                        {if *delete_in_flight {
+                            "Deleting...".to_owned()
+                        } else if *delete_armed {
+                            format!("Confirm delete {selected_count}")
+                        } else {
+                            format!("Delete selected ({selected_count})")
+                        }}
+                    </button>
+                </div>
+
+                <div class="pagination">
                     <button onclick={&on_latest}>
                         {"Latest"}
                     </button>
