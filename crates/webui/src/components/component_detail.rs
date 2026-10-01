@@ -53,25 +53,60 @@ struct ComponentDeploymentConfig {
 
 /// Another component of the same deployment and the interfaces connecting it to the inspected one.
 #[derive(Debug, PartialEq)]
-struct ComponentConnection<'a> {
-    component: &'a grpc_client::Component,
-    interfaces: Vec<IfcFqn>,
+pub(crate) struct ComponentConnection<'a> {
+    pub(crate) component: &'a grpc_client::Component,
+    pub(crate) interfaces: Vec<IfcFqn>,
 }
 
 #[derive(Debug, PartialEq)]
-struct ComponentConnections<'a> {
-    dependencies: Vec<ComponentConnection<'a>>,
+pub(crate) struct ComponentConnections<'a> {
+    pub(crate) dependencies: Vec<ComponentConnection<'a>>,
     callers: Vec<ComponentConnection<'a>>,
     /// Imports no other component of the deployment exports, e.g. those provided by the runtime.
     other_imports: Vec<IfcFqn>,
 }
 
-fn component_name(component: &grpc_client::Component) -> &str {
+pub(crate) fn component_name(component: &grpc_client::Component) -> &str {
     &component
         .component_id
         .as_ref()
         .expect("`component_id` is sent")
         .name
+}
+
+/// Whether the component imports a dynamic support interface, letting it call any function of
+/// the deployment by name. JS workflows and webhooks always do, and the server does not report
+/// the interfaces their JS code imports.
+pub(crate) fn calls_dynamically(component: &grpc_client::Component) -> bool {
+    interfaces(&component.imports).iter().any(|ifc| {
+        let ifc_name = ifc
+            .ifc_name
+            .strip_suffix("-backtrace")
+            .unwrap_or(&ifc.ifc_name);
+        ifc.pkg_fqn.is_namespace_obelisk()
+            && matches!(
+                (ifc.pkg_fqn.package_name.as_str(), ifc_name),
+                ("workflow", "workflow-dynamic-support") | ("webhook", "webhook-dynamic-support")
+            )
+    })
+}
+
+/// Link opening the component on its deployment page.
+pub(crate) fn component_link(
+    component: &grpc_client::Component,
+    deployment_id: &DeploymentId,
+) -> Html {
+    let name = component_name(component).to_string();
+    html! {
+        <Link<Route, DeploymentQuery>
+            to={Route::DeploymentDetail { deployment_id: deployment_id.clone() }}
+            query={Some(DeploymentQuery { component: Some(name.clone()) })}
+        >
+            { component.as_type().as_icon_html() }
+            {" "}
+            {name}
+        </Link<Route, DeploymentQuery>>
+    }
 }
 
 fn interfaces(functions: &[FunctionDetail]) -> Vec<IfcFqn> {
@@ -80,7 +115,7 @@ fn interfaces(functions: &[FunctionDetail]) -> Vec<IfcFqn> {
         .collect()
 }
 
-fn component_connections<'a>(
+pub(crate) fn component_connections<'a>(
     component: &grpc_client::Component,
     deployment_components: &'a HashMap<String, grpc_client::Component>,
 ) -> ComponentConnections<'a> {
@@ -179,6 +214,7 @@ fn render_connections(
     title: &'static str,
     help: &'static str,
     empty: &'static str,
+    note: Html,
     connections: &[ComponentConnection],
     deployment_id: &DeploymentId,
 ) -> Html {
@@ -186,22 +222,15 @@ fn render_connections(
         <section class="component-connections">
             <h4>{title}</h4>
             <p class="component-section-help">{help}</p>
+            {note}
             if connections.is_empty() {
                 <p class="component-empty-state">{empty}</p>
             } else {
                 <ul>
                     { for connections.iter().map(|connection| {
-                        let name = component_name(connection.component).to_string();
                         html! {
                             <li>
-                                <Link<Route, DeploymentQuery>
-                                    to={Route::DeploymentDetail { deployment_id: deployment_id.clone() }}
-                                    query={Some(DeploymentQuery { component: Some(name.clone()) })}
-                                >
-                                    { connection.component.as_type().as_icon_html() }
-                                    {" "}
-                                    {name}
-                                </Link<Route, DeploymentQuery>>
+                                { component_link(connection.component, deployment_id) }
                                 <ul class="component-connection-interfaces">
                                     { for connection.interfaces.iter().map(|ifc| html! {
                                         <li>{ifc.to_string()}</li>
@@ -418,11 +447,41 @@ pub fn component_detail(
 
     let dependencies = || {
         let connections = component_connections(component, deployment_components);
+        let mut dynamic_callers = deployment_components
+            .values()
+            .filter(|other| {
+                component_name(other) != component_name(component) && calls_dynamically(other)
+            })
+            .collect::<Vec<_>>();
+        dynamic_callers.sort_by(|a, b| component_name(a).cmp(component_name(b)));
+        let dependencies_note = if calls_dynamically(component) {
+            html! {
+                <p class="component-dynamic-note">
+                    {"This component can also call any function of this deployment by name, so it may depend on components not listed here."}
+                </p>
+            }
+        } else {
+            html! {}
+        };
+        let callers_note = if !component.exports.is_empty() && !dynamic_callers.is_empty() {
+            html! {
+                <p class="component-dynamic-note">
+                    {"Also callable by name from components calling dynamically: "}
+                    { for dynamic_callers.iter().enumerate().map(|(idx, caller)| html! { <>
+                        if idx > 0 { {", "} }
+                        { component_link(caller, deployment_id) }
+                    </> }) }
+                </p>
+            }
+        } else {
+            html! {}
+        };
         html! { <>
             {render_connections(
                 "Depends on",
                 "Components of this deployment exporting interfaces this component imports.",
                 "This component does not import interfaces of other components.",
+                dependencies_note,
                 &connections.dependencies,
                 deployment_id,
             )}
@@ -430,6 +489,7 @@ pub fn component_detail(
                 "Called by",
                 "Components of this deployment importing interfaces this component exports.",
                 "No other component imports interfaces of this component.",
+                callers_note,
                 &connections.callers,
                 deployment_id,
             )}
@@ -644,6 +704,25 @@ mod tests {
             connections.other_imports,
             [IfcFqn::from_str("obelisk:log/log@1.0.0").unwrap()]
         );
+    }
+
+    #[test]
+    fn dynamic_support_imports_mark_dynamic_callers() {
+        assert!(calls_dynamically(&component(
+            "js-workflow",
+            &[],
+            &["obelisk:workflow/workflow-dynamic-support-backtrace@7.0.0"],
+        )));
+        assert!(calls_dynamically(&component(
+            "js-webhook",
+            &[],
+            &["obelisk:webhook/webhook-dynamic-support@7.0.0"],
+        )));
+        assert!(!calls_dynamically(&component(
+            "wasm-workflow",
+            &[],
+            &["obelisk:workflow/workflow-support@7.0.0", "app:act/api"],
+        )));
     }
 
     fn component(name: &str, exports: &[&str], imports: &[&str]) -> grpc_client::Component {

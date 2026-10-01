@@ -1,6 +1,7 @@
 use crate::{
     app::{AppState, Route},
     components::{
+        component_graph::ComponentGraph,
         deployment_actions::DeploymentActions,
         deployment_config_view::{DeploymentConfigView, build_sections_from_manifest, toml_block},
         execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
@@ -41,6 +42,7 @@ pub struct DeploymentDetailPageProps {
 enum DeploymentTab {
     #[default]
     Overview,
+    Graph,
     Toml,
 }
 
@@ -49,6 +51,7 @@ impl DeploymentTab {
         match hash.strip_prefix('#').unwrap_or(hash) {
             // backcompat: 0.28.1 links used #components before the tabs were merged.
             "components" => Self::Overview,
+            "graph" => Self::Graph,
             "toml" => Self::Toml,
             _ => Self::Overview,
         }
@@ -57,6 +60,7 @@ impl DeploymentTab {
     fn fragment(self) -> &'static str {
         match self {
             Self::Overview => "overview",
+            Self::Graph => "graph",
             Self::Toml => "toml",
         }
     }
@@ -387,6 +391,12 @@ pub fn deployment_detail_page(
 
     let tab_content = match active_tab {
         DeploymentTab::Overview => overview_html,
+        DeploymentTab::Graph => html! {
+            <ComponentGraph
+                deployment_id={deployment_id.clone()}
+                components_by_name={components_by_name.deref().clone()}
+            />
+        },
         DeploymentTab::Toml => toml_html,
     };
 
@@ -429,6 +439,7 @@ pub fn deployment_detail_page(
             </div>
             <div class="view-tabs deployment-detail-tabs">
                 { tab_button("Overview", DeploymentTab::Overview) }
+                { tab_button("Graph", DeploymentTab::Graph) }
                 { tab_button("TOML", DeploymentTab::Toml) }
             </div>
             <div class="deployment-tab-content">{ tab_content }</div>
