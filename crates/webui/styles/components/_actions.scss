@@ -28,13 +28,13 @@
   font-size: 0.9em;
 
   &.success {
-    background-color: rgba($color-accent-green, 0.2);
+    background-color: color-mix(in srgb, $color-accent-green 20%, transparent);
     color: $color-accent-green;
     border: 1px solid $color-accent-green;
   }
 
   &.error {
-    background-color: rgba($color-accent-red, 0.2);
+    background-color: color-mix(in srgb, $color-accent-red 20%, transparent);
     color: $color-accent-red;
     border: 1px solid $color-accent-red;
   }

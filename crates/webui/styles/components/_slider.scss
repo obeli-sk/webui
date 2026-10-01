@@ -71,7 +71,7 @@
 
     &:hover {
       transform: scale(1.15);
-      background: color.adjust($color-accent-cyan, $lightness: 10%);
+      background: var(--accent-hover);
     }
 
     &:active {
@@ -93,7 +93,7 @@
 
     &:hover {
       transform: scale(1.15);
-      background: color.adjust($color-accent-cyan, $lightness: 10%);
+      background: var(--accent-hover);
     }
 
     &:active {

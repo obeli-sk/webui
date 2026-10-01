@@ -355,25 +355,126 @@ fn app_inner(
 
     html! {
         <ContextProvider<AppState> context={app_state.deref().clone()}>
-            <div class="container">
-                <BrowserRouter>
-                    <nav>
-                        <Link<Route> to={Route::DeploymentList }>
-                            {"Deployments"}
-                        </Link<Route>>
-                        <Link<Route> to={Route::ExecutionList }>
-                            {"Executions"}
-                        </Link<Route>>
-                        <Link<Route> to={Route::SystemEvents }>
-                            {"System"}
-                        </Link<Route>>
-                        <Link<Route> classes="nav-submit" to={Route::ExecutionNew }>
-                            {"Submit"}
-                        </Link<Route>>
-                    </nav>
-                    <Switch<Route> render={Route::render} />
-                </BrowserRouter>
-            </div>
+            <BrowserRouter>
+                <div class="app-shell">
+                    <header class="app-bar">
+                        <div class="app-bar-inner">
+                            <Link<Route> classes="app-brand" to={Route::Home}>
+                                <img class="app-brand-mark" src="/logo.png" alt="" />
+                                <span>{"Obelisk"}</span>
+                                <span class="app-brand-caption">{"WebUI"}</span>
+                            </Link<Route>>
+                            <div class="app-bar-actions">
+                                <ThemeToggle />
+                                <Link<Route> classes="nav-submit" to={Route::ExecutionNew }>{"New execution"}</Link<Route>>
+                            </div>
+                        </div>
+                    </header>
+                    <div class="app-layout">
+                        <AppNav />
+                        <main class="container app-main">
+                            <Switch<Route> render={Route::render} />
+                        </main>
+                    </div>
+                </div>
+            </BrowserRouter>
         </ContextProvider<AppState>>
+    }
+}
+
+#[component(AppNav)]
+fn app_nav() -> Html {
+    let route = use_route::<Route>();
+    let deployment_active = matches!(
+        route.as_ref(),
+        Some(Route::DeploymentList | Route::DeploymentDetail { .. } | Route::DeploymentDiff { .. })
+    );
+    let execution_active = matches!(
+        route.as_ref(),
+        Some(
+            Route::Home
+                | Route::ExecutionList
+                | Route::ExecutionNew
+                | Route::ExecutionSubmit { .. }
+                | Route::ExecutionStubResult { .. }
+                | Route::ExecutionLog { .. }
+                | Route::ExecutionTrace { .. }
+                | Route::ExecutionDebugger { .. }
+                | Route::ExecutionDebuggerWithVersions { .. }
+                | Route::Logs { .. }
+        )
+    );
+    let component_active = matches!(
+        route.as_ref(),
+        Some(Route::ComponentList | Route::Component { .. })
+    );
+    let system_active = matches!(route.as_ref(), Some(Route::SystemEvents | Route::AppConfig));
+
+    html! {
+        <nav class="app-nav" aria-label="Main navigation">
+            <div class="app-nav-group">
+                <span class="app-nav-label">{"Workspace"}</span>
+                <Link<Route> classes={classes!(deployment_active.then_some("active"))} to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
+                <Link<Route> classes={classes!(execution_active.then_some("active"))} to={Route::ExecutionList}>{"Executions"}</Link<Route>>
+            </div>
+            <div class="app-nav-group">
+                <span class="app-nav-label">{"Manage"}</span>
+                <Link<Route> classes={classes!(component_active.then_some("active"))} to={Route::ComponentList}>{"Components"}</Link<Route>>
+                <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>
+            </div>
+        </nav>
+    }
+}
+
+#[component(ThemeToggle)]
+fn theme_toggle() -> Html {
+    let theme = use_state(|| {
+        web_sys::window()
+            .and_then(|window| window.local_storage().ok().flatten())
+            .and_then(|storage| storage.get_item("obelisk-webui-theme").ok().flatten())
+            .filter(|value| value == "light" || value == "dark")
+            .unwrap_or_else(|| "auto".to_owned())
+    });
+    let onclick = {
+        let theme = theme.clone();
+        Callback::from(move |_| {
+            let next = match theme.as_str() {
+                "auto" => "light",
+                "light" => "dark",
+                _ => "auto",
+            };
+            if let Some(window) = web_sys::window() {
+                if let Some(root) = window
+                    .document()
+                    .and_then(|document| document.document_element())
+                {
+                    if next == "auto" {
+                        let _ = root.remove_attribute("data-theme");
+                    } else {
+                        let _ = root.set_attribute("data-theme", next);
+                    }
+                }
+                if let Ok(Some(storage)) = window.local_storage() {
+                    if next == "auto" {
+                        let _ = storage.remove_item("obelisk-webui-theme");
+                    } else {
+                        let _ = storage.set_item("obelisk-webui-theme", next);
+                    }
+                }
+            }
+            theme.set(next.to_owned());
+        })
+    };
+    let icon = match theme.as_str() {
+        "light" => "☀",
+        "dark" => "☾",
+        _ => "◐",
+    };
+    html! {
+        <button type="button" class="theme-toggle" {onclick}
+            title={format!("Theme: {}", *theme)}
+            aria-label={format!("Theme: {}. Click to change.", *theme)}>
+            <span aria-hidden="true">{icon}</span>
+        </button>
     }
 }

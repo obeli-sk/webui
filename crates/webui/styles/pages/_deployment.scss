@@ -38,6 +38,43 @@
     }
 }
 
+.deployment-selection-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: $spacing-sm $spacing-md;
+    margin-top: $spacing-lg;
+
+    .action-button {
+        min-height: 2.4rem;
+    }
+}
+
+.deployment-delete-executions {
+    display: inline-flex;
+    align-items: center;
+    gap: $spacing-sm;
+    color: $color-text-secondary;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    input { accent-color: $color-accent-cyan; }
+}
+
+.deployment-delete-button {
+    margin-left: auto;
+
+    &.armed {
+        background-color: $color-accent-red;
+        border-color: $color-accent-red;
+        color: var(--on-status);
+    }
+}
+
+@media (max-width: 620px) {
+    .deployment-delete-button { margin-left: 0; }
+}
+
 .deployment-summary {
     min-width: 0;
 }
@@ -174,21 +211,22 @@
 }
 
 .deployment-section {
-    margin-bottom: 1rem;
+    margin: $spacing-lg 0;
 
     > h4 {
         margin: 0.5rem 0;
     }
 
-    // Collapsible component-type group (deployment detail view). Diff view keeps
-    // a plain `<section>` with a direct `> h4`, so both selectors coexist.
-    > summary {
-        cursor: pointer;
+    > h5 {
+        display: flex;
+        align-items: center;
+        gap: $spacing-sm;
+        margin: 0 0 $spacing-sm;
+        color: $color-text-secondary;
+        font-size: $font-size-sm;
+        font-weight: 700;
 
-        > h4 {
-            display: inline;
-            margin: 0.5rem 0;
-        }
+        span { color: $color-text-muted; font-weight: 500; }
     }
 
     .unchanged-count {
@@ -201,17 +239,35 @@
 .deployment-component-list {
     display: flex;
     flex-direction: column;
-    gap: $spacing-xl;
+    gap: $spacing-sm;
 }
 
 .deployment-component-card {
-    > header {
+    border: 1px solid $color-border-primary;
+    border-radius: $border-radius-lg;
+    background: $color-bg-secondary;
+    overflow: hidden;
+
+    > summary {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: $spacing-md;
-        padding-bottom: $spacing-sm;
+        gap: $spacing-sm;
+        padding: $spacing-sm $spacing-md;
+        cursor: pointer;
+        list-style: none;
+
+        &::-webkit-details-marker { display: none; }
+        &::before {
+            content: '▸';
+            color: $color-text-secondary;
+            transition: transform $transition-fast;
+        }
+        &:hover { background: $color-bg-tertiary; }
+    }
+
+    &[open] > summary {
         border-bottom: 1px solid $color-border-primary;
+        &::before { transform: rotate(90deg); }
     }
 
     .component-name {
@@ -219,8 +275,8 @@
         font-weight: 600;
     }
 
-    .component-link {
-        flex: none;
+    .deployment-component-type {
+        color: $color-text-secondary;
         font-size: $font-size-sm;
     }
 
@@ -229,14 +285,40 @@
     }
 }
 
-.deployment-component-exports {
-    .types-interface {
-        margin-top: $spacing-md;
+.deployment-component-detail {
+    padding: 0 $spacing-md $spacing-md;
+
+    .component-detail-tabs { margin-top: $spacing-sm; }
+    .component-detail-tab-content { min-height: 0; }
+}
+
+.deployment-component-search {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: $spacing-sm;
+    margin: $spacing-sm 0 $spacing-md;
+    color: $color-text-secondary;
+    font-size: $font-size-sm;
+
+    input {
+        width: min(100%, 24rem);
+        padding: 0.55rem 0.75rem;
+        border: 1px solid $color-border-primary;
+        border-radius: $border-radius-md;
+        background: $color-bg-primary;
+        color: $color-text-primary;
     }
 }
 
 .deployment-executions {
     max-width: none;
+}
+
+.deployment-components {
+    margin-top: $spacing-xl;
+    padding-top: $spacing-md;
+    border-top: 1px solid $color-border-primary;
 }
 
 .deployment-section-heading {
@@ -372,7 +454,7 @@
         }
 
         &.active {
-            color: $color-text-white;
+            color: $color-accent-cyan;
             border-bottom-color: $color-accent-cyan;
         }
     }
@@ -460,33 +542,33 @@
 
     &.current {
         background-color: $color-accent-green;
-        color: $color-bg-primary;
+        color: var(--on-status);
     }
 
     &.enqueued,
     &.changed {
-        background-color: #b58900;
-        color: $color-bg-primary;
+        background-color: $color-status-warning;
+        color: var(--on-status);
     }
 
     &.inactive {
-        background-color: #586e75;
-        color: $color-text-white;
+        background-color: $color-bg-elevated;
+        color: $color-text-primary;
     }
 
     &.added {
         background-color: $color-accent-green;
-        color: $color-bg-primary;
+        color: var(--on-status);
     }
 
     &.removed {
-        background-color: #dc322f;
-        color: $color-text-white;
+        background-color: $color-accent-red;
+        color: var(--on-status);
     }
 
     &.dangerous-exec {
         background-color: transparent;
-        border: 1px solid #dc322f;
-        color: #dc322f;
+        border: 1px solid $color-accent-red;
+        color: $color-accent-red;
     }
 }

@@ -34,16 +34,16 @@
   transition: background-color $transition-fast;
 
   &:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: color-mix(in srgb, $color-text-primary 10%, transparent);
   }
 }
 
 .tree-node-selected {
   > .tree-node-content {
-    background-color: rgba($color-accent-cyan, 0.15);
+    background-color: color-mix(in srgb, $color-accent-cyan 15%, transparent);
 
     &:hover {
-      background-color: rgba($color-accent-cyan, 0.25);
+      background-color: color-mix(in srgb, $color-accent-cyan 25%, transparent);
     }
   }
 }

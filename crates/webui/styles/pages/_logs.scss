@@ -28,10 +28,10 @@
 
 .logs-list {
   padding: 12px;
-  border: 1px solid #333;
+  border: 1px solid $color-border-primary;
   border-radius: $border-radius-md;
-  background: #000;
-  color: #ddd;
+  background: $color-bg-tertiary;
+  color: $color-text-primary;
   overflow: auto;
   max-height: 70vh;
   font-family: $font-family-mono;
@@ -39,24 +39,24 @@
   line-height: 1.45;
 
   .logs-empty {
-    color: #888;
+    color: $color-text-muted;
   }
 }
 
 .log-row {
   .time {
-    color: #888;
+    color: $color-text-muted;
     margin-right: 10px;
   }
 
   .execution-id,
   .run-id {
     margin-right: 8px;
-    color: #8eaccf;
+    color: $color-accent-cyan;
   }
 
   .execution-id a {
-    color: #8eaccf;
+    color: $color-accent-cyan;
 
     &:hover {
       color: $color-accent-yellow;
@@ -70,16 +70,16 @@
     &.kind-debug,
     &.kind-info,
     &.kind-stdout {
-      color: #9cc2ff;
+      color: $color-accent-cyan;
     }
 
     &.kind-warn {
-      color: #ffd27d;
+      color: $color-status-warning;
     }
 
     &.kind-error,
     &.kind-stderr {
-      color: #ff9b9b;
+      color: $color-status-error;
     }
   }
 

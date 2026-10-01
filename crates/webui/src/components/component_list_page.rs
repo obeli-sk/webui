@@ -45,6 +45,10 @@ pub struct ComponentQuery {
 pub struct ComponentListPageProps {
     #[prop_or_default]
     pub maybe_component_id: Option<ComponentId>,
+    #[prop_or_default]
+    pub embedded_deployment_id: Option<grpc_client::DeploymentId>,
+    #[prop_or_default]
+    pub inline_component: Option<grpc_client::Component>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -124,7 +128,11 @@ fn component_file_role_label(role: ComponentFileRole) -> &'static str {
 
 #[component(ComponentListPage)]
 pub fn component_list_page(
-    ComponentListPageProps { maybe_component_id }: &ComponentListPageProps,
+    ComponentListPageProps {
+        maybe_component_id,
+        embedded_deployment_id,
+        inline_component,
+    }: &ComponentListPageProps,
 ) -> Html {
     let app_state =
         use_context::<AppState>().expect("AppState context is set when starting the App");
@@ -136,7 +144,10 @@ pub fn component_list_page(
 
     let location = use_location().expect("location must be available inside a router");
     let component_query = location.query::<ComponentQuery>().unwrap_or_default();
-    let deployment_id = component_query.deployment_id;
+    let deployment_id = embedded_deployment_id
+        .as_ref()
+        .map(|id| id.id.clone())
+        .or(component_query.deployment_id);
     let is_active_deployment = current_deployment_id.as_ref().is_some_and(|current| {
         deployment_id.as_deref().map_or_else(
             || {
@@ -150,7 +161,12 @@ pub fn component_list_page(
 
     let wit_state = use_state(|| None);
     let wit_loaded = use_state(|| false);
-    let selected_tab = ComponentDetailTab::from_hash(location.hash());
+    let inline_tab = use_state(|| ComponentDetailTab::Exports);
+    let selected_tab = if embedded_deployment_id.is_some() {
+        *inline_tab
+    } else {
+        ComponentDetailTab::from_hash(location.hash())
+    };
     let deployment_config = use_state(|| None::<Result<Option<ComponentDeploymentConfig>, String>>);
 
     // Resolve the selected component. Prefer the active deployment's already-loaded
@@ -158,15 +174,24 @@ pub fn component_list_page(
     let component_state = use_state(|| None::<Rc<grpc_client::Component>>);
     {
         // Fast path: the component belongs to the active deployment.
-        let preloaded = maybe_component_id
+        let preloaded = inline_component
             .as_ref()
-            .and_then(|id| components_by_id.get(id))
-            .cloned();
+            .map(|component| Rc::new(component.clone()))
+            .or_else(|| {
+                maybe_component_id
+                    .as_ref()
+                    .and_then(|id| components_by_id.get(id))
+                    .cloned()
+            });
         let component_state = component_state.clone();
         let notifications = notifications.clone();
         use_effect_with(
-            (maybe_component_id.clone(), deployment_id.clone()),
-            move |(maybe_component_id, deployment_id)| {
+            (
+                maybe_component_id.clone(),
+                deployment_id.clone(),
+                inline_component.clone(),
+            ),
+            move |(maybe_component_id, deployment_id, _)| {
                 component_state.set(None);
                 let Some(component_id) = maybe_component_id.clone() else {
                     return;
@@ -462,7 +487,7 @@ pub fn component_list_page(
                 },
                 |deployment_id| {
                     let deployment_url = format!(
-                        "{}#components",
+                        "{}#overview",
                         Route::DeploymentDetail {
                             deployment_id: deployment_id.clone(),
                         }
@@ -489,12 +514,18 @@ pub fn component_list_page(
                     location.query_str(),
                     tab.fragment()
                 );
+                let inline_tab = inline_tab.clone();
+                let embedded = embedded_deployment_id.is_some();
                 html! {
                     <button
                         class={classes!((selected_tab == tab).then_some("active"))}
                         onclick={Callback::from(move |_| {
                             if selected_tab != tab {
-                                BrowserHistory::new().push(&tab_url);
+                                if embedded {
+                                    inline_tab.set(tab);
+                                } else {
+                                    BrowserHistory::new().push(&tab_url);
+                                }
                             }
                         })}
                     >
@@ -578,19 +609,21 @@ pub fn component_list_page(
             };
 
             html! { <>
-                <header class="component-detail-header">
-                    <p class="breadcrumbs">{breadcrumb}</p>
-                    <h1>
-                        {component_name}
-                        <span class="component-type-label">
-                            { component.as_type().as_icon_html() }
-                            {component.as_type().as_label()}
-                        </span>
-                    </h1>
-                    <p class="component-intro">
-                        {"Inspect the functions and interfaces exposed or required by this component."}
-                    </p>
-                </header>
+                if embedded_deployment_id.is_none() {
+                    <header class="component-detail-header">
+                        <p class="breadcrumbs">{breadcrumb}</p>
+                        <h1>
+                            {component_name}
+                            <span class="component-type-label">
+                                { component.as_type().as_icon_html() }
+                                {component.as_type().as_label()}
+                            </span>
+                        </h1>
+                        <p class="component-intro">
+                            {"Inspect the functions and interfaces exposed or required by this component."}
+                        </p>
+                    </header>
+                }
 
                 <div class="view-tabs component-detail-tabs">
                     {tab_button("Exports", ComponentDetailTab::Exports)}

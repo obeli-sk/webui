@@ -53,6 +53,27 @@ struct ComponentCount {
     count: u32,
 }
 
+#[derive(Deserialize)]
+pub struct DeleteDeploymentResponse {
+    pub deleted: bool,
+    pub already_deleted: bool,
+    pub deleted_execution_trees: u64,
+}
+
+pub async fn delete(
+    deployment_id: &str,
+    delete_executions: bool,
+) -> Result<DeleteDeploymentResponse, String> {
+    super::delete(
+        &format!("/v1/admin/deployments/{deployment_id}"),
+        &[
+            ("delete_executions", delete_executions.to_string()),
+            ("force_non_terminal", "false".to_string()),
+        ],
+    )
+    .await
+}
+
 pub async fn get(id: &str) -> Result<grpc::Deployment, String> {
     let record: DeploymentRecord = super::get(
         &format!("/v1/deployments/{id}"),

@@ -46,7 +46,7 @@
 
 // Success variant
 .notification-success {
-  background-color: rgba($color-accent-green, 0.15);
+  background-color: color-mix(in srgb, $color-accent-green 15%, transparent);
   border-color: $color-accent-green;
   
   .notification-icon {
@@ -56,7 +56,7 @@
 
 // Error variant
 .notification-error {
-  background-color: rgba($color-accent-red, 0.15);
+  background-color: color-mix(in srgb, $color-accent-red 15%, transparent);
   border-color: $color-accent-red;
   
   .notification-icon {
@@ -66,7 +66,7 @@
 
 // Info variant
 .notification-info {
-  background-color: rgba($color-accent-cyan, 0.15);
+  background-color: color-mix(in srgb, $color-accent-cyan 15%, transparent);
   border-color: $color-accent-cyan;
   
   .notification-icon {
