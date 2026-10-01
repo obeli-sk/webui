@@ -16,6 +16,7 @@ use crate::{
         execution_submit_page::ExecutionSubmitPage,
         not_found::NotFound,
         notification::{Notification, NotificationContext, NotificationProvider},
+        retention_page::RetentionPage,
         system_events_page::SystemEventsPage,
         trace::trace_view::TraceView,
     },
@@ -187,6 +188,8 @@ pub enum Route {
     SystemEvents,
     #[at("/admin/app-config")]
     AppConfig,
+    #[at("/admin/retention")]
+    Retention,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -230,6 +233,7 @@ impl Route {
             }
             Route::SystemEvents => html! { <SystemEventsPage /> },
             Route::AppConfig => html! { <AppConfigPage /> },
+            Route::Retention => html! { <RetentionPage /> },
             Route::NotFound => html! { <NotFound /> },
         }
     }
@@ -408,7 +412,10 @@ fn app_nav() -> Html {
         route.as_ref(),
         Some(Route::ComponentList | Route::Component { .. })
     );
-    let system_active = matches!(route.as_ref(), Some(Route::SystemEvents | Route::AppConfig));
+    let system_active = matches!(
+        route.as_ref(),
+        Some(Route::SystemEvents | Route::AppConfig | Route::Retention)
+    );
 
     html! {
         <nav class="app-nav" aria-label="Main navigation">

@@ -3,6 +3,7 @@ use crate::{
     components::{
         execution_list_page::{ExecutionQuery, StatusFilterList},
         notification::{Notification, NotificationContext},
+        pagination::page_link,
     },
     grpc::grpc_client::{
         DeploymentComponentType, DeploymentId, DeploymentStatus, DeploymentSummary,
@@ -142,12 +143,16 @@ pub fn deployment_list_page() -> Html {
         let query = query.clone();
         let response_state = response_state.clone();
         let notifications = notifications.clone();
+        let delete_armed = delete_armed.clone();
+        let disarm_timer = disarm_timer.clone();
         let refresh = *refresh;
 
         use_effect_with(
             (query, current_deployment_id, location.id(), refresh),
             move |(query_params, _, _, _)| {
                 let query_params = query_params.clone();
+                delete_armed.set(false);
+                *disarm_timer.borrow_mut() = None;
 
                 spawn_local(async move {
                     let page_size = 10;
@@ -182,18 +187,6 @@ pub fn deployment_list_page() -> Html {
     }
 
     // Clicked on "Latest" - reset to default query
-    let on_latest = {
-        let navigator = navigator.clone();
-        let delete_armed = delete_armed.clone();
-        let disarm_timer = disarm_timer.clone();
-        Callback::from(move |_| {
-            delete_armed.set(false);
-            *disarm_timer.borrow_mut() = None;
-            let new_query = DeploymentQuery::default();
-            let _ = navigator.push_with_query(&Route::DeploymentList, &new_query);
-        })
-    };
-
     // Render logic
     if let Some(response) = response_state.deref() {
         let rows = response.iter()
@@ -420,17 +413,6 @@ pub fn deployment_list_page() -> Html {
             None
         };
 
-        let on_page_change = {
-            let navigator = navigator.clone();
-            let delete_armed = delete_armed.clone();
-            let disarm_timer = disarm_timer.clone();
-            Callback::from(move |query: DeploymentQuery| {
-                delete_armed.set(false);
-                *disarm_timer.borrow_mut() = None;
-                let _ = navigator.push_with_query(&Route::DeploymentList, &query);
-            })
-        };
-
         let on_delete_executions_change = {
             let delete_executions = delete_executions.clone();
             let delete_armed = delete_armed.clone();
@@ -540,58 +522,34 @@ pub fn deployment_list_page() -> Html {
                             {"Compare selected"}
                         </button>
                     }
-                    <label class="deployment-delete-executions">
-                        <input type="checkbox" checked={*delete_executions}
-                            onchange={on_delete_executions_change} disabled={*delete_in_flight} />
-                        {"Also delete execution trees"}
-                    </label>
-                    <button class={classes!("action-button", "deployment-delete-button", (*delete_armed).then_some("armed"))}
-                        onclick={on_delete_click} disabled={selected_count == 0 || *delete_in_flight}
-                        title={if *delete_executions {
-                            "Delete selected deployments and their execution trees; running executions remain protected"
-                        } else {
-                            "Delete selected deployments without deleting execution trees"
-                        }}>
-                        {if *delete_in_flight {
-                            "Deleting...".to_owned()
-                        } else if *delete_armed {
-                            format!("Confirm delete {selected_count}")
-                        } else {
-                            format!("Delete selected ({selected_count})")
-                        }}
-                    </button>
+                    <div class="deployment-delete-group">
+                        <label class={classes!("deployment-delete-executions", (selected_count == 0).then_some("disabled"))}>
+                            <input type="checkbox" checked={*delete_executions}
+                                onchange={on_delete_executions_change} disabled={*delete_in_flight || selected_count == 0} />
+                            {"Also delete execution trees"}
+                        </label>
+                        <button class={classes!("action-button", "deployment-delete-button", (*delete_armed).then_some("armed"))}
+                            onclick={on_delete_click} disabled={selected_count == 0 || *delete_in_flight}
+                            title={if *delete_executions {
+                                "Delete selected deployments and their execution trees; running executions remain protected"
+                            } else {
+                                "Delete selected deployments without deleting execution trees"
+                            }}>
+                            {if *delete_in_flight {
+                                "Deleting...".to_owned()
+                            } else if *delete_armed {
+                                format!("Confirm delete {selected_count}")
+                            } else {
+                                format!("Delete selected ({selected_count})")
+                            }}
+                        </button>
+                    </div>
                 </div>
 
                 <div class="pagination">
-                    <button onclick={&on_latest}>
-                        {"Latest"}
-                    </button>
-
-                    if let Some(query) = newer_page_query {
-                        <button onclick={
-                            let on_page_change = on_page_change.clone();
-                            move |_| on_page_change.emit(query.clone())
-                        }>
-                            {"← Newer"}
-                        </button>
-                    } else {
-                        <button disabled={true}>
-                            {"← Newer"}
-                        </button>
-                    }
-
-                    if let Some(query) = older_page_query {
-                        <button onclick={
-                            let on_page_change = on_page_change.clone();
-                            move |_| on_page_change.emit(query.clone())
-                        }>
-                            {"Older →"}
-                        </button>
-                    } else {
-                        <button disabled={true}>
-                            {"Older →"}
-                        </button>
-                    }
+                    {page_link(Route::DeploymentList, Some(DeploymentQuery::default()), "Latest")}
+                    {page_link(Route::DeploymentList, newer_page_query, "← Newer")}
+                    {page_link(Route::DeploymentList, older_page_query, "Older →")}
                 </div>
             </>
         }

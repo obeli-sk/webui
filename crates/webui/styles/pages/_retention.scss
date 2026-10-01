@@ -1,0 +1,88 @@
+@use '../base/variables' as *;
+
+.retention-intro,
+.retention-description {
+  color: $color-text-secondary;
+}
+
+.retention-section {
+  margin-bottom: $spacing-lg;
+  padding: $spacing-md;
+  background: $color-bg-secondary;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-lg;
+
+  h2 { margin-top: 0; }
+}
+
+.retention-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $spacing-sm $spacing-md;
+}
+
+.retention-mode {
+  display: flex;
+  gap: $spacing-xs;
+
+  button {
+    padding: 0.35rem 0.7rem;
+    background: $color-bg-primary;
+    border: 1px solid $color-border-primary;
+    border-radius: $border-radius-md;
+    color: $color-text-primary;
+    cursor: pointer;
+    font-size: $font-size-sm;
+
+    &.selected {
+      background: color-mix(in srgb, $color-accent-cyan 15%, transparent);
+      border-color: $color-accent-cyan;
+      color: $color-accent-cyan;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.retention-field {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $spacing-sm;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+
+  input { width: 7rem; }
+}
+
+.retention-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-sm;
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  input { accent-color: $color-accent-cyan; }
+}
+
+.retention-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-sm;
+  margin-top: $spacing-md;
+}
+
+.retention-delete-button.armed {
+  background-color: $color-accent-red;
+  border-color: $color-accent-red;
+  color: var(--on-status);
+}
+
+.retention-result {
+  margin-bottom: 0;
+}
