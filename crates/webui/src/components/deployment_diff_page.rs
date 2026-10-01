@@ -2,12 +2,12 @@ use crate::{
     app::Route,
     components::{
         deployment_config_view::{
-            ComponentView, MANIFEST_SECTIONS, SectionView, SourceContent, SourceView,
-            build_sections_from_manifest, render_config_value,
+            ComponentView, MANIFEST_SECTIONS, SectionView, SourceContent, SourceMetadata,
+            SourceView, build_sections_from_manifest, render_config_value,
         },
         notification::{Notification, NotificationContext},
     },
-    grpc::grpc_client::{self, DeploymentId},
+    grpc::grpc_client::{self, ComponentFileRole, DeploymentId},
     rest,
 };
 use log::error;
@@ -29,6 +29,15 @@ pub struct DeploymentDiffPageProps {
 struct DeploymentInfo {
     sections: Vec<SectionView>,
     components_by_name: BTreeMap<String, grpc_client::ComponentId>,
+}
+
+impl DeploymentInfo {
+    fn digest_of(&self, name: &str) -> Option<&str> {
+        self.components_by_name
+            .get(name)
+            .and_then(|id| id.digest.as_ref())
+            .map(|digest| digest.digest.as_str())
+    }
 }
 
 #[derive(Clone)]
@@ -206,12 +215,20 @@ fn render_changed_component(
     name: &str,
     from: &Value,
     to: &Value,
+    digests: (Option<&str>, Option<&str>),
     source_diffs: &[SourceDiff],
 ) -> Html {
     let mut from_leaves = BTreeMap::new();
     let mut to_leaves = BTreeMap::new();
     flatten_value("", from, &mut from_leaves);
     flatten_value("", to, &mut to_leaves);
+    // The digest catches content changes that neither the manifest nor a text source diff shows.
+    if let (Some(from_digest), Some(to_digest)) = digests
+        && from_digest != to_digest
+    {
+        from_leaves.insert("component digest".to_string(), from_digest.into());
+        to_leaves.insert("component digest".to_string(), to_digest.into());
+    }
 
     let all_paths: Vec<&String> = {
         let mut paths: Vec<&String> = from_leaves.keys().chain(to_leaves.keys()).collect();
@@ -271,10 +288,10 @@ fn render_changed_component(
 fn render_section_diff(
     section_key: &str,
     section_title: &str,
-    from_components: &BTreeMap<String, ComponentView>,
-    to_components: &BTreeMap<String, ComponentView>,
-    source_diffs: &BTreeMap<(String, String), Vec<SourceDiff>>,
+    diff_data: &DeploymentDiffData,
 ) -> Option<Html> {
+    let from_components = components_by_name(&diff_data.from.sections, section_key);
+    let to_components = components_by_name(&diff_data.to.sections, section_key);
     let mut names: Vec<&String> = from_components.keys().chain(to_components.keys()).collect();
     names.sort();
     names.dedup();
@@ -285,13 +302,17 @@ fn render_section_diff(
     let mut unchanged = 0usize;
     let mut entries = Vec::new();
     for name in names {
-        let source_diffs_for_component = source_diffs
+        let source_diffs_for_component = diff_data
+            .source_diffs
             .get(&(section_key.to_string(), name.clone()))
             .map(Vec::as_slice)
             .unwrap_or(&[]);
+        let digests = (diff_data.from.digest_of(name), diff_data.to.digest_of(name));
         match (from_components.get(name), to_components.get(name)) {
             (Some(from), Some(to))
-                if from.config == to.config && source_diffs_for_component.is_empty() =>
+                if from.config == to.config
+                    && source_diffs_for_component.is_empty()
+                    && digests.0 == digests.1 =>
             {
                 unchanged += 1;
             }
@@ -299,6 +320,7 @@ fn render_section_diff(
                 name,
                 &from.config,
                 &to.config,
+                digests,
                 source_diffs_for_component,
             )),
             (Some(from), None) => entries.push(html! {
@@ -341,23 +363,58 @@ async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<Deployment
         .ok_or_else(|| format!("deployment {} has no manifest", deployment_id.id))?;
     let config = toml::from_str(&deployment_toml)
         .map_err(|e| format!("cannot parse manifest of {}: {e}", deployment_id.id))?;
-    let sections = build_sections_from_manifest(&config, &deployment.files);
+    let mut sections = build_sections_from_manifest(&config, &deployment.files);
 
-    let components_by_name = rest::components::list(Some(&deployment_id.id), None)
+    let components = rest::components::list(Some(&deployment_id.id), None)
         .await
-        .map(|components| {
-            components
-                .into_iter()
-                .filter_map(|component| component.component_id)
-                .map(|component_id| (component_id.name.clone(), component_id))
-                .collect()
-        })
         .unwrap_or_default();
+    for component in sections
+        .iter_mut()
+        .flat_map(|section| section.components.iter_mut())
+    {
+        if let Some(server_component) = components.iter().find(|server_component| {
+            server_component
+                .component_id
+                .as_ref()
+                .is_some_and(|id| id.name == component.name)
+        }) {
+            component
+                .sources
+                .extend(module_sources(&server_component.files));
+        }
+    }
+    let components_by_name = components
+        .into_iter()
+        .filter_map(|component| component.component_id)
+        .map(|component_id| (component_id.name.clone(), component_id))
+        .collect();
 
     Ok(DeploymentInfo {
         sections,
         components_by_name,
     })
+}
+
+/// Text files of a component that its manifest entry does not name: imported JS modules and WIT.
+fn module_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<SourceView> {
+    files
+        .iter()
+        .filter_map(|file_ref| {
+            let role = match ComponentFileRole::try_from(file_ref.role) {
+                Ok(ComponentFileRole::JsModule) => "JS module",
+                Ok(ComponentFileRole::WitSource) => "WIT source",
+                _ => return None,
+            };
+            let file = file_ref.file.as_ref()?;
+            Some(SourceView {
+                file_name: file.path.clone(),
+                content: SourceContent::FetchFile {
+                    digest: file.digest.clone(),
+                },
+                metadata: Some(SourceMetadata { role }),
+            })
+        })
+        .collect()
 }
 
 async fn resolve_source(
@@ -523,15 +580,7 @@ pub fn deployment_diff_page(
         Some(Ok(diff_data)) => {
             let sections: Vec<Html> = MANIFEST_SECTIONS
                 .iter()
-                .filter_map(|(key, title)| {
-                    render_section_diff(
-                        key,
-                        title,
-                        &components_by_name(&diff_data.from.sections, key),
-                        &components_by_name(&diff_data.to.sections, key),
-                        &diff_data.source_diffs,
-                    )
-                })
+                .filter_map(|(key, title)| render_section_diff(key, title, diff_data))
                 .collect();
             if sections.is_empty() {
                 html! { <p>{"The deployments have identical configurations."}</p> }
