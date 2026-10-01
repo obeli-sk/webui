@@ -4,6 +4,7 @@ use crate::{
         execution_status::{ExecutionStatus, StatusCacheContext, StatusState, extract_status},
         ffqn_with_links::FfqnWithLinks,
         notification::{Notification, NotificationContext},
+        pagination::page_link,
     },
     grpc::{
         ffqn::FunctionFqn,
@@ -13,10 +14,15 @@ use crate::{
     util::time::{RelativeAgo, TimeGranularity, human_formatted_timedelta},
 };
 use chrono::{DateTime, Utc};
+use gloo::timers::callback::Timeout;
 use hashbrown::{HashMap, HashSet};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, ops::Deref, str::FromStr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Deref,
+    str::FromStr,
+};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
@@ -647,91 +653,110 @@ pub fn execution_list_page() -> Html {
     let component_digest_ref = use_node_ref();
     let ffqn_prefix_state = use_state(|| query.ffqn_prefix.clone().unwrap_or_default());
 
+    let selected_executions = use_state(BTreeSet::<String>::new);
+    let delete_force_non_terminal = use_state(|| false);
+    let delete_armed = use_state(|| false);
+    let delete_in_flight = use_state(|| false);
+    let delete_mode = use_state(|| false);
+    let disarm_timer = use_mut_ref(|| None::<Timeout>);
+    let refresh = use_state(|| 0u32);
+
     // Effect: Fetch data on every navigation, even to the same URL
     {
         let query = query.clone();
         let response_state = response_state.clone();
+        let selected_executions = selected_executions.clone();
+        let delete_armed = delete_armed.clone();
+        let disarm_timer = disarm_timer.clone();
+        let refresh = *refresh;
         let prefix_ref = prefix_ref.clone();
         let deployment_id_ref = deployment_id_ref.clone();
         let component_digest_ref = component_digest_ref.clone();
         let notifications = notifications.clone();
         let ffqn_prefix_state = ffqn_prefix_state.clone();
 
-        use_effect_with((query, location.id()), move |(query_params, _)| {
-            let query_params = query_params.clone();
+        use_effect_with(
+            (query, location.id(), refresh),
+            move |(query_params, _, _)| {
+                let query_params = query_params.clone();
+                selected_executions.set(BTreeSet::new());
+                delete_armed.set(false);
+                *disarm_timer.borrow_mut() = None;
 
-            spawn_local(async move {
-                // Attempt to sync text values from the actual filter into text boxes.
-                if let Some(input) = prefix_ref.cast::<HtmlInputElement>() {
-                    input.set_value(
-                        query_params
-                            .execution_id_prefix
-                            .as_deref()
-                            .unwrap_or_default(),
-                    )
-                }
-                if let Some(input) = deployment_id_ref.cast::<HtmlInputElement>() {
-                    input.set_value(query_params.deployment_id.as_deref().unwrap_or_default())
-                }
-                if let Some(input) = component_digest_ref.cast::<HtmlInputElement>() {
-                    input.set_value(query_params.component_digest.as_deref().unwrap_or_default())
-                }
-                ffqn_prefix_state.set(query_params.ffqn_prefix.clone().unwrap_or_default());
+                spawn_local(async move {
+                    // Attempt to sync text values from the actual filter into text boxes.
+                    if let Some(input) = prefix_ref.cast::<HtmlInputElement>() {
+                        input.set_value(
+                            query_params
+                                .execution_id_prefix
+                                .as_deref()
+                                .unwrap_or_default(),
+                        )
+                    }
+                    if let Some(input) = deployment_id_ref.cast::<HtmlInputElement>() {
+                        input.set_value(query_params.deployment_id.as_deref().unwrap_or_default())
+                    }
+                    if let Some(input) = component_digest_ref.cast::<HtmlInputElement>() {
+                        input
+                            .set_value(query_params.component_digest.as_deref().unwrap_or_default())
+                    }
+                    ffqn_prefix_state.set(query_params.ffqn_prefix.clone().unwrap_or_default());
 
-                let page_size = 10;
-                let mut rest_query = vec![
-                    ("show_derived", query_params.show_derived.to_string()),
-                    ("hide_finished", query_params.hide_finished.to_string()),
-                    ("length", page_size.to_string()),
-                    ("including_cursor", query_params.include_cursor.to_string()),
-                    (
-                        "direction",
-                        match query_params.direction.unwrap_or_default() {
-                            Direction::Older => "older",
-                            Direction::Newer => "newer",
+                    let page_size = 10;
+                    let mut rest_query = vec![
+                        ("show_derived", query_params.show_derived.to_string()),
+                        ("hide_finished", query_params.hide_finished.to_string()),
+                        ("length", page_size.to_string()),
+                        ("including_cursor", query_params.include_cursor.to_string()),
+                        (
+                            "direction",
+                            match query_params.direction.unwrap_or_default() {
+                                Direction::Older => "older",
+                                Direction::Newer => "newer",
+                            }
+                            .to_string(),
+                        ),
+                    ];
+                    if let Some(cursor) = query_params.cursor {
+                        let value = match cursor {
+                            ExecutionsCursor::ExecutionId(id) => id.id,
+                            ExecutionsCursor::CreatedAt(date) => date.to_rfc3339(),
+                        };
+                        rest_query.push(("cursor", value));
+                    }
+                    if let Some(value) = query_params.ffqn_prefix {
+                        rest_query.push(execution_function_filter(value));
+                    }
+                    for (key, value) in [
+                        ("execution_id_prefix", query_params.execution_id_prefix),
+                        ("component_digest", query_params.component_digest),
+                        ("deployment_id", query_params.deployment_id),
+                    ] {
+                        if let Some(value) = value.filter(|value| !value.is_empty()) {
+                            rest_query.push((key, value));
                         }
-                        .to_string(),
-                    ),
-                ];
-                if let Some(cursor) = query_params.cursor {
-                    let value = match cursor {
-                        ExecutionsCursor::ExecutionId(id) => id.id,
-                        ExecutionsCursor::CreatedAt(date) => date.to_rfc3339(),
-                    };
-                    rest_query.push(("cursor", value));
-                }
-                if let Some(value) = query_params.ffqn_prefix {
-                    rest_query.push(execution_function_filter(value));
-                }
-                for (key, value) in [
-                    ("execution_id_prefix", query_params.execution_id_prefix),
-                    ("component_digest", query_params.component_digest),
-                    ("deployment_id", query_params.deployment_id),
-                ] {
-                    if let Some(value) = value.filter(|value| !value.is_empty()) {
-                        rest_query.push((key, value));
                     }
-                }
-                if let Some(status) = query_params.status {
-                    for value in status.0 {
-                        rest_query.push(("state", value.as_str().to_string()));
+                    if let Some(status) = query_params.status {
+                        for value in status.0 {
+                            rest_query.push(("state", value.as_str().to_string()));
+                        }
                     }
-                }
-                debug!("Fetching executions with query: {rest_query:?}");
-                let response = rest::executions::list(&rest_query).await;
+                    debug!("Fetching executions with query: {rest_query:?}");
+                    let response = rest::executions::list(&rest_query).await;
 
-                match response {
-                    Ok(executions) => response_state.set(Some(executions)),
-                    Err(e) => {
-                        error!("Failed to list executions: {:?}", e);
-                        notifications.push(Notification::error(format!(
-                            "Failed to list executions: {}",
-                            e
-                        )));
+                    match response {
+                        Ok(executions) => response_state.set(Some(executions)),
+                        Err(e) => {
+                            error!("Failed to list executions: {:?}", e);
+                            notifications.push(Notification::error(format!(
+                                "Failed to list executions: {}",
+                                e
+                            )));
+                        }
                     }
-                }
-            })
-        });
+                })
+            },
+        );
     }
 
     // Clicked on "Filter / Refresh"
@@ -866,6 +891,25 @@ pub fn execution_list_page() -> Html {
             let component_digest = execution.component_digest.as_ref().expect("component_digest missing").digest.as_str();
 
             let hide_submit = !app_state.ffqns_to_details.contains_key(&ffqn);
+            let is_top_level = execution_id.parent_id().is_none();
+            let on_selection_toggle = {
+                let selected_executions = selected_executions.clone();
+                let delete_armed = delete_armed.clone();
+                let disarm_timer = disarm_timer.clone();
+                let execution_id = execution_id.clone();
+                Callback::from(move |event: Event| {
+                    let input: HtmlInputElement = event.target_unchecked_into();
+                    let mut selected = selected_executions.deref().clone();
+                    if input.checked() {
+                        selected.insert(execution_id.id.clone());
+                    } else {
+                        selected.remove(&execution_id.id);
+                    }
+                    selected_executions.set(selected);
+                    delete_armed.set(false);
+                    *disarm_timer.borrow_mut() = None;
+                })
+            };
 
             let created_at: DateTime<Utc> = execution.created_at.expect("`created_at` is sent").into();
             // Prefer the live status polled by `ExecutionStatus` over the fetched one.
@@ -883,6 +927,17 @@ pub fn execution_list_page() -> Html {
                 <article key={execution_id.id.clone()} class="execution-list-item">
                     <div class="execution-summary">
                         <div class="execution-title">
+                            if *delete_mode && is_top_level {
+                                <input
+                                    type="checkbox"
+                                    class="execution-select"
+                                    title="Select execution tree for deletion"
+                                    aria-label={format!("Select execution {execution_id}")}
+                                    checked={selected_executions.contains(&execution_id.id)}
+                                    onchange={on_selection_toggle}
+                                    disabled={*delete_in_flight}
+                                />
+                            }
                             <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
                                 <span class="execution-id">{execution_id.to_string()}</span>
                             </Link<Route>>
@@ -971,10 +1026,98 @@ pub fn execution_list_page() -> Html {
         } else {
             None
         };
-        let on_page_change = {
-            let navigator = navigator.clone();
-            Callback::from(move |query: ExecutionQuery| {
-                let _ = navigator.push_with_query(&Route::ExecutionList, &query);
+        let latest_query = ExecutionQuery {
+            cursor: None,
+            direction: None,
+            include_cursor: false,
+            ..query.clone()
+        };
+
+        let on_force_non_terminal_change = {
+            let delete_force_non_terminal = delete_force_non_terminal.clone();
+            let delete_armed = delete_armed.clone();
+            let disarm_timer = disarm_timer.clone();
+            Callback::from(move |event: Event| {
+                let input: HtmlInputElement = event.target_unchecked_into();
+                delete_force_non_terminal.set(input.checked());
+                delete_armed.set(false);
+                *disarm_timer.borrow_mut() = None;
+            })
+        };
+
+        let on_delete_click = {
+            let selected = selected_executions.deref().clone();
+            let force_non_terminal = *delete_force_non_terminal;
+            let is_armed = *delete_armed;
+            let delete_armed = delete_armed.clone();
+            let delete_in_flight = delete_in_flight.clone();
+            let disarm_timer = disarm_timer.clone();
+            let notifications = notifications.clone();
+            let refresh = refresh.clone();
+            Callback::from(move |_| {
+                if selected.is_empty() || *delete_in_flight {
+                    return;
+                }
+                if !is_armed {
+                    delete_armed.set(true);
+                    let delete_armed = delete_armed.clone();
+                    *disarm_timer.borrow_mut() =
+                        Some(Timeout::new(10000, move || delete_armed.set(false)));
+                    return;
+                }
+                delete_armed.set(false);
+                *disarm_timer.borrow_mut() = None;
+                delete_in_flight.set(true);
+                let selected = selected.clone();
+                let delete_in_flight = delete_in_flight.clone();
+                let notifications = notifications.clone();
+                let refresh = refresh.clone();
+                spawn_local(async move {
+                    let mut deleted = 0;
+                    let mut already_absent = 0;
+                    let mut failures = Vec::new();
+                    for execution_id in selected {
+                        match rest::admin::delete_execution_tree(&execution_id, force_non_terminal)
+                            .await
+                        {
+                            Ok(result) if result.deleted => deleted += 1,
+                            Ok(result) if result.already_deleted => already_absent += 1,
+                            Ok(_) => {
+                                failures.push(format!("{execution_id}: server did not delete it"))
+                            }
+                            Err(error) => failures.push(format!("{execution_id}: {error}")),
+                        }
+                    }
+                    delete_in_flight.set(false);
+                    if deleted + already_absent > 0 {
+                        let mut message = format!("Deleted {deleted} execution tree(s)");
+                        if already_absent > 0 {
+                            message.push_str(&format!("; {already_absent} already absent"));
+                        }
+                        notifications.push(Notification::success(message));
+                    }
+                    if !failures.is_empty() {
+                        notifications.push(Notification::error(format!(
+                            "Failed to delete {} execution tree(s): {}",
+                            failures.len(),
+                            failures.join("; ")
+                        )));
+                    }
+                    refresh.set((*refresh).wrapping_add(1));
+                });
+            })
+        };
+        let selected_count = selected_executions.len();
+        let set_delete_mode = |enabled: bool| {
+            let delete_mode = delete_mode.clone();
+            let selected_executions = selected_executions.clone();
+            let delete_armed = delete_armed.clone();
+            let disarm_timer = disarm_timer.clone();
+            Callback::from(move |_| {
+                delete_mode.set(enabled);
+                selected_executions.set(BTreeSet::new());
+                delete_armed.set(false);
+                *disarm_timer.borrow_mut() = None;
             })
         };
         html! {
@@ -1083,36 +1226,50 @@ pub fn execution_list_page() -> Html {
                     <div class="execution-list">{ rows }</div>
                 }
 
+                <div class="execution-selection-actions">
+                    if *delete_mode {
+                        <span class="execution-delete-hint">{"Select top-level execution trees to delete"}</span>
+                        <div class="execution-delete-group">
+                            <label class="execution-delete-force">
+                                <input type="checkbox" checked={*delete_force_non_terminal}
+                                    onchange={on_force_non_terminal_change} disabled={*delete_in_flight} />
+                                {"Include non-terminal executions"}
+                            </label>
+                            <button class={classes!("action-button", "execution-delete-button", (*delete_armed).then_some("armed"))}
+                                onclick={on_delete_click} disabled={*delete_in_flight || selected_count == 0}
+                                title={if *delete_force_non_terminal {
+                                    "Delete selected execution trees, including unfinished ones; trees of the active deployment stay protected"
+                                } else {
+                                    "Delete selected finished execution trees, including child executions"
+                                }}>
+                                {if *delete_in_flight {
+                                    "Deleting...".to_owned()
+                                } else if selected_count == 0 {
+                                    "Delete selected".to_owned()
+                                } else if *delete_armed {
+                                    format!("Confirm delete {selected_count}")
+                                } else {
+                                    format!("Delete selected ({selected_count})")
+                                }}
+                            </button>
+                            <button class="action-button" onclick={set_delete_mode(false)} disabled={*delete_in_flight}>
+                                {"Cancel"}
+                            </button>
+                        </div>
+                    } else {
+                        <div class="execution-delete-group">
+                            <button class="action-button" onclick={set_delete_mode(true)}
+                                title="Select execution trees to delete">
+                                {"Delete…"}
+                            </button>
+                        </div>
+                    }
+                </div>
+
                 <div class="pagination">
-                    <button onclick={&on_apply_filters}>
-                        {"Latest"}
-                    </button>
-
-                    if let Some(query) = newer_page_query {
-                        <button onclick={
-                            let on_page_change = on_page_change.clone();
-                            move |_| on_page_change.emit(query.clone())
-                        }>
-                            {"← Newer"}
-                        </button>
-                    } else {
-                        <button disabled={true}>
-                            {"← Newer"}
-                        </button>
-                    }
-
-                    if let Some(query) = older_page_query {
-                        <button onclick={
-                            let on_page_change = on_page_change.clone();
-                            move |_| on_page_change.emit(query.clone())
-                        }>
-                            {"Older →"}
-                        </button>
-                    } else {
-                        <button disabled={true}>
-                            {"Older →"}
-                        </button>
-                    }
+                    {page_link(Route::ExecutionList, Some(latest_query), "Latest")}
+                    {page_link(Route::ExecutionList, newer_page_query, "← Newer")}
+                    {page_link(Route::ExecutionList, older_page_query, "Older →")}
                 </div>
 
             </ContextProvider<StatusCacheContext>>

@@ -20,7 +20,10 @@
   }
 
   // Descendant, not child: the system events page wraps its content in <main>.
-  .pagination button {
+  .pagination button,
+  .pagination a,
+  .pagination span.disabled {
+    display: inline-block;
     padding: 10px;
     margin: 0 5px;
     text-decoration: none;
@@ -30,7 +33,13 @@
     background: none;
     cursor: pointer;
 
-    &:disabled {
+    &:hover:not(:disabled):not(.disabled) {
+      border-color: $color-accent-cyan;
+      text-decoration: none;
+    }
+
+    &:disabled,
+    &.disabled {
       color: $color-border-secondary;
       border-color: $color-border-primary;
       background: transparent;

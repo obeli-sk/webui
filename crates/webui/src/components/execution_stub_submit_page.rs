@@ -2,6 +2,7 @@ use crate::{
     app::{AppState, Route},
     components::{
         code::code_block::CodeBlock,
+        deployment_detail_page::DeploymentQuery,
         execution_header::{ExecutionHeader, ExecutionLink},
         ffqn_with_links::FfqnWithLinks,
         notification::{Notification, NotificationContext},
@@ -180,11 +181,18 @@ pub fn execution_stub_result_page(
             </h1>
             <h3>
                 {"Provided by "}
-                <Link<Route> to={Route::Component { component_id: component_id.clone() } }>
-                    { component.as_type().as_icon_html() }
-                    {" "}
-                    {&component.component_id.as_ref().expect("`component_id` is sent").name}
-                </Link<Route>>
+                { component.as_type().as_icon_html() }
+                {" "}
+                if let Some(deployment_id) = &app_state.current_deployment_id {
+                    <Link<Route, DeploymentQuery>
+                        to={Route::DeploymentDetail { deployment_id: deployment_id.clone() }}
+                        query={Some(DeploymentQuery { component: Some(component_id.name.clone()) })}
+                    >
+                        {&component_id.name}
+                    </Link<Route, DeploymentQuery>>
+                } else {
+                    {&component_id.name}
+                }
             </h3>
         </header>
         <form id="execution-stub-result-form" onsubmit = {on_submit }>

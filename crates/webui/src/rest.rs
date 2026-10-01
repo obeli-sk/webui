@@ -1,6 +1,7 @@
 use gloo::net::http::Request;
 use serde::{Serialize, de::DeserializeOwned};
 
+pub mod admin;
 pub mod components;
 pub mod deployments;
 pub mod events;
@@ -79,6 +80,24 @@ pub async fn put<B: Serialize + ?Sized, T: DeserializeOwned>(
 ) -> Result<T, String> {
     let mut request =
         Request::put(&format!("{}{}", crate::BASE_URL, path)).header("Accept", "application/json");
+    if let Some(token) = crate::auth::token() {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+    let response = request
+        .json(body)
+        .map_err(|error| error.to_string())?
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    decode(response).await
+}
+
+pub async fn post<B: Serialize + ?Sized, T: DeserializeOwned>(
+    path: &str,
+    body: &B,
+) -> Result<T, String> {
+    let mut request =
+        Request::post(&format!("{}{}", crate::BASE_URL, path)).header("Accept", "application/json");
     if let Some(token) = crate::auth::token() {
         request = request.header("Authorization", &format!("Bearer {token}"));
     }

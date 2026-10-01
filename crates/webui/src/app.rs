@@ -3,7 +3,7 @@ use crate::{
     auth::AuthProvider,
     components::{
         app_config_page::AppConfigPage,
-        component_list_page::ComponentListPage,
+        component_redirect::ComponentRedirect,
         debugger::debugger_view::DebuggerView,
         deployment_detail_page::DeploymentDetailPage,
         deployment_diff_page::DeploymentDiffPage,
@@ -16,6 +16,7 @@ use crate::{
         execution_submit_page::ExecutionSubmitPage,
         not_found::NotFound,
         notification::{Notification, NotificationContext, NotificationProvider},
+        retention_page::RetentionPage,
         system_events_page::SystemEventsPage,
         trace::trace_view::TraceView,
     },
@@ -134,6 +135,7 @@ pub mod query {
 pub enum Route {
     #[at("/")]
     Home,
+    // backcompat: 0.28.1 had standalone component pages, both routes redirect to the deployment detail page.
     #[at("/components")]
     ComponentList,
     #[at("/component/:component_id")]
@@ -187,6 +189,8 @@ pub enum Route {
     SystemEvents,
     #[at("/admin/app-config")]
     AppConfig,
+    #[at("/admin/retention")]
+    Retention,
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -196,9 +200,9 @@ impl Route {
     pub fn render(route: Route) -> Html {
         match route {
             Route::Home | Route::ExecutionList => html! { <ExecutionListPage /> },
-            Route::ComponentList => html! { <ComponentListPage /> },
+            Route::ComponentList => html! { <ComponentRedirect /> },
             Route::Component { component_id } => {
-                html! { <ComponentListPage maybe_component_id={Some(component_id)}/> }
+                html! { <ComponentRedirect component_id={Some(component_id)} /> }
             }
             Route::DeploymentList => html! { <DeploymentListPage /> },
             Route::DeploymentDetail { deployment_id } => {
@@ -230,6 +234,7 @@ impl Route {
             }
             Route::SystemEvents => html! { <SystemEventsPage /> },
             Route::AppConfig => html! { <AppConfigPage /> },
+            Route::Retention => html! { <RetentionPage /> },
             Route::NotFound => html! { <NotFound /> },
         }
     }
@@ -404,11 +409,10 @@ fn app_nav() -> Html {
                 | Route::Logs { .. }
         )
     );
-    let component_active = matches!(
+    let system_active = matches!(
         route.as_ref(),
-        Some(Route::ComponentList | Route::Component { .. })
+        Some(Route::SystemEvents | Route::AppConfig | Route::Retention)
     );
-    let system_active = matches!(route.as_ref(), Some(Route::SystemEvents | Route::AppConfig));
 
     html! {
         <nav class="app-nav" aria-label="Main navigation">
@@ -419,7 +423,6 @@ fn app_nav() -> Html {
             </div>
             <div class="app-nav-group">
                 <span class="app-nav-label">{"Manage"}</span>
-                <Link<Route> classes={classes!(component_active.then_some("active"))} to={Route::ComponentList}>{"Components"}</Link<Route>>
                 <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>
             </div>
         </nav>

@@ -1,7 +1,7 @@
 use crate::{
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
-        component_list_page::ComponentListPage,
+        component_detail::ComponentDetail,
         copy_button::CopyButton,
     },
     grpc::grpc_client,
@@ -528,9 +528,12 @@ fn source_summary(source: &SourceView) -> Html {
 pub struct DeploymentConfigViewProps {
     pub sections: Vec<SectionView>,
     /// Component name -> component metadata resolved via `ListComponents` for this deployment.
-    pub components_by_name: HashMap<String, grpc_client::Component>,
+    pub components_by_name: Rc<HashMap<String, grpc_client::Component>>,
     /// The deployment these components belong to.
     pub deployment_id: grpc_client::DeploymentId,
+    /// Name of the component to open and scroll to.
+    #[prop_or_default]
+    pub focused_component: Option<String>,
 }
 
 #[component(DeploymentConfigView)]
@@ -539,9 +542,19 @@ pub fn deployment_config_view(
         sections,
         components_by_name,
         deployment_id,
+        focused_component,
     }: &DeploymentConfigViewProps,
 ) -> Html {
     let search = use_state(String::new);
+    // The filter must not hide the component being navigated to.
+    {
+        let search = search.clone();
+        use_effect_with(focused_component.clone(), move |focused_component| {
+            if focused_component.is_some() {
+                search.set(String::new());
+            }
+        });
+    }
     let on_search = {
         let search = search.clone();
         Callback::from(move |event: InputEvent| {
@@ -574,7 +587,9 @@ pub fn deployment_config_view(
             if visible == 0 {
                 <p class="component-empty-state">{"No components match this name."}</p>
             }
-            {for sections.iter().filter_map(|section| {
+            // A nested fragment keeps the keyed sections out of the unkeyed siblings, otherwise
+            // filtering recreates the search input and it loses focus.
+            <>{for sections.iter().filter_map(|section| {
                 let matches = section.components.iter()
                     .filter(|component| component.name.to_lowercase().contains(&query))
                     .collect::<Vec<_>>();
@@ -589,15 +604,17 @@ pub fn deployment_config_view(
                                     <DeploymentComponentCard
                                         key={component.name.clone()}
                                         component={component.clone()}
-                                        metadata={components_by_name.get(&component.name).cloned()}
+                                        metadata={components_by_name.get(&component.name).cloned().map(Rc::new)}
+                                        deployment_components={components_by_name.clone()}
                                         deployment_id={deployment_id.clone()}
+                                        focused={focused_component.as_ref() == Some(&component.name)}
                                     />
                                 })}
                             </div>
                         </section>
                     })
                 }
-            })}
+            })}</>
         </>
     }
 }
@@ -605,13 +622,28 @@ pub fn deployment_config_view(
 #[derive(Properties, PartialEq)]
 struct DeploymentComponentCardProps {
     component: ComponentView,
-    metadata: Option<grpc_client::Component>,
+    metadata: Option<Rc<grpc_client::Component>>,
+    deployment_components: Rc<HashMap<String, grpc_client::Component>>,
     deployment_id: grpc_client::DeploymentId,
+    focused: bool,
 }
 
 #[component(DeploymentComponentCard)]
 fn deployment_component_card(props: &DeploymentComponentCardProps) -> Html {
-    let open = use_state(|| false);
+    let open = use_state(|| props.focused);
+    let card_ref = use_node_ref();
+    {
+        let open = open.clone();
+        let card_ref = card_ref.clone();
+        use_effect_with(props.focused, move |focused| {
+            if *focused {
+                open.set(true);
+                if let Some(card) = card_ref.cast::<web_sys::Element>() {
+                    card.scroll_into_view();
+                }
+            }
+        });
+    }
     let ontoggle = {
         let open = open.clone();
         Callback::from(move |event: Event| {
@@ -619,13 +651,14 @@ fn deployment_component_card(props: &DeploymentComponentCardProps) -> Html {
             open.set(details.has_attribute("open"));
         })
     };
-    let component_id = props
-        .metadata
-        .as_ref()
-        .and_then(|metadata| metadata.component_id.clone());
 
     html! {
-        <details class="deployment-component-card" {ontoggle}>
+        <details
+            ref={card_ref}
+            class={classes!("deployment-component-card", props.focused.then_some("focused"))}
+            open={*open}
+            {ontoggle}
+        >
             <summary>
                 <span class="component-name">{&props.component.name}</span>
                 if let Some(metadata) = &props.metadata {
@@ -634,11 +667,11 @@ fn deployment_component_card(props: &DeploymentComponentCardProps) -> Html {
             </summary>
             if *open {
                 <div class="deployment-component-detail">
-                    if let Some(component_id) = component_id {
-                        <ComponentListPage
-                            maybe_component_id={Some(component_id)}
-                            embedded_deployment_id={Some(props.deployment_id.clone())}
-                            inline_component={props.metadata.clone()}
+                    if let Some(metadata) = &props.metadata {
+                        <ComponentDetail
+                            component={metadata.clone()}
+                            deployment_id={props.deployment_id.clone()}
+                            deployment_components={props.deployment_components.clone()}
                         />
                     } else {
                         <h5>{"Configuration"}</h5>

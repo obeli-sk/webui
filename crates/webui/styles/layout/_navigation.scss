@@ -1,5 +1,10 @@
 @use '../base/variables' as *;
 
+// Clearance below the sticky .app-bar, shared by .app-nav and scroll_into_view targets.
+$app-bar-clearance: 6rem;
+
+html { scroll-padding-top: $app-bar-clearance; }
+
 .app-shell { min-height: 100vh; }
 
 .app-bar {
@@ -115,7 +120,7 @@
 
 .app-nav {
   position: sticky;
-  top: 6rem;
+  top: $app-bar-clearance;
   display: grid;
   gap: 1.75rem;
   padding: 0.75rem 0;
@@ -145,17 +150,6 @@
     background: color-mix(in srgb, $color-accent-cyan 12%, $color-bg-secondary);
     color: $color-accent-cyan;
   }
-}
-
-.breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: $spacing-sm;
-  margin: 0 0 $spacing-sm;
-  color: $color-text-secondary;
-  font-size: $font-size-sm;
-
-  .breadcrumb-separator { color: $color-text-muted; }
 }
 
 @media (max-width: 850px) {

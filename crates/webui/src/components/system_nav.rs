@@ -13,6 +13,7 @@ pub fn system_nav(props: &SystemNavProps) -> Html {
         <div class="system-nav" aria-label="System pages">
             <Link<Route> classes={classes!((props.active == Route::SystemEvents).then_some("active"))} to={Route::SystemEvents}>{"System events"}</Link<Route>>
             <Link<Route> classes={classes!((props.active == Route::AppConfig).then_some("active"))} to={Route::AppConfig}>{"App config"}</Link<Route>>
+            <Link<Route> classes={classes!((props.active == Route::Retention).then_some("active"))} to={Route::Retention}>{"Retention"}</Link<Route>>
         </div>
     }
 }

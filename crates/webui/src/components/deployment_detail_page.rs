@@ -1,6 +1,7 @@
 use crate::{
     app::{AppState, Route},
     components::{
+        component_graph::ComponentGraph,
         deployment_actions::DeploymentActions,
         deployment_config_view::{DeploymentConfigView, build_sections_from_manifest, toml_block},
         execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
@@ -13,8 +14,10 @@ use crate::{
 use chrono::DateTime;
 use hashbrown::HashMap;
 use log::error;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::ops::Deref;
+use std::rc::Rc;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
@@ -22,6 +25,13 @@ use yew_router::{
     history::{BrowserHistory, History},
     prelude::*,
 };
+
+/// Optional query of the deployment detail page: the component to open and scroll to.
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct DeploymentQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+}
 
 #[derive(Properties, PartialEq)]
 pub struct DeploymentDetailPageProps {
@@ -32,6 +42,7 @@ pub struct DeploymentDetailPageProps {
 enum DeploymentTab {
     #[default]
     Overview,
+    Graph,
     Toml,
 }
 
@@ -40,6 +51,7 @@ impl DeploymentTab {
         match hash.strip_prefix('#').unwrap_or(hash) {
             // backcompat: 0.28.1 links used #components before the tabs were merged.
             "components" => Self::Overview,
+            "graph" => Self::Graph,
             "toml" => Self::Toml,
             _ => Self::Overview,
         }
@@ -48,6 +60,7 @@ impl DeploymentTab {
     fn fragment(self) -> &'static str {
         match self {
             Self::Overview => "overview",
+            Self::Graph => "graph",
             Self::Toml => "toml",
         }
     }
@@ -79,12 +92,17 @@ pub fn deployment_detail_page(
 
     let deployment_state = use_state(|| None::<grpc_client::Deployment>);
     let execution_summary = use_state(|| None::<DeploymentExecutionSummary>);
-    let components_by_name = use_state(HashMap::<String, grpc_client::Component>::new);
+    let components_by_name =
+        use_state(|| Rc::new(HashMap::<String, grpc_client::Component>::new()));
     // Bumped after a successful switch action to refetch the deployment.
     let refresh = use_state(|| 0u32);
     let show_derived = use_state(|| false);
     let location = use_location().expect("location must be available inside a router");
     let active_tab = DeploymentTab::from_hash(location.hash());
+    let focused_component = location
+        .query::<DeploymentQuery>()
+        .unwrap_or_default()
+        .component;
 
     {
         let deployment_state = deployment_state.clone();
@@ -117,7 +135,7 @@ pub fn deployment_detail_page(
                                     Some((name, component))
                                 })
                                 .collect();
-                            components_by_name.set(map);
+                            components_by_name.set(Rc::new(map));
                         }
                         Err(e) => {
                             // Components may be unavailable for old deployments; not fatal.
@@ -245,6 +263,7 @@ pub fn deployment_detail_page(
                         sections={sections}
                         components_by_name={components_by_name.deref().clone()}
                         deployment_id={deployment_id.clone()}
+                        focused_component={focused_component.clone()}
                     />
                 }
             }
@@ -372,6 +391,12 @@ pub fn deployment_detail_page(
 
     let tab_content = match active_tab {
         DeploymentTab::Overview => overview_html,
+        DeploymentTab::Graph => html! {
+            <ComponentGraph
+                deployment_id={deployment_id.clone()}
+                components_by_name={components_by_name.deref().clone()}
+            />
+        },
         DeploymentTab::Toml => toml_html,
     };
 
@@ -414,6 +439,7 @@ pub fn deployment_detail_page(
             </div>
             <div class="view-tabs deployment-detail-tabs">
                 { tab_button("Overview", DeploymentTab::Overview) }
+                { tab_button("Graph", DeploymentTab::Graph) }
                 { tab_button("TOML", DeploymentTab::Toml) }
             </div>
             <div class="deployment-tab-content">{ tab_content }</div>

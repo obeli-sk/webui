@@ -2,7 +2,8 @@
 // Component interfaces
 // ============================================
 // Used by:
-//   - src/components/component_list_page.rs
+//   - src/components/component_detail.rs
+//   - src/components/component_graph.rs
 //   - src/components/deployment_config_view.rs
 // ============================================
 @use '../base/variables' as *;
@@ -11,23 +12,42 @@
   margin-top: 20px;
 }
 
-.component-detail-header {
-  padding-bottom: $spacing-md;
-  border-bottom: 1px solid $color-border-primary;
-
-  h1 {
-    margin-bottom: $spacing-xs;
-  }
-}
-
-.component-intro,
 .component-section-help,
 .component-empty-state {
   color: $color-text-secondary;
 }
 
-.component-intro {
-  margin-top: 0;
+.component-connections {
+  margin-top: $spacing-md;
+
+  h4 {
+    margin: 0;
+  }
+
+  .component-section-help {
+    margin: $spacing-xs 0 $spacing-sm;
+    font-size: $font-size-sm;
+  }
+
+  > ul {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-sm;
+    margin: 0;
+    padding-left: $spacing-md;
+  }
+}
+
+.component-dynamic-note {
+  margin: 0 0 $spacing-sm;
+  font-size: $font-size-sm;
+}
+
+.component-connection-interfaces {
+  margin: $spacing-xs 0 0;
+  color: $color-text-secondary;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
 }
 
 .types-interface {
@@ -174,4 +194,94 @@
       background: $color-bg-tertiary;
     }
   }
+}
+
+.component-graph {
+  .component-section-help {
+    margin: 0 0 $spacing-sm;
+  }
+
+  h4 {
+    margin: $spacing-lg 0 0;
+  }
+}
+
+.component-graph-scroll {
+  overflow-x: auto;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-lg;
+  background: $color-bg-tertiary;
+
+  svg {
+    display: block;
+  }
+
+  marker path {
+    fill: $color-text-muted;
+  }
+
+  marker.active path {
+    fill: $color-accent-cyan;
+  }
+}
+
+.component-graph-edge {
+  fill: none;
+  stroke: $color-text-muted;
+  stroke-width: 1.5;
+  transition: opacity $transition-fast;
+
+  &.active {
+    stroke: $color-accent-cyan;
+    stroke-width: 2;
+  }
+
+  &.dimmed {
+    opacity: 0.2;
+  }
+}
+
+.component-graph-node {
+  cursor: pointer;
+  transition: opacity $transition-fast;
+
+  rect {
+    fill: $color-bg-secondary;
+    stroke: $color-border-secondary;
+    stroke-width: 1.5;
+  }
+
+  text {
+    fill: $color-text-primary;
+    dominant-baseline: central;
+    font-family: $font-family-mono;
+    font-size: 13px;
+  }
+
+  &.workflow rect { stroke: $color-accent-purple; }
+  &.activity rect { stroke: $color-accent-green; }
+  &.webhook_endpoint rect { stroke: $color-accent-orange; }
+  &.activity_stub rect,
+  &.cron rect { stroke: $color-accent-cyan; }
+
+  &.dynamic rect {
+    stroke-dasharray: 5 3;
+  }
+
+  &:hover rect {
+    fill: $color-bg-hover;
+  }
+
+  &.dimmed {
+    opacity: 0.35;
+  }
+}
+
+.component-graph-unconnected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-xs $spacing-md;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
