@@ -75,8 +75,7 @@ pub(crate) fn component_name(component: &grpc_client::Component) -> &str {
 }
 
 /// Whether the component imports a dynamic support interface, letting it call any function of
-/// the deployment by name. JS workflows and webhooks always do, and the server does not report
-/// the interfaces their JS code imports.
+/// the deployment by name. JS components do when their code imports the dynamic module.
 pub(crate) fn calls_dynamically(component: &grpc_client::Component) -> bool {
     interfaces(&component.imports).iter().any(|ifc| {
         let ifc_name = ifc
