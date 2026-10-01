@@ -411,7 +411,10 @@ fn module_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<SourceView> {
                 content: SourceContent::FetchFile {
                     digest: file.digest.clone(),
                 },
-                metadata: Some(SourceMetadata { role }),
+                metadata: Some(SourceMetadata {
+                    role,
+                    entrypoint: false,
+                }),
             })
         })
         .collect()
