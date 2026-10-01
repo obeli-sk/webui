@@ -36,15 +36,9 @@
 }
 
 .app-brand-mark {
-  display: grid;
-  place-items: center;
   width: 2rem;
-  height: 2rem;
-  border: 1px solid $color-accent-cyan;
-  border-radius: 0.65rem;
-  color: $color-accent-cyan;
-  font-size: 1.2rem;
-  line-height: 1;
+  height: 2.3rem;
+  object-fit: contain;
 }
 
 .app-brand-caption {
@@ -155,6 +149,8 @@
 }
 
 @media (max-width: 520px) {
-  .app-brand-caption, .theme-toggle span:last-child { display: none; }
+  .app-bar-inner { flex-wrap: wrap; }
+  .app-bar-actions { margin-left: auto; }
+  .theme-toggle span:last-child { display: none; }
   .app-bar .nav-submit { padding-inline: 0.55rem; }
 }

@@ -360,9 +360,9 @@ fn app_inner(
                     <header class="app-bar">
                         <div class="app-bar-inner">
                             <Link<Route> classes="app-brand" to={Route::Home}>
-                                <span class="app-brand-mark" aria-hidden="true">{"O"}</span>
+                                <img class="app-brand-mark" src="/logo.png" alt="" />
                                 <span>{"Obelisk"}</span>
-                                <span class="app-brand-caption">{"Console"}</span>
+                                <span class="app-brand-caption">{"WebUI"}</span>
                             </Link<Route>>
                             <div class="app-bar-actions">
                                 <ThemeToggle />
