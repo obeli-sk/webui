@@ -76,6 +76,23 @@
   }
 }
 
+.theme-toggle {
+  min-width: 2.3rem;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+  background: none;
+  border-color: color-mix(in srgb, $color-text-primary 25%, transparent);
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1;
+
+  &:hover {
+    background: none;
+    color: $color-accent-cyan;
+    border-color: $color-accent-cyan;
+  }
+}
+
 .app-bar .nav-submit {
   background: $color-accent-cyan;
   border-color: $color-accent-cyan;
@@ -151,6 +168,5 @@
 @media (max-width: 520px) {
   .app-bar-inner { flex-wrap: wrap; }
   .app-bar-actions { margin-left: auto; }
-  .theme-toggle span:last-child { display: none; }
   .app-bar .nav-submit { padding-inline: 0.55rem; }
 }

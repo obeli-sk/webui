@@ -475,7 +475,6 @@ fn theme_toggle() -> Html {
             title={format!("Theme: {}", *theme)}
             aria-label={format!("Theme: {}. Click to change.", *theme)}>
             <span aria-hidden="true">{icon}</span>
-            <span>{format!("Theme: {}", *theme)}</span>
         </button>
     }
 }
