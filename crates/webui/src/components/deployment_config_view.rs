@@ -1,24 +1,16 @@
 use crate::{
-    app::Route,
     components::{
         code::syntect_code_block::{SyntectCodeBlock, highlight_code_line_by_line},
-        component_list_page::ComponentQuery,
+        component_list_page::ComponentListPage,
         copy_button::CopyButton,
-        execution_list_page::ExecutionQuery,
-        ffqn_with_links::FfqnWithLinks,
-        function_signature::FunctionSignature,
     },
-    grpc::{
-        ffqn::FunctionFqn,
-        function_detail::{InterfaceFilter, map_interfaces_to_fn_details},
-        grpc_client,
-    },
+    grpc::grpc_client,
 };
 use hashbrown::HashMap;
 use serde_json::Value;
 use std::{path::PathBuf, rc::Rc};
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
-use yew_router::prelude::*;
 
 /// Manifest (`deployment.toml`) section keys, in display order, paired with a human title.
 /// These are the `[[section]]` table-array keys the server stores verbatim.
@@ -537,10 +529,8 @@ pub struct DeploymentConfigViewProps {
     pub sections: Vec<SectionView>,
     /// Component name -> component metadata resolved via `ListComponents` for this deployment.
     pub components_by_name: HashMap<String, grpc_client::Component>,
-    /// The deployment these components belong to; threaded into component detail links.
+    /// The deployment these components belong to.
     pub deployment_id: grpc_client::DeploymentId,
-    /// Whether execution submission is safe because this deployment is active.
-    pub allow_submit: bool,
 }
 
 #[component(DeploymentConfigView)]
@@ -549,97 +539,123 @@ pub fn deployment_config_view(
         sections,
         components_by_name,
         deployment_id,
-        allow_submit,
     }: &DeploymentConfigViewProps,
 ) -> Html {
+    let search = use_state(String::new);
+    let on_search = {
+        let search = search.clone();
+        Callback::from(move |event: InputEvent| {
+            let input: HtmlInputElement = event.target_unchecked_into();
+            search.set(input.value());
+        })
+    };
+
     if sections.is_empty() {
         return html! { <p>{"This deployment contains no components."}</p> };
     }
-    sections
+    let query = search.trim().to_lowercase();
+    let total = sections
         .iter()
-        .map(|section| {
-            html! {
-                <details class="deployment-section">
-                    <summary>
-                        <h4>{ section.title } { format!(" ({})", section.components.len()) }</h4>
-                    </summary>
-                    <div class="deployment-component-list">
-                        { for section.components.iter().map(|component| {
-                            let component_metadata = components_by_name.get(&component.name);
-                            let component_id = component_metadata
-                                .and_then(|component| component.component_id.clone());
-                            let exports = component_metadata
-                                .map(|component| map_interfaces_to_fn_details(
-                                    &component.exports,
-                                    InterfaceFilter::WithoutExtensions,
-                                ))
-                                .unwrap_or_default();
-                            html!{
-                                <article class="deployment-component-card">
-                                    <header>
-                                    <span class="component-name">{ &component.name }</span>
-                                    if let Some(component_id) = &component_id {
-                                        <span class="component-link">
-                                            <Link<Route, ComponentQuery>
-                                                to={Route::Component { component_id: component_id.clone() }}
-                                                query={ComponentQuery { deployment_id: Some(deployment_id.id.clone()) }}
-                                            >
-                                                {"Component details"}
-                                            </Link<Route, ComponentQuery>>
-                                        </span>
-                                    }
-                                    </header>
-                                if !exports.is_empty() {
-                                    <div class="deployment-component-exports">
-                                        { for exports.iter().map(|(interface, functions)| html! {
-                                            <section class="types-interface">
-                                                <h4>
-                                                    <Link<Route, ExecutionQuery>
-                                                        to={Route::ExecutionList}
-                                                        query={ExecutionQuery {
-                                                            ffqn_prefix: Some(interface.to_string()),
-                                                            show_derived: true,
-                                                            ..Default::default()
-                                                        }}
-                                                    >
-                                                        {interface.to_string()}
-                                                    </Link<Route, ExecutionQuery>>
-                                                </h4>
-                                                <ul>
-                                                    { for functions.iter().map(|function| {
-                                                        let ffqn = FunctionFqn::from_fn_detail(function)
-                                                            .expect("exported function must be parseable");
-                                                        html! {
-                                                            <li>
-                                                                <FfqnWithLinks
-                                                                    {ffqn}
-                                                                    hide_submit={!*allow_submit || !function.submittable}
-                                                                />
-                                                                {": "}
-                                                                <span>
-                                                                    <FunctionSignature
-                                                                        params={function.params.clone()}
-                                                                        return_type={function.return_type.clone()}
-                                                                    />
-                                                                </span>
-                                                            </li>
-                                                        }
-                                                    }) }
-                                                </ul>
-                                            </section>
-                                        }) }
-                                    </div>
-                                } else {
-                                    <p class="component-empty-state">{"No exported functions."}</p>
-                                }
-                                </article>
-                            }
-                        })}
-                    </div>
-                </details>
+        .map(|section| section.components.len())
+        .sum::<usize>();
+    let visible = sections
+        .iter()
+        .flat_map(|section| &section.components)
+        .filter(|component| component.name.to_lowercase().contains(&query))
+        .count();
+
+    html! {
+        <>
+            <div class="deployment-component-search">
+                <input type="search" value={(*search).clone()} oninput={on_search}
+                    placeholder="Filter components by name" aria-label="Filter components by name" />
+                <span>{format!("{visible} of {total} components")}</span>
+            </div>
+            if visible == 0 {
+                <p class="component-empty-state">{"No components match this name."}</p>
             }
+            {for sections.iter().filter_map(|section| {
+                let matches = section.components.iter()
+                    .filter(|component| component.name.to_lowercase().contains(&query))
+                    .collect::<Vec<_>>();
+                if matches.is_empty() {
+                    None
+                } else {
+                    Some(html! {
+                        <section class="deployment-section" key={section.toml_key}>
+                            <h5>{section.title}<span>{format!("{}", matches.len())}</span></h5>
+                            <div class="deployment-component-list">
+                                {for matches.into_iter().map(|component| html! {
+                                    <DeploymentComponentCard
+                                        key={component.name.clone()}
+                                        component={component.clone()}
+                                        metadata={components_by_name.get(&component.name).cloned()}
+                                        deployment_id={deployment_id.clone()}
+                                    />
+                                })}
+                            </div>
+                        </section>
+                    })
+                }
+            })}
+        </>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct DeploymentComponentCardProps {
+    component: ComponentView,
+    metadata: Option<grpc_client::Component>,
+    deployment_id: grpc_client::DeploymentId,
+}
+
+#[component(DeploymentComponentCard)]
+fn deployment_component_card(props: &DeploymentComponentCardProps) -> Html {
+    let open = use_state(|| false);
+    let ontoggle = {
+        let open = open.clone();
+        Callback::from(move |event: Event| {
+            let details: web_sys::HtmlElement = event.target_unchecked_into();
+            open.set(details.has_attribute("open"));
         })
-        .collect()
+    };
+    let component_id = props
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.component_id.clone());
+
+    html! {
+        <details class="deployment-component-card" {ontoggle}>
+            <summary>
+                <span class="component-name">{&props.component.name}</span>
+                if let Some(metadata) = &props.metadata {
+                    <span class="deployment-component-type">{metadata.as_type().as_label()}</span>
+                }
+            </summary>
+            if *open {
+                <div class="deployment-component-detail">
+                    if let Some(component_id) = component_id {
+                        <ComponentListPage
+                            maybe_component_id={Some(component_id)}
+                            embedded_deployment_id={Some(props.deployment_id.clone())}
+                            inline_component={props.metadata.clone()}
+                        />
+                    } else {
+                        <h5>{"Configuration"}</h5>
+                        {render_config_value(&props.component.config)}
+                        if !props.component.sources.is_empty() {
+                            <h5>{"Sources"}</h5>
+                            <div class="component-sources">
+                                {for props.component.sources.iter().map(|source| html! {
+                                    <CollapsibleSource source={source.clone()} component_id={None} />
+                                })}
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        </details>
+    }
 }
 
 #[cfg(test)]

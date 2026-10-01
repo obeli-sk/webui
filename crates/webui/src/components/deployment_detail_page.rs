@@ -32,14 +32,14 @@ pub struct DeploymentDetailPageProps {
 enum DeploymentTab {
     #[default]
     Overview,
-    Components,
     Toml,
 }
 
 impl DeploymentTab {
     fn from_hash(hash: &str) -> Self {
         match hash.strip_prefix('#').unwrap_or(hash) {
-            "components" => Self::Components,
+            // backcompat: 0.28.1 links used #components before the tabs were merged.
+            "components" => Self::Overview,
             "toml" => Self::Toml,
             _ => Self::Overview,
         }
@@ -48,7 +48,6 @@ impl DeploymentTab {
     fn fragment(self) -> &'static str {
         match self {
             Self::Overview => "overview",
-            Self::Components => "components",
             Self::Toml => "toml",
         }
     }
@@ -246,7 +245,6 @@ pub fn deployment_detail_page(
                         sections={sections}
                         components_by_name={components_by_name.deref().clone()}
                         deployment_id={deployment_id.clone()}
-                        allow_submit={is_current}
                     />
                 }
             }
@@ -340,6 +338,7 @@ pub fn deployment_detail_page(
     };
 
     let overview_html = html! {
+        <>
         <section class="deployment-executions">
             <div class="deployment-section-heading">
                 <h4>{"Executions"}</h4>
@@ -362,11 +361,17 @@ pub fn deployment_detail_page(
                 <p>{"Loading execution summary..."}</p>
             }
         </section>
+        <section class="deployment-components">
+            <div class="deployment-section-heading">
+                <h4>{"Components"}</h4>
+            </div>
+            {components_html}
+        </section>
+        </>
     };
 
     let tab_content = match active_tab {
         DeploymentTab::Overview => overview_html,
-        DeploymentTab::Components => components_html,
         DeploymentTab::Toml => toml_html,
     };
 
@@ -409,7 +414,6 @@ pub fn deployment_detail_page(
             </div>
             <div class="view-tabs deployment-detail-tabs">
                 { tab_button("Overview", DeploymentTab::Overview) }
-                { tab_button("Components", DeploymentTab::Components) }
                 { tab_button("TOML", DeploymentTab::Toml) }
             </div>
             <div class="deployment-tab-content">{ tab_content }</div>
