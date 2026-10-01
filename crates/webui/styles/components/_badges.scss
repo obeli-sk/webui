@@ -3,7 +3,6 @@
 // ============================================
 // Used by:
 //   - src/components/deployment_list_page.rs  (.badge.current inside .deployment-list)
-//   - src/components/component_list_page.rs   (.component-type-label)
 // Note: header-scoped .badge styles live in _header.scss
 // ============================================
 @use '../base/variables' as *;
@@ -34,16 +33,4 @@
       color: $color-text-secondary;
     }
   }
-}
-
-// Component type indicator pill — component_list_page.rs
-// Renamed from `.label` to avoid collision with syntect tokens
-// (syntect emits e.g. `class="entity name label js"` which matched the old global `.label`)
-.component-type-label {
-  background-color: $color-accent-cyan;
-  color: $color-text-white;
-  padding: 4px 6px;
-  border-radius: $border-radius-md;
-  font-size: 14px;
-  margin: 10px;
 }

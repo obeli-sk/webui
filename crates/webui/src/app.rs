@@ -3,7 +3,7 @@ use crate::{
     auth::AuthProvider,
     components::{
         app_config_page::AppConfigPage,
-        component_list_page::ComponentListPage,
+        component_redirect::ComponentRedirect,
         debugger::debugger_view::DebuggerView,
         deployment_detail_page::DeploymentDetailPage,
         deployment_diff_page::DeploymentDiffPage,
@@ -135,6 +135,7 @@ pub mod query {
 pub enum Route {
     #[at("/")]
     Home,
+    // backcompat: 0.28.1 had standalone component pages, both routes redirect to the deployment detail page.
     #[at("/components")]
     ComponentList,
     #[at("/component/:component_id")]
@@ -199,9 +200,9 @@ impl Route {
     pub fn render(route: Route) -> Html {
         match route {
             Route::Home | Route::ExecutionList => html! { <ExecutionListPage /> },
-            Route::ComponentList => html! { <ComponentListPage /> },
+            Route::ComponentList => html! { <ComponentRedirect /> },
             Route::Component { component_id } => {
-                html! { <ComponentListPage maybe_component_id={Some(component_id)}/> }
+                html! { <ComponentRedirect component_id={Some(component_id)} /> }
             }
             Route::DeploymentList => html! { <DeploymentListPage /> },
             Route::DeploymentDetail { deployment_id } => {
@@ -408,10 +409,6 @@ fn app_nav() -> Html {
                 | Route::Logs { .. }
         )
     );
-    let component_active = matches!(
-        route.as_ref(),
-        Some(Route::ComponentList | Route::Component { .. })
-    );
     let system_active = matches!(
         route.as_ref(),
         Some(Route::SystemEvents | Route::AppConfig | Route::Retention)
@@ -426,7 +423,6 @@ fn app_nav() -> Html {
             </div>
             <div class="app-nav-group">
                 <span class="app-nav-label">{"Manage"}</span>
-                <Link<Route> classes={classes!(component_active.then_some("active"))} to={Route::ComponentList}>{"Components"}</Link<Route>>
                 <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>
             </div>
         </nav>

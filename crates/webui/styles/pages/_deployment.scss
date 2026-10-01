@@ -281,6 +281,8 @@
         &::before { transform: rotate(90deg); }
     }
 
+    &.focused { border-color: $color-accent-cyan; }
+
     .component-name {
         font-family: $font-family-mono;
         font-weight: 600;

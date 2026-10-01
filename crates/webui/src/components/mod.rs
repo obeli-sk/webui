@@ -1,8 +1,8 @@
 pub mod advance_modal;
 pub mod app_config_page;
 pub mod code;
-pub mod component_list_page;
-pub mod component_tree;
+pub mod component_detail;
+pub mod component_redirect;
 pub mod copy_button;
 pub mod debugger;
 pub mod deployment_actions;
