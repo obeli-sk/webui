@@ -816,17 +816,17 @@ pub fn debugger_view(
                 }
                 Some(Err(BacktraceError::NotFound)) => {
                     html! {
-                        <p>{format!("Backtrace not found")}</p>
+                        <p>{"Backtrace not found"}</p>
                     }
                 }
                 Some(Err(BacktraceError::Other)) => {
                     html! {
-                        <p>{format!("Loading backtrace failed")}</p>
+                        <p>{"Loading backtrace failed"}</p>
                     }
                 }
                 None => {
                     html! {
-                        <p>{format!("Loading backtrace...", )}</p>
+                        <p>{"Loading backtrace..."}</p>
                     }
                 }
             };
