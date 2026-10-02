@@ -13,7 +13,7 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/obeli-sk/webui"
 authors = ["Project Developers"]
 edition = "2024"
-rust-version = "1.91.0"
+rust-version = "1.98.1"
 
 [workspace.dependencies]
 val-json = { package = "obeli-sk-val-json", path = "obelisk/crates/val-json" }
