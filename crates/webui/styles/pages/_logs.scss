@@ -12,20 +12,12 @@
   flex-wrap: wrap;
   gap: $spacing-md;
   align-items: center;
-  justify-content: space-between;
 
   .logs-filters {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: $spacing-md;
-
-    label {
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
+    gap: $spacing-xs;
   }
 }
 
@@ -107,7 +99,6 @@
   }
 
   .kind {
-
     &.kind-trace,
     &.kind-debug,
     &.kind-info,

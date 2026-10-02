@@ -3,6 +3,7 @@
 .time-display-control {
   display: inline-flex;
   flex-shrink: 0;
+  margin-left: auto;
   border: 1px solid $color-border-primary;
   border-radius: $border-radius-md;
   overflow: hidden;

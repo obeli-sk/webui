@@ -11,7 +11,7 @@ use chrono::DateTime;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
-use web_sys::{HtmlElement, HtmlInputElement};
+use web_sys::HtmlElement;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
@@ -479,20 +479,18 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
 
     let on_toggle_run_id = {
         let show_run_id = show_run_id.clone();
-        Callback::from(move |e: Event| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            show_run_id.set(input.checked());
+        Callback::from(move |_| {
+            show_run_id.set(!*show_run_id);
         })
     };
 
     let on_toggle_derived = {
         let logs_state = logs_state.clone();
         let execution_id = execution_id.clone();
-        Callback::from(move |e: Event| {
-            let input: HtmlInputElement = e.target_unchecked_into();
+        Callback::from(move |_| {
             logs_state.dispatch(LogsAction::Reset {
                 execution_id: execution_id.clone(),
-                show_derived: input.checked(),
+                show_derived: !logs_state.show_derived,
                 filters: logs_state.filters.clone(),
             });
         })
@@ -564,24 +562,23 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                     })}
                 </div>
                 <div class="logs-filters">
-                    <label>
-                        <input
-                            type="checkbox"
-                            checked={logs_state.show_derived}
-                            onchange={on_toggle_derived}
-                            disabled={is_loading}
-                        />
-                        { "Show derived executions" }
-                    </label>
-
-                    <label>
-                        <input
-                            type="checkbox"
-                            checked={*show_run_id}
-                            onchange={on_toggle_run_id}
-                        />
-                        { "Show Run ID" }
-                    </label>
+                    <button
+                        class={classes!(logs_state.show_derived.then_some("selected"))}
+                        aria-pressed={logs_state.show_derived.to_string()}
+                        title="Show derived executions and the Child column"
+                        onclick={on_toggle_derived}
+                        disabled={is_loading}
+                    >
+                        { "Derived" }
+                    </button>
+                    <button
+                        class={classes!((*show_run_id).then_some("selected"))}
+                        aria-pressed={show_run_id.to_string()}
+                        title="Show Run ID column"
+                        onclick={on_toggle_run_id}
+                    >
+                        { "Run ID" }
+                    </button>
                 </div>
 
                 <TimeDisplayControl />
@@ -593,7 +590,9 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                         <tr>
                             <th scope="col">{"Date"}</th>
                             <th scope="col">{"Level / Stream"}</th>
-                            <th scope="col">{"Child"}</th>
+                            if logs_state.show_derived {
+                                <th scope="col">{"Child"}</th>
+                            }
                             if *show_run_id {
                                 <th scope="col">{"Run ID"}</th>
                             }
@@ -603,7 +602,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                     <tbody>
                         {
                             for logs_state.logs.iter().map(|entry| {
-                                render_log_entry(entry, execution_id, *show_run_id, &query)
+                                render_log_entry(entry, execution_id, logs_state.show_derived, *show_run_id, &query)
                             })
                         }
                     </tbody>
@@ -627,6 +626,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
 fn render_log_entry(
     entry: &grpc_client::list_logs_response::LogEntry,
     root_execution_id: &ExecutionId,
+    show_derived: bool,
     show_run_id: bool,
     query: &LogsQuery,
 ) -> Html {
@@ -700,7 +700,9 @@ fn render_log_entry(
         <tr class="log-row">
             <td class="time">{timestamp}</td>
             <td class={classes!("kind", kind_class)}>{kind}</td>
-            <td class="execution-id">{execution_id_html}</td>
+            if show_derived {
+                <td class="execution-id">{execution_id_html}</td>
+            }
             if show_run_id {
                 <td class="run-id">
                     {entry.run_id.as_ref().map(|run_id| run_id.id.clone()).unwrap_or_default()}
