@@ -588,11 +588,26 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
             </div>
 
             <div class="logs-list" onscroll={on_scroll}>
-                {
-                    for logs_state.logs.iter().map(|entry| {
-                        render_log_entry(entry, execution_id, *show_run_id, &query)
-                    })
-                }
+                <table class="logs-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">{"Date"}</th>
+                            <th scope="col">{"Level / Stream"}</th>
+                            <th scope="col">{"Child"}</th>
+                            if *show_run_id {
+                                <th scope="col">{"Run ID"}</th>
+                            }
+                            <th scope="col">{"Message"}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {
+                            for logs_state.logs.iter().map(|entry| {
+                                render_log_entry(entry, execution_id, *show_run_id, &query)
+                            })
+                        }
+                    </tbody>
+                </table>
 
                 if logs_state.logs.is_empty() {
                     <div class="logs-empty">
@@ -623,16 +638,6 @@ fn render_log_entry(
         html! { {"Unknown time"} }
     };
 
-    let run_id_html = if show_run_id {
-        if let Some(run_id) = &entry.run_id {
-            html! { <span class="run-id">{ format!("[{}]", run_id.id) }</span> }
-        } else {
-            html! {}
-        }
-    } else {
-        html! {}
-    };
-
     let execution_id_html = entry
         .execution_id
         .as_ref()
@@ -643,20 +648,17 @@ fn render_log_entry(
                 .split_once('.')
                 .map_or(execution_id.id.as_str(), |(_, child_id)| child_id);
             html! {
-                <span class="execution-id">
-                    <Link<Route, LogsQuery>
-                        to={Route::Logs { execution_id: execution_id.clone() }}
-                        query={Some(query.clone())}
-                    >
-                        {format!("[{child_id}]")}
-                    </Link<Route, LogsQuery>>
-                </span>
+                <Link<Route, LogsQuery>
+                    to={Route::Logs { execution_id: execution_id.clone() }}
+                    query={Some(query.clone())}
+                >
+                    {child_id.to_owned()}
+                </Link<Route, LogsQuery>>
             }
         })
         .unwrap_or_default();
 
-    // Access the 'oneof' entry
-    match &entry.entry {
+    let (kind_class, kind, payload) = match &entry.entry {
         Some(grpc_client::list_logs_response::log_entry::Entry::Log(log_variant)) => {
             let log_row_class = match log_variant.level {
                 1 => "kind-trace",
@@ -677,15 +679,7 @@ fn render_log_entry(
                 _ => "UNKNOWN",
             };
 
-            html! {
-                <div class="log-row">
-                    <span class="time">{"["}{timestamp}{"]"}</span>
-                    { execution_id_html }
-                    { run_id_html }
-                    <span class={classes!("kind", log_row_class)}>{ format!("[{}]", level_str) }</span>
-                    <span class="payload">{ log_variant.message.clone() }</span>
-                </div>
-            }
+            (log_row_class, level_str, log_variant.message.clone())
         }
         Some(grpc_client::list_logs_response::log_entry::Entry::Stream(stream_variant)) => {
             let (stream_prefix, log_row_class) = match stream_variant.stream_type() {
@@ -697,17 +691,23 @@ fn render_log_entry(
             // Convert bytes to UTF-8 string (lossy to prevent crashes on binary data)
             let payload_str = String::from_utf8_lossy(&stream_variant.payload).into_owned();
 
-            html! {
-                <div class="log-row">
-                     <span class="time">{"["}{timestamp}{"]"}</span>
-                     { execution_id_html }
-                     { run_id_html }
-                     <span class={classes!("kind", log_row_class)}>{ format!("[{}]", stream_prefix) }</span>
-                     <span class="payload">{ payload_str }</span>
-                </div>
-            }
+            (log_row_class, stream_prefix, payload_str)
         }
-        None => html! { <div>{ "Invalid Log Entry" }</div> },
+        None => ("kind-unknown", "UNKNOWN", "Invalid Log Entry".to_owned()),
+    };
+
+    html! {
+        <tr class="log-row">
+            <td class="time">{timestamp}</td>
+            <td class={classes!("kind", kind_class)}>{kind}</td>
+            <td class="execution-id">{execution_id_html}</td>
+            if show_run_id {
+                <td class="run-id">
+                    {entry.run_id.as_ref().map(|run_id| run_id.id.clone()).unwrap_or_default()}
+                </td>
+            }
+            <td class="payload">{payload}</td>
+        </tr>
     }
 }
 

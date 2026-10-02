@@ -53,15 +53,48 @@
   }
 }
 
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    padding: 3px 8px;
+    text-align: left;
+    vertical-align: top;
+
+    &:first-child {
+      padding-left: 0;
+    }
+
+    &:last-child {
+      padding-right: 0;
+    }
+  }
+
+  th {
+    color: $color-text-muted;
+    font-weight: normal;
+    white-space: nowrap;
+    border-bottom: 1px solid $color-border-primary;
+  }
+}
+
 .log-row {
+  .time,
+  .kind,
+  .execution-id,
+  .run-id {
+    width: 1%;
+    white-space: nowrap;
+  }
+
   .time {
     color: $color-text-muted;
-    margin-right: 10px;
   }
 
   .execution-id,
   .run-id {
-    margin-right: 8px;
     color: $color-accent-cyan;
   }
 
@@ -74,7 +107,6 @@
   }
 
   .kind {
-    margin-right: 10px;
 
     &.kind-trace,
     &.kind-debug,
@@ -95,5 +127,7 @@
 
   .payload {
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    min-width: 16rem;
   }
 }
