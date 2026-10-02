@@ -1,0 +1,43 @@
+@use '../base/variables' as *;
+
+.time-display-control {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  border: 1px solid $color-border-primary;
+  border-radius: $border-radius-md;
+  overflow: hidden;
+
+  button {
+    padding: 0.35rem 0.7rem;
+    border: none;
+    border-right: 1px solid $color-border-primary;
+    background: $color-bg-primary;
+    color: $color-text-secondary;
+    cursor: pointer;
+    font-size: $font-size-sm;
+
+    &:last-child {
+      border-right: none;
+    }
+
+    &:hover {
+      background: $color-bg-hover;
+      color: $color-text-light;
+    }
+
+    &.selected {
+      background: color-mix(in srgb, $color-accent-cyan 15%, transparent);
+      color: $color-accent-cyan;
+    }
+
+    &:focus-visible {
+      outline-offset: -2px;
+    }
+  }
+}
+
+.timestamp {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

@@ -31,4 +31,5 @@ pub mod pagination;
 pub mod retention_page;
 pub mod system_events_page;
 pub mod system_nav;
+pub mod time_display;
 pub mod trace;

@@ -110,5 +110,36 @@ pub struct RelativeAgoProps {
 #[function_component(RelativeAgo)]
 pub fn relative_ago(props: &RelativeAgoProps) -> Html {
     let now = use_relative_now(props.target);
-    html! { <>{relative_time(props.target, now, TimeGranularity::Coarse)}{" ago"}</> }
+    html! { {relative_ago_label(props.target, now)} }
+}
+
+fn relative_ago_label(target: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    if target > now {
+        format!("in {}", relative_time(now, target, TimeGranularity::Coarse))
+    } else {
+        format!(
+            "{} ago",
+            relative_time(target, now, TimeGranularity::Coarse)
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relative_labels_distinguish_past_and_future() {
+        let now = DateTime::parse_from_rfc3339("2026-10-02T12:00:00Z")
+            .unwrap()
+            .to_utc();
+        assert_eq!(
+            relative_ago_label(now - TimeDelta::minutes(5), now),
+            "5 mins ago"
+        );
+        assert_eq!(
+            relative_ago_label(now + TimeDelta::minutes(5), now),
+            "in 5 mins"
+        );
+    }
 }

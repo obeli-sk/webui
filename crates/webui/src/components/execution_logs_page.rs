@@ -1,21 +1,138 @@
 use crate::{
+    app::Route,
     components::execution_header::{ExecutionHeader, ExecutionLink},
     components::notification::{Notification, NotificationContext},
+    components::time_display::{TimeDisplayControl, Timestamp},
     grpc::grpc_client::{self, ExecutionId},
     rest,
-    util::time::format_date,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::DateTime;
 use log::debug;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::rc::Rc;
-use web_sys::{HtmlElement, HtmlInputElement};
+use web_sys::HtmlElement;
 use yew::prelude::*;
+use yew_router::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct LogsPageProps {
     pub execution_id: ExecutionId,
+}
+
+const FILTER_LEVELS: [RestLogLevel; 5] = [
+    RestLogLevel::Trace,
+    RestLogLevel::Debug,
+    RestLogLevel::Info,
+    RestLogLevel::Warn,
+    RestLogLevel::Error,
+];
+const DEFAULT_LEVELS: [RestLogLevel; 5] = FILTER_LEVELS;
+const FILTER_STREAMS: [RestStreamType; 2] = [RestStreamType::Stdout, RestStreamType::Stderr];
+
+#[derive(Clone, PartialEq)]
+struct LogFilters {
+    levels: Vec<RestLogLevel>,
+    streams: Vec<RestStreamType>,
+}
+
+impl Default for LogFilters {
+    fn default() -> Self {
+        Self {
+            levels: DEFAULT_LEVELS.to_vec(),
+            streams: FILTER_STREAMS.to_vec(),
+        }
+    }
+}
+
+impl LogFilters {
+    fn query_params(&self) -> Vec<(&'static str, String)> {
+        let mut query = vec![
+            ("show_logs", (!self.levels.is_empty()).to_string()),
+            ("show_streams", (!self.streams.is_empty()).to_string()),
+        ];
+        query.extend(
+            self.levels
+                .iter()
+                .map(|level| ("level", level.as_str().to_string())),
+        );
+        query.extend(
+            self.streams
+                .iter()
+                .map(|stream| ("stream_type", stream.as_str().to_string())),
+        );
+        query
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+struct LogsQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    levels: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    streams: Option<String>,
+}
+
+impl LogsQuery {
+    fn selected_levels(&self) -> Vec<RestLogLevel> {
+        match self.levels.as_deref() {
+            None => DEFAULT_LEVELS.to_vec(),
+            Some("") => Vec::new(),
+            Some(levels) => levels
+                .split(',')
+                .map(|level| {
+                    FILTER_LEVELS
+                        .into_iter()
+                        .find(|candidate| candidate.as_str() == level)
+                })
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_else(|| DEFAULT_LEVELS.to_vec()),
+        }
+    }
+
+    fn selected_streams(&self) -> Vec<RestStreamType> {
+        match self.streams.as_deref() {
+            None => FILTER_STREAMS.to_vec(),
+            Some("") => Vec::new(),
+            Some(streams) => streams
+                .split(',')
+                .map(|stream| {
+                    FILTER_STREAMS
+                        .into_iter()
+                        .find(|candidate| candidate.as_str() == stream)
+                })
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_else(|| FILTER_STREAMS.to_vec()),
+        }
+    }
+
+    fn filters(&self) -> LogFilters {
+        LogFilters {
+            levels: self.selected_levels(),
+            streams: self.selected_streams(),
+        }
+    }
+
+    fn from_filters(filters: &LogFilters) -> Self {
+        let levels = &filters.levels;
+        let streams = &filters.streams;
+        Self {
+            levels: (levels.as_slice() != DEFAULT_LEVELS).then(|| {
+                levels
+                    .iter()
+                    .map(|level| level.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }),
+            streams: (streams.as_slice() != FILTER_STREAMS).then(|| {
+                streams
+                    .iter()
+                    .map(|stream| stream.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Default)]
@@ -29,6 +146,7 @@ enum LogsAction {
     Reset {
         execution_id: ExecutionId,
         show_derived: bool,
+        filters: LogFilters,
     },
     LoadMore,
     PageLoaded {
@@ -48,6 +166,7 @@ enum LogsAction {
 struct LogsState {
     execution_id: Option<ExecutionId>,
     show_derived: bool,
+    filters: LogFilters,
     fetch_state: LogsFetchState,
     logs: Vec<grpc_client::list_logs_response::LogEntry>,
     next_page_token: String,
@@ -78,7 +197,7 @@ enum RestLogEntry {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum RestLogLevel {
     Trace,
@@ -88,11 +207,49 @@ enum RestLogLevel {
     Error,
 }
 
-#[derive(Deserialize)]
+impl RestLogLevel {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Trace => "Trace",
+            Self::Debug => "Debug",
+            Self::Info => "Info",
+            Self::Warn => "Warning",
+            Self::Error => "Error",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum RestStreamType {
     Stdout,
     Stderr,
+}
+
+impl RestStreamType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Stdout => "stdout",
+            Self::Stderr => "stderr",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Stdout => "Stdout",
+            Self::Stderr => "Stderr",
+        }
+    }
 }
 
 fn decode_logs(
@@ -175,6 +332,7 @@ impl Default for LogsState {
         Self {
             execution_id: None,
             show_derived: true,
+            filters: LogFilters::default(),
             fetch_state: LogsFetchState::Pending,
             logs: Vec::new(),
             next_page_token: String::new(),
@@ -191,9 +349,11 @@ impl Reducible for LogsState {
             LogsAction::Reset {
                 execution_id,
                 show_derived,
+                filters,
             } => Rc::new(Self {
                 execution_id: Some(execution_id),
                 show_derived,
+                filters,
                 fetch_state: LogsFetchState::Pending,
                 logs: Vec::new(),
                 next_page_token: String::new(),
@@ -242,6 +402,10 @@ impl Reducible for LogsState {
 
 #[component(LogsPage)]
 pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Html {
+    let navigator = use_navigator().unwrap();
+    let location = use_location().unwrap();
+    let query = location.query::<LogsQuery>().unwrap_or_default();
+    let filters = query.filters();
     let logs_state = use_reducer_eq(LogsState::default);
     let show_run_id = use_state(|| false);
     let notifications =
@@ -249,12 +413,17 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
 
     {
         let logs_state = logs_state.clone();
-        use_effect_with(execution_id.clone(), move |execution_id| {
-            logs_state.dispatch(LogsAction::Reset {
-                execution_id: execution_id.clone(),
-                show_derived: true,
-            });
-        });
+        let show_derived = logs_state.show_derived;
+        use_effect_with(
+            (execution_id.clone(), filters),
+            move |(execution_id, filters)| {
+                logs_state.dispatch(LogsAction::Reset {
+                    execution_id: execution_id.clone(),
+                    show_derived,
+                    filters: filters.clone(),
+                });
+            },
+        );
     }
 
     {
@@ -265,16 +434,25 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                 logs_state.execution_id.clone(),
                 logs_state.fetch_state.clone(),
                 logs_state.show_derived,
+                logs_state.filters.clone(),
                 logs_state.next_page_token.clone(),
                 logs_state.request_generation,
             ),
-            move |(execution_id, fetch_state, show_derived, page_token, request_generation)| {
+            move |(
+                execution_id,
+                fetch_state,
+                show_derived,
+                filters,
+                page_token,
+                request_generation,
+            )| {
                 if *fetch_state == LogsFetchState::Pending
                     && let Some(execution_id) = execution_id.clone()
                 {
                     fetch_logs_page(
                         execution_id,
                         *show_derived,
+                        filters.clone(),
                         page_token.clone(),
                         *request_generation,
                         logs_state.clone(),
@@ -301,21 +479,58 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
 
     let on_toggle_run_id = {
         let show_run_id = show_run_id.clone();
-        Callback::from(move |e: Event| {
-            let input: HtmlInputElement = e.target_unchecked_into();
-            show_run_id.set(input.checked());
+        Callback::from(move |_| {
+            show_run_id.set(!*show_run_id);
         })
     };
 
     let on_toggle_derived = {
         let logs_state = logs_state.clone();
         let execution_id = execution_id.clone();
-        Callback::from(move |e: Event| {
-            let input: HtmlInputElement = e.target_unchecked_into();
+        Callback::from(move |_| {
             logs_state.dispatch(LogsAction::Reset {
                 execution_id: execution_id.clone(),
-                show_derived: input.checked(),
+                show_derived: !logs_state.show_derived,
+                filters: logs_state.filters.clone(),
             });
+        })
+    };
+
+    let toggle_level = |level: RestLogLevel| {
+        let logs_state = logs_state.clone();
+        let execution_id = execution_id.clone();
+        let navigator = navigator.clone();
+        Callback::from(move |_| {
+            let mut filters = logs_state.filters.clone();
+            filters.levels = FILTER_LEVELS
+                .into_iter()
+                .filter(|candidate| filters.levels.contains(candidate) != (*candidate == level))
+                .collect();
+            let _ = navigator.push_with_query(
+                &Route::Logs {
+                    execution_id: execution_id.clone(),
+                },
+                &LogsQuery::from_filters(&filters),
+            );
+        })
+    };
+
+    let toggle_stream = |stream: RestStreamType| {
+        let logs_state = logs_state.clone();
+        let execution_id = execution_id.clone();
+        let navigator = navigator.clone();
+        Callback::from(move |_| {
+            let mut filters = logs_state.filters.clone();
+            filters.streams = FILTER_STREAMS
+                .into_iter()
+                .filter(|candidate| filters.streams.contains(candidate) != (*candidate == stream))
+                .collect();
+            let _ = navigator.push_with_query(
+                &Route::Logs {
+                    execution_id: execution_id.clone(),
+                },
+                &LogsQuery::from_filters(&filters),
+            );
         })
     };
 
@@ -326,35 +541,72 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
             <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Logs} />
 
             <div class="logs-options">
+                <div class="logs-levels" aria-label="Log levels and streams">
+                    {for FILTER_LEVELS.into_iter().map(|level| html! {
+                        <button
+                            class={classes!(logs_state.filters.levels.contains(&level).then_some("selected"))}
+                            aria-pressed={logs_state.filters.levels.contains(&level).to_string()}
+                            onclick={toggle_level(level)}
+                        >
+                            {level.label()}
+                        </button>
+                    })}
+                    {for FILTER_STREAMS.into_iter().map(|stream| html! {
+                        <button
+                            class={classes!(logs_state.filters.streams.contains(&stream).then_some("selected"))}
+                            aria-pressed={logs_state.filters.streams.contains(&stream).to_string()}
+                            onclick={toggle_stream(stream)}
+                        >
+                            {stream.label()}
+                        </button>
+                    })}
+                </div>
                 <div class="logs-filters">
-                    <label>
-                        <input
-                            type="checkbox"
-                            checked={logs_state.show_derived}
-                            onchange={on_toggle_derived}
-                            disabled={is_loading}
-                        />
-                        { "Show derived executions" }
-                    </label>
-
-                    <label>
-                        <input
-                            type="checkbox"
-                            checked={*show_run_id}
-                            onchange={on_toggle_run_id}
-                        />
-                        { "Show Run ID" }
-                    </label>
+                    <button
+                        class={classes!(logs_state.show_derived.then_some("selected"))}
+                        aria-pressed={logs_state.show_derived.to_string()}
+                        title="Show derived executions and the Child column"
+                        onclick={on_toggle_derived}
+                        disabled={is_loading}
+                    >
+                        { "Derived" }
+                    </button>
+                    <button
+                        class={classes!((*show_run_id).then_some("selected"))}
+                        aria-pressed={show_run_id.to_string()}
+                        title="Show Run ID column"
+                        onclick={on_toggle_run_id}
+                    >
+                        { "Run ID" }
+                    </button>
                 </div>
 
+                <TimeDisplayControl />
             </div>
 
             <div class="logs-list" onscroll={on_scroll}>
-                {
-                    for logs_state.logs.iter().map(|entry| {
-                        render_log_entry(entry, execution_id, *show_run_id)
-                    })
-                }
+                <table class="logs-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">{"Date"}</th>
+                            <th scope="col">{"Level / Stream"}</th>
+                            if logs_state.show_derived {
+                                <th scope="col">{"Child"}</th>
+                            }
+                            if *show_run_id {
+                                <th scope="col">{"Run ID"}</th>
+                            }
+                            <th scope="col">{"Message"}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {
+                            for logs_state.logs.iter().map(|entry| {
+                                render_log_entry(entry, execution_id, logs_state.show_derived, *show_run_id, &query)
+                            })
+                        }
+                    </tbody>
+                </table>
 
                 if logs_state.logs.is_empty() {
                     <div class="logs-empty">
@@ -374,24 +626,16 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
 fn render_log_entry(
     entry: &grpc_client::list_logs_response::LogEntry,
     root_execution_id: &ExecutionId,
+    show_derived: bool,
     show_run_id: bool,
+    query: &LogsQuery,
 ) -> Html {
     // Format Timestamp
-    let time_str = if let Some(ts) = &entry.created_at {
+    let timestamp = if let Some(ts) = &entry.created_at {
         let date_time = DateTime::from(*ts);
-        format_date(date_time)
+        html! { <Timestamp target={date_time} /> }
     } else {
-        "Unknown Time".to_string()
-    };
-
-    let run_id_html = if show_run_id {
-        if let Some(run_id) = &entry.run_id {
-            html! { <span class="run-id">{ format!("[{}]", run_id.id) }</span> }
-        } else {
-            html! {}
-        }
-    } else {
-        html! {}
+        html! { {"Unknown time"} }
     };
 
     let execution_id_html = entry
@@ -404,15 +648,17 @@ fn render_log_entry(
                 .split_once('.')
                 .map_or(execution_id.id.as_str(), |(_, child_id)| child_id);
             html! {
-                <span class="execution-id">
-                    { ExecutionLink::Logs.link(execution_id.clone(), &format!("[{child_id}]")) }
-                </span>
+                <Link<Route, LogsQuery>
+                    to={Route::Logs { execution_id: execution_id.clone() }}
+                    query={Some(query.clone())}
+                >
+                    {child_id.to_owned()}
+                </Link<Route, LogsQuery>>
             }
         })
         .unwrap_or_default();
 
-    // Access the 'oneof' entry
-    match &entry.entry {
+    let (kind_class, kind, payload) = match &entry.entry {
         Some(grpc_client::list_logs_response::log_entry::Entry::Log(log_variant)) => {
             let log_row_class = match log_variant.level {
                 1 => "kind-trace",
@@ -433,15 +679,7 @@ fn render_log_entry(
                 _ => "UNKNOWN",
             };
 
-            html! {
-                <div class="log-row">
-                    <span class="time">{ format!("[{}]", time_str) }</span>
-                    { execution_id_html }
-                    { run_id_html }
-                    <span class={classes!("kind", log_row_class)}>{ format!("[{}]", level_str) }</span>
-                    <span class="payload">{ log_variant.message.clone() }</span>
-                </div>
-            }
+            (log_row_class, level_str, log_variant.message.clone())
         }
         Some(grpc_client::list_logs_response::log_entry::Entry::Stream(stream_variant)) => {
             let (stream_prefix, log_row_class) = match stream_variant.stream_type() {
@@ -453,28 +691,46 @@ fn render_log_entry(
             // Convert bytes to UTF-8 string (lossy to prevent crashes on binary data)
             let payload_str = String::from_utf8_lossy(&stream_variant.payload).into_owned();
 
-            html! {
-                <div class="log-row">
-                     <span class="time">{ format!("[{}]", time_str) }</span>
-                     { execution_id_html }
-                     { run_id_html }
-                     <span class={classes!("kind", log_row_class)}>{ format!("[{}]", stream_prefix) }</span>
-                     <span class="payload">{ payload_str }</span>
-                </div>
-            }
+            (log_row_class, stream_prefix, payload_str)
         }
-        None => html! { <div>{ "Invalid Log Entry" }</div> },
+        None => ("kind-unknown", "UNKNOWN", "Invalid Log Entry".to_owned()),
+    };
+
+    html! {
+        <tr class="log-row">
+            <td class="time">{timestamp}</td>
+            <td class={classes!("kind", kind_class)}>{kind}</td>
+            if show_derived {
+                <td class="execution-id">{execution_id_html}</td>
+            }
+            if show_run_id {
+                <td class="run-id">
+                    {entry.run_id.as_ref().map(|run_id| run_id.id.clone()).unwrap_or_default()}
+                </td>
+            }
+            <td class="payload">{payload}</td>
+        </tr>
     }
 }
 
 fn fetch_logs_page(
     execution_id: ExecutionId,
     show_derived: bool,
+    filters: LogFilters,
     page_token: String,
     request_generation: u64,
     logs_state: UseReducerHandle<LogsState>,
     notifications: NotificationContext,
 ) {
+    if filters.levels.is_empty() && filters.streams.is_empty() {
+        logs_state.dispatch(LogsAction::PageLoaded {
+            execution_id,
+            show_derived,
+            request_generation,
+            response: Default::default(),
+        });
+        return;
+    }
     wasm_bindgen_futures::spawn_local(async move {
         const PAGE_SIZE: usize = 200;
         debug!("Requesting logs page `{page_token}`");
@@ -483,6 +739,7 @@ fn fetch_logs_page(
             ("direction", "newer".to_string()),
             ("show_derived", show_derived.to_string()),
         ];
+        query.extend(filters.query_params());
         if !page_token.is_empty() {
             query.push(("cursor", page_token));
         }
@@ -533,6 +790,109 @@ fn request_matches(
 mod tests {
     use super::*;
     use grpc_client::list_logs_response::log_entry::Entry;
+
+    #[test]
+    fn log_query_preserves_levels_streams_and_empty_selection() {
+        let levels = [
+            RestLogLevel::Debug,
+            RestLogLevel::Info,
+            RestLogLevel::Warn,
+            RestLogLevel::Error,
+        ];
+        let query = LogsQuery::from_filters(&LogFilters {
+            levels: levels.to_vec(),
+            streams: vec![RestStreamType::Stdout],
+        });
+        let serialized = serde_json::to_string(&query).unwrap();
+        let restored: LogsQuery = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(restored.selected_levels(), levels);
+        assert_eq!(restored.levels.as_deref(), Some("debug,info,warn,error"));
+        assert_eq!(restored.selected_streams(), [RestStreamType::Stdout]);
+
+        let query = LogsQuery::from_filters(&LogFilters {
+            levels: Vec::new(),
+            streams: Vec::new(),
+        });
+        let serialized = serde_json::to_string(&query).unwrap();
+        let restored: LogsQuery = serde_json::from_str(&serialized).unwrap();
+        assert!(restored.selected_levels().is_empty());
+        assert!(restored.selected_streams().is_empty());
+        assert_eq!(LogsQuery::default().selected_levels(), DEFAULT_LEVELS);
+        assert_eq!(LogsQuery::default().selected_streams(), FILTER_STREAMS);
+    }
+
+    #[test]
+    fn stream_filters_disable_unselected_log_sources() {
+        let params = LogFilters {
+            levels: Vec::new(),
+            streams: vec![RestStreamType::Stderr],
+        }
+        .query_params();
+        assert_eq!(
+            params,
+            vec![
+                ("show_logs", "false".to_string()),
+                ("show_streams", "true".to_string()),
+                ("stream_type", "stderr".to_string()),
+            ]
+        );
+        let params = LogFilters {
+            levels: vec![RestLogLevel::Error],
+            streams: Vec::new(),
+        }
+        .query_params();
+        assert_eq!(
+            params,
+            vec![
+                ("show_logs", "true".to_string()),
+                ("show_streams", "false".to_string()),
+                ("level", "error".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn changing_filters_resets_pagination_and_rejects_stale_pages() {
+        let execution_id = ExecutionId { id: "E_1".into() };
+        let state = Rc::new(LogsState::default()).reduce(LogsAction::Reset {
+            execution_id: execution_id.clone(),
+            show_derived: true,
+            filters: LogFilters::default(),
+        });
+        let old_generation = state.request_generation;
+        let response = grpc_client::ListLogsResponse {
+            logs: vec![Default::default()],
+            next_page_token: "next".into(),
+            prev_page_token: None,
+        };
+        let state = state.reduce(LogsAction::PageLoaded {
+            execution_id: execution_id.clone(),
+            show_derived: true,
+            request_generation: old_generation,
+            response: response.clone(),
+        });
+        assert_eq!(state.logs.len(), 1);
+        let state = state.reduce(LogsAction::Reset {
+            execution_id: execution_id.clone(),
+            show_derived: true,
+            filters: LogFilters {
+                levels: vec![RestLogLevel::Error],
+                streams: vec![RestStreamType::Stderr],
+            },
+        });
+        assert!(state.logs.is_empty());
+        assert!(state.next_page_token.is_empty());
+        assert_eq!(state.filters.levels, [RestLogLevel::Error]);
+        assert_eq!(state.filters.streams, [RestStreamType::Stderr]);
+        assert!(state.fetch_state == LogsFetchState::Pending);
+        let unchanged = state.clone().reduce(LogsAction::PageLoaded {
+            execution_id,
+            show_derived: true,
+            request_generation: old_generation,
+            response,
+        });
+        assert!(Rc::ptr_eq(&state, &unchanged));
+    }
 
     #[test]
     fn rest_log_page_decodes_entries_and_cursor() {

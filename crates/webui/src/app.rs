@@ -18,6 +18,7 @@ use crate::{
         notification::{Notification, NotificationContext, NotificationProvider},
         retention_page::RetentionPage,
         system_events_page::SystemEventsPage,
+        time_display::TimeDisplayProvider,
         trace::trace_view::TraceView,
     },
     grpc::{
@@ -256,10 +257,12 @@ pub fn app(
     html! {
         <AuthProvider>
             <NotificationProvider>
-                <AppInner
-                    initial_components={initial_components.clone()}
-                    initial_deployment_id={initial_deployment_id.clone()}
-                />
+                <TimeDisplayProvider>
+                    <AppInner
+                        initial_components={initial_components.clone()}
+                        initial_deployment_id={initial_deployment_id.clone()}
+                    />
+                </TimeDisplayProvider>
             </NotificationProvider>
         </AuthProvider>
     }

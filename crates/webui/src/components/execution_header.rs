@@ -237,20 +237,28 @@ pub fn execution_header(
         });
     }
 
+    let tab_link = |tab: ExecutionLink, title: &str| {
+        tab.link_with_classes(
+            execution_id.clone(),
+            title,
+            classes!((tab == *link).then_some("active")),
+        )
+    };
+
     html! {
         <div class="execution-header">
-            <div class="header-and-links">
+            <div class="execution-heading">
                 <h3>{ execution_id.render_execution_parts(false, *link) }</h3>
-
-                <div class="execution-links">
-                    { ExecutionLink::Trace.link(execution_id.clone(), "Trace") }
-                    { ExecutionLink::ExecutionLog.link(execution_id.clone(), "Execution Log") }
-                    { ExecutionLink::Debug.link(execution_id.clone(), "Debugger") }
-                    { ExecutionLink::Logs.link(execution_id.clone(), "App Logs") }
+                <div class="execution-heading-status">
+                    <ExecutionStatus execution_id={execution_id.clone()} status={None} {finished_status} on_summary={on_summary} on_status_change={on_status_change} />
                 </div>
             </div>
-
-            <ExecutionStatus execution_id={execution_id.clone()} status={None} {finished_status} on_summary={on_summary} on_status_change={on_status_change} />
+            <div class="view-tabs execution-detail-tabs">
+                { tab_link(ExecutionLink::Trace, "Trace") }
+                { tab_link(ExecutionLink::ExecutionLog, "Execution Log") }
+                { tab_link(ExecutionLink::Debug, "Debugger") }
+                { tab_link(ExecutionLink::Logs, "App Logs") }
+            </div>
 
             if let Some(workflow_digest) = workflow_digest {
                 <div class="execution-actions">
@@ -504,27 +512,20 @@ pub enum ExecutionLink {
 
 impl ExecutionLink {
     pub fn link(self, execution_id: ExecutionId, title: &str) -> Html {
-        match self {
-            ExecutionLink::Trace => html! {
-                <Link<Route> to={Route::ExecutionTrace { execution_id }}>
-                    {title}
-                </Link<Route>>
-            },
-            ExecutionLink::ExecutionLog => html! {
-                <Link<Route> to={Route::ExecutionLog { execution_id }}>
-                    {title}
-                </Link<Route>>
-            },
-            ExecutionLink::Debug => html! {
-                <Link<Route> to={Route::ExecutionDebugger { execution_id }}>
-                    {title}
-                </Link<Route>>
-            },
-            ExecutionLink::Logs => html! {
-                <Link<Route> to={Route::Logs { execution_id }}>
-                    {title}
-                </Link<Route>>
-            },
+        self.link_with_classes(execution_id, title, Classes::new())
+    }
+
+    fn link_with_classes(self, execution_id: ExecutionId, title: &str, classes: Classes) -> Html {
+        let route = match self {
+            ExecutionLink::Trace => Route::ExecutionTrace { execution_id },
+            ExecutionLink::ExecutionLog => Route::ExecutionLog { execution_id },
+            ExecutionLink::Debug => Route::ExecutionDebugger { execution_id },
+            ExecutionLink::Logs => Route::Logs { execution_id },
+        };
+        html! {
+            <Link<Route> {classes} to={route}>
+                {title}
+            </Link<Route>>
         }
     }
 }

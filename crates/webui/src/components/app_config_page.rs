@@ -7,27 +7,20 @@ use crate::{
     rest,
 };
 use log::error;
-use serde::Deserialize;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
-
-#[derive(Deserialize)]
-struct AppConfigResponse {
-    app_config_digest: String,
-    policy: serde_json::Value,
-}
 
 #[component(AppConfigPage)]
 pub fn app_config_page() -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
-    let response = use_state(|| None::<Result<AppConfigResponse, String>>);
+    let response = use_state(|| None::<Result<String, String>>);
 
     {
         let response = response.clone();
         use_effect_with((), move |()| {
             spawn_local(async move {
-                match rest::get::<AppConfigResponse>("/v1/app-config", &[]).await {
+                match rest::get_text_with_accept("/v1/app-config", &[], "application/toml").await {
                     Ok(config) => response.set(Some(Ok(config))),
                     Err(err) => {
                         error!("Failed to get app config: {err}");
@@ -49,11 +42,7 @@ pub fn app_config_page() -> Html {
                 None => html! { <p>{"Loading app config…"}</p> },
                 Some(Err(err)) => html! { <p class="error">{format!("Cannot load app config: {err}")}</p> },
                 Some(Ok(config)) => html! {
-                    <>
-                        <p class="app-config-digest">{"Running app policy digest: "}<code>{&config.app_config_digest}</code></p>
-                        <h2>{"Policy"}</h2>
-                        <pre class="app-config-policy">{serde_json::to_string_pretty(&config.policy).unwrap_or_default()}</pre>
-                    </>
+                    <pre class="app-config-policy">{config}</pre>
                 },
             }}
         </main>

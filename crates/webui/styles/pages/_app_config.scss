@@ -1,14 +1,8 @@
 @use '../base/variables' as *;
 
 .system-nav {
-  display: flex;
-  gap: $spacing-lg;
+  margin-top: 0;
   margin-bottom: $spacing-lg;
-
-  a.active {
-    font-weight: bold;
-    text-decoration: underline;
-  }
 }
 
 .app-config-policy {

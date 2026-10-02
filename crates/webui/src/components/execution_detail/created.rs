@@ -4,6 +4,7 @@ use crate::components::execution_header::ExecutionLink;
 use crate::components::ffqn_with_links::FfqnWithLinks;
 use crate::components::json_tree::JsonValue;
 use crate::components::json_tree::insert_json_into_tree;
+use crate::components::time_display::Timestamp;
 use crate::grpc::ffqn::FunctionFqn;
 use crate::grpc::grpc_client;
 use crate::grpc::grpc_client::ComponentId;
@@ -11,7 +12,6 @@ use crate::grpc::grpc_client::DeploymentId;
 use crate::grpc::grpc_client::ExecutionId;
 use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::util::time::format_date;
 use chrono::{DateTime, Utc};
 use grpc_client::execution_event::Created;
 use serde_json::Value;
@@ -125,7 +125,7 @@ impl ProcessedProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Time,
-                label: html! { {format!("Scheduled at {}", format_date(self.scheduled_at))} },
+                label: html! { <>{"Scheduled at "}<Timestamp target={self.scheduled_at} /></> },
                 has_caret: false,
                 is_selected: self.is_selected,
                 ..Default::default()

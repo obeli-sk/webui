@@ -29,6 +29,7 @@ struct RetainDeploymentsRequest {
 struct RetainSystemEventsRequest {
     max_age_seconds: u64,
     batch_size: u32,
+    dry_run: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
@@ -107,12 +108,14 @@ pub async fn retain_deployments(
 pub async fn retain_system_events(
     max_age_seconds: u64,
     batch_size: u32,
+    dry_run: bool,
 ) -> Result<RetainSystemEventsResponse, String> {
     super::post(
         "/v1/admin/system-events/retain",
         &RetainSystemEventsRequest {
             max_age_seconds,
             batch_size,
+            dry_run,
         },
     )
     .await
