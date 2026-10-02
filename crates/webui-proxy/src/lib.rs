@@ -3,24 +3,7 @@ use wstd::http::{Body, Client, Error, HeaderValue, Request, Response, Uri};
 #[wstd::http_server]
 async fn main(server_req: Request<Body>) -> Result<Response<Body>, Error> {
     match server_req.uri().path_and_query().unwrap().as_str() {
-        "/webui_bg.wasm" => {
-            let content = get_webui_bg_wasm();
-            let content_type = "application/wasm";
-            write_static_response(content, content_type)
-        }
-        "/webui.js" => {
-            let content = get_webui_js();
-            let content_type = "text/javascript";
-            write_static_response(content, content_type)
-        }
-        "/styles.css" => {
-            let content = get_styles_css();
-            let content_type = "text/css";
-            write_static_response(content, content_type)
-        }
-        "/syntect.css" => {
-            let content = get_syntect_css();
-            let content_type = "text/css";
+        path if let Some((content, content_type)) = static_asset(path) => {
             write_static_response(content, content_type)
         }
         api_prefixed_path if api_prefixed_path.starts_with("/api") => {
@@ -37,11 +20,7 @@ async fn main(server_req: Request<Body>) -> Result<Response<Body>, Error> {
             .expect("final target url should be parseable");
             proxy(server_req, target_url).await
         }
-        _ => {
-            let content = get_index();
-            let content_type = "text/html";
-            write_static_response(content, content_type)
-        }
+        _ => write_static_response(INDEX, "text/html"),
     }
 }
 
@@ -80,52 +59,30 @@ fn write_static_response(body: &[u8], content_type: &'static str) -> Result<Resp
 
 // release: Include real files
 #[cfg(not(debug_assertions))]
-fn get_index() -> &'static [u8] {
-    include_bytes!("../../webui/dist/index.html")
-}
-
-#[cfg(not(debug_assertions))]
-fn get_webui_bg_wasm() -> &'static [u8] {
-    include_bytes!("../../webui/dist/webui_bg.wasm")
-}
-
-#[cfg(not(debug_assertions))]
-fn get_webui_js() -> &'static [u8] {
-    include_bytes!("../../webui/dist/webui.js")
-}
-
-#[cfg(not(debug_assertions))]
-fn get_styles_css() -> &'static [u8] {
-    include_bytes!("../../webui/dist/styles.css")
-}
-
-#[cfg(not(debug_assertions))]
-fn get_syntect_css() -> &'static [u8] {
-    include_bytes!("../../webui/dist/syntect.css")
+macro_rules! dist {
+    ($file:literal) => {
+        include_bytes!(concat!("../../webui/dist/", $file))
+    };
 }
 
 // debug: Include dummy file content
 #[cfg(debug_assertions)]
-fn get_index() -> &'static [u8] {
-    unreachable!("embedding is skipped in debug mode")
+macro_rules! dist {
+    ($file:literal) => {
+        &[]
+    };
 }
 
-#[cfg(debug_assertions)]
-fn get_webui_bg_wasm() -> &'static [u8] {
-    unreachable!("embedding is skipped in debug mode")
-}
+const INDEX: &[u8] = dist!("index.html");
 
-#[cfg(debug_assertions)]
-fn get_webui_js() -> &'static [u8] {
-    unreachable!("embedding is skipped in debug mode")
-}
-
-#[cfg(debug_assertions)]
-fn get_styles_css() -> &'static [u8] {
-    unreachable!("embedding is skipped in debug mode")
-}
-
-#[cfg(debug_assertions)]
-fn get_syntect_css() -> &'static [u8] {
-    unreachable!("embedding is skipped in debug mode")
+fn static_asset(path: &str) -> Option<(&'static [u8], &'static str)> {
+    Some(match path {
+        "/webui_bg.wasm" => (dist!("webui_bg.wasm"), "application/wasm"),
+        "/webui.js" => (dist!("webui.js"), "text/javascript"),
+        "/styles.css" => (dist!("styles.css"), "text/css"),
+        "/syntect.css" => (dist!("syntect.css"), "text/css"),
+        "/syntect-light.css" => (dist!("syntect-light.css"), "text/css"),
+        "/logo.png" => (dist!("logo.png"), "image/png"),
+        _ => return None,
+    })
 }

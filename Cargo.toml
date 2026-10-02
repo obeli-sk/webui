@@ -13,7 +13,7 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/obeli-sk/webui"
 authors = ["Project Developers"]
 edition = "2024"
-rust-version = "1.91.0"
+rust-version = "1.98.1"
 
 [workspace.dependencies]
 val-json = { package = "obeli-sk-val-json", path = "obelisk/crates/val-json" }
@@ -115,7 +115,6 @@ clippy.trivially_copy_pass_by_ref = "allow" # Lots of false positives.
 # lower the priority to allow overriding later
 clippy.module_name_repetitions = "allow"
 # Vec::from_iter is more readable than collect::<Vec<_>>
-clippy.from_iter_instead_of_collect = "allow"
 # Happy path should be first no matter the condition.
 clippy.if_not_else = "allow"
 # Keep paths surrounded with quotes
