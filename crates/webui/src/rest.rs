@@ -39,7 +39,16 @@ pub async fn delete<T: DeserializeOwned>(
 }
 
 pub async fn get_text(path: &str, query: &[(&str, String)]) -> Result<String, String> {
+    get_text_with_accept(path, query, "*/*").await
+}
+
+pub async fn get_text_with_accept(
+    path: &str,
+    query: &[(&str, String)],
+    accept: &str,
+) -> Result<String, String> {
     let mut request = Request::get(&format!("{}{}", crate::BASE_URL, path))
+        .header("Accept", accept)
         .query(query.iter().map(|(key, value)| (*key, value.as_str())));
     if let Some(token) = crate::auth::token() {
         request = request.header("Authorization", &format!("Bearer {token}"));
