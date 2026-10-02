@@ -141,10 +141,6 @@ impl RetentionKind {
         }
     }
 
-    fn supports_dry_run(self) -> bool {
-        self != RetentionKind::SystemEvents
-    }
-
     async fn run(self, options: Options, batch_size: u32, dry_run: bool) -> Result<Totals, String> {
         match self {
             RetentionKind::Executions => rest::admin::retain_executions(
@@ -169,7 +165,7 @@ impl RetentionKind {
                     return Err("System events can only be retained by age".to_string());
                 };
                 let response =
-                    rest::admin::retain_system_events(max_age_seconds, batch_size).await?;
+                    rest::admin::retain_system_events(max_age_seconds, batch_size, dry_run).await?;
                 Ok(Totals {
                     system_events: response.deleted,
                     has_more: response.has_more,
@@ -191,7 +187,7 @@ impl RetentionKind {
                 totals.deployments, totals.execution_trees
             ),
             RetentionKind::SystemEvents => {
-                format!("{verb} {} system event(s)", totals.system_events)
+                format!("{verb} {}{more} system event(s)", totals.system_events)
             }
         };
         if totals.blocked_non_terminal > 0 {
@@ -477,11 +473,9 @@ fn retention_form(RetentionFormProps { kind }: &RetentionFormProps) -> Html {
                 <p class="error">{invalid}</p>
             }
             <div class="retention-actions">
-                if kind.supports_dry_run() {
-                    <button class="action-button" onclick={on_preview} disabled={busy || invalid.is_some()}>
-                        {"Preview"}
-                    </button>
-                }
+                <button class="action-button" onclick={on_preview} disabled={busy || invalid.is_some()}>
+                    {"Preview"}
+                </button>
                 <button class={classes!("action-button", "retention-delete-button", (*armed).then_some("armed"))}
                     onclick={on_delete} disabled={busy || invalid.is_some()}>
                     {if busy { "Working..." } else if *armed { "Confirm delete" } else { "Delete" }}
