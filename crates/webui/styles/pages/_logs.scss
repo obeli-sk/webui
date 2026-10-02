@@ -9,11 +9,14 @@
 .logs-options {
   margin: 10px 0;
   display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-md;
   align-items: center;
   justify-content: space-between;
 
   .logs-filters {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: $spacing-md;
 
@@ -24,6 +27,13 @@
       gap: 5px;
     }
   }
+}
+
+.logs-levels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $spacing-xs;
 }
 
 .logs-list {

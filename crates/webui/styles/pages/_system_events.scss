@@ -19,6 +19,7 @@
 }
 
 .system-event-filter-group button,
+.logs-levels button,
 .system-event-more-filters button {
   padding: 0.35rem 0.7rem;
   background: $color-bg-primary;
@@ -41,7 +42,8 @@
   }
 }
 
-.system-event-filter-group button.selected {
+.system-event-filter-group button.selected,
+.logs-levels button.selected {
   background: color-mix(in srgb, $color-accent-cyan 15%, transparent);
   border-color: $color-accent-cyan;
   color: $color-accent-cyan;

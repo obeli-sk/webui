@@ -18,6 +18,16 @@ pub struct LogsPageProps {
     pub execution_id: ExecutionId,
 }
 
+const FILTER_LEVELS: [RestLogLevel; 5] = [
+    RestLogLevel::Trace,
+    RestLogLevel::Debug,
+    RestLogLevel::Info,
+    RestLogLevel::Warn,
+    RestLogLevel::Error,
+];
+const DEFAULT_LEVELS: [RestLogLevel; 3] =
+    [RestLogLevel::Info, RestLogLevel::Warn, RestLogLevel::Error];
+
 #[derive(Clone, PartialEq, Default)]
 enum LogsFetchState {
     #[default]
@@ -29,6 +39,7 @@ enum LogsAction {
     Reset {
         execution_id: ExecutionId,
         show_derived: bool,
+        levels: Vec<RestLogLevel>,
     },
     LoadMore,
     PageLoaded {
@@ -48,6 +59,7 @@ enum LogsAction {
 struct LogsState {
     execution_id: Option<ExecutionId>,
     show_derived: bool,
+    levels: Vec<RestLogLevel>,
     fetch_state: LogsFetchState,
     logs: Vec<grpc_client::list_logs_response::LogEntry>,
     next_page_token: String,
@@ -78,7 +90,7 @@ enum RestLogEntry {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum RestLogLevel {
     Trace,
@@ -86,6 +98,28 @@ enum RestLogLevel {
     Info,
     Warn,
     Error,
+}
+
+impl RestLogLevel {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Trace => "Trace",
+            Self::Debug => "Debug",
+            Self::Info => "Info",
+            Self::Warn => "Warning",
+            Self::Error => "Error",
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -175,6 +209,7 @@ impl Default for LogsState {
         Self {
             execution_id: None,
             show_derived: true,
+            levels: DEFAULT_LEVELS.to_vec(),
             fetch_state: LogsFetchState::Pending,
             logs: Vec::new(),
             next_page_token: String::new(),
@@ -191,9 +226,11 @@ impl Reducible for LogsState {
             LogsAction::Reset {
                 execution_id,
                 show_derived,
+                levels,
             } => Rc::new(Self {
                 execution_id: Some(execution_id),
                 show_derived,
+                levels,
                 fetch_state: LogsFetchState::Pending,
                 logs: Vec::new(),
                 next_page_token: String::new(),
@@ -253,6 +290,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
             logs_state.dispatch(LogsAction::Reset {
                 execution_id: execution_id.clone(),
                 show_derived: true,
+                levels: DEFAULT_LEVELS.to_vec(),
             });
         });
     }
@@ -265,16 +303,25 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                 logs_state.execution_id.clone(),
                 logs_state.fetch_state.clone(),
                 logs_state.show_derived,
+                logs_state.levels.clone(),
                 logs_state.next_page_token.clone(),
                 logs_state.request_generation,
             ),
-            move |(execution_id, fetch_state, show_derived, page_token, request_generation)| {
+            move |(
+                execution_id,
+                fetch_state,
+                show_derived,
+                levels,
+                page_token,
+                request_generation,
+            )| {
                 if *fetch_state == LogsFetchState::Pending
                     && let Some(execution_id) = execution_id.clone()
                 {
                     fetch_logs_page(
                         execution_id,
                         *show_derived,
+                        levels.clone(),
                         page_token.clone(),
                         *request_generation,
                         logs_state.clone(),
@@ -315,6 +362,23 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
             logs_state.dispatch(LogsAction::Reset {
                 execution_id: execution_id.clone(),
                 show_derived: input.checked(),
+                levels: logs_state.levels.clone(),
+            });
+        })
+    };
+
+    let toggle_level = |level: RestLogLevel| {
+        let logs_state = logs_state.clone();
+        let execution_id = execution_id.clone();
+        Callback::from(move |_| {
+            let levels = FILTER_LEVELS
+                .into_iter()
+                .filter(|candidate| logs_state.levels.contains(candidate) != (*candidate == level))
+                .collect();
+            logs_state.dispatch(LogsAction::Reset {
+                execution_id: execution_id.clone(),
+                show_derived: logs_state.show_derived,
+                levels,
             });
         })
     };
@@ -326,6 +390,17 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
             <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Logs} />
 
             <div class="logs-options">
+                <div class="logs-levels" aria-label="Log levels">
+                    {for FILTER_LEVELS.into_iter().map(|level| html! {
+                        <button
+                            class={classes!(logs_state.levels.contains(&level).then_some("selected"))}
+                            aria-pressed={logs_state.levels.contains(&level).to_string()}
+                            onclick={toggle_level(level)}
+                        >
+                            {level.label()}
+                        </button>
+                    })}
+                </div>
                 <div class="logs-filters">
                     <label>
                         <input
@@ -470,6 +545,7 @@ fn render_log_entry(
 fn fetch_logs_page(
     execution_id: ExecutionId,
     show_derived: bool,
+    levels: Vec<RestLogLevel>,
     page_token: String,
     request_generation: u64,
     logs_state: UseReducerHandle<LogsState>,
@@ -482,7 +558,11 @@ fn fetch_logs_page(
             ("length", PAGE_SIZE.to_string()),
             ("direction", "newer".to_string()),
             ("show_derived", show_derived.to_string()),
+            ("show_logs", (!levels.is_empty()).to_string()),
         ];
+        for level in levels {
+            query.push(("level", level.as_str().to_string()));
+        }
         if !page_token.is_empty() {
             query.push(("cursor", page_token));
         }
@@ -533,6 +613,45 @@ fn request_matches(
 mod tests {
     use super::*;
     use grpc_client::list_logs_response::log_entry::Entry;
+
+    #[test]
+    fn changing_levels_resets_pagination_and_rejects_stale_pages() {
+        let execution_id = ExecutionId { id: "E_1".into() };
+        let state = Rc::new(LogsState::default()).reduce(LogsAction::Reset {
+            execution_id: execution_id.clone(),
+            show_derived: true,
+            levels: DEFAULT_LEVELS.to_vec(),
+        });
+        let old_generation = state.request_generation;
+        let response = grpc_client::ListLogsResponse {
+            logs: vec![Default::default()],
+            next_page_token: "next".into(),
+            prev_page_token: None,
+        };
+        let state = state.reduce(LogsAction::PageLoaded {
+            execution_id: execution_id.clone(),
+            show_derived: true,
+            request_generation: old_generation,
+            response: response.clone(),
+        });
+        assert_eq!(state.logs.len(), 1);
+        let state = state.reduce(LogsAction::Reset {
+            execution_id: execution_id.clone(),
+            show_derived: true,
+            levels: vec![RestLogLevel::Error],
+        });
+        assert!(state.logs.is_empty());
+        assert!(state.next_page_token.is_empty());
+        assert_eq!(state.levels, [RestLogLevel::Error]);
+        assert!(state.fetch_state == LogsFetchState::Pending);
+        let unchanged = state.clone().reduce(LogsAction::PageLoaded {
+            execution_id,
+            show_derived: true,
+            request_generation: old_generation,
+            response,
+        });
+        assert!(Rc::ptr_eq(&state, &unchanged));
+    }
 
     #[test]
     fn rest_log_page_decodes_entries_and_cursor() {
