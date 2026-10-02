@@ -3,10 +3,10 @@ use crate::{
     components::{
         notification::{Notification, NotificationContext},
         system_nav::SystemNav,
+        time_display::{TimeDisplayControl, TimeMode, Timestamp},
     },
     grpc::grpc_client::{self, SystemEventLevel},
     rest,
-    util::time::{RelativeAgo, format_date},
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use log::error;
@@ -88,6 +88,7 @@ pub struct SystemEventQuery {
     from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     to: Option<String>,
+    // backcompat: 0.28.1 links can request UTC before a preference is saved.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     absolute_time: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -184,13 +185,7 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
                     {level_label(level)}
                 </span>
                 <code class="system-event-code">{&event.code}</code>
-                <time title={format!("{} UTC", format_date(created_at))}>
-                    if absolute_time {
-                        {format!("{} UTC", format_date(created_at))}
-                    } else {
-                        <RelativeAgo target={created_at} />
-                    }
-                </time>
+                <Timestamp target={created_at} default_mode={if absolute_time { TimeMode::Utc } else { TimeMode::Relative }} />
             </div>
             <div class="system-event-message">{&event.message}</div>
             <div class="system-event-metadata">
@@ -455,16 +450,6 @@ pub fn system_events_page() -> Html {
         })
     };
 
-    let set_absolute_time = |absolute_time: bool| {
-        let navigator = navigator.clone();
-        let query = query.clone();
-        Callback::from(move |_| {
-            let mut query = query.clone();
-            query.absolute_time = absolute_time;
-            let _ = navigator.replace_with_query(&Route::SystemEvents, &query);
-        })
-    };
-
     let toggle_level = |level: SystemEventLevel, selected: bool| {
         let navigator = navigator.clone();
         let query = query.clone();
@@ -523,10 +508,7 @@ pub fn system_events_page() -> Html {
                     <button class={classes!((!showing_all_deployments && query.deployment_id.is_none()).then_some("selected"))} onclick={set_deployment_scope(false)} disabled={current_deployment_id.is_none()}>{"Current deployment"}</button>
                     <button class={classes!(query.all_deployments.then_some("selected"))} onclick={set_deployment_scope(true)}>{"All deployments"}</button>
                 </div>
-                <div class="system-event-filter-group">
-                    <button class={classes!((!query.absolute_time).then_some("selected"))} onclick={set_absolute_time(false)}>{"Relative time"}</button>
-                    <button class={classes!(query.absolute_time.then_some("selected"))} onclick={set_absolute_time(true)}>{"UTC time"}</button>
-                </div>
+                <TimeDisplayControl default_mode={if query.absolute_time { TimeMode::Utc } else { TimeMode::Relative }} />
             </div>
             <details class="system-event-more-filters" open={has_more_filters}>
                 <summary>{"More filters"}</summary>

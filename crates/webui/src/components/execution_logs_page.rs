@@ -2,9 +2,9 @@ use crate::{
     app::Route,
     components::execution_header::{ExecutionHeader, ExecutionLink},
     components::notification::{Notification, NotificationContext},
+    components::time_display::{TimeDisplayControl, Timestamp},
     grpc::grpc_client::{self, ExecutionId},
     rest,
-    util::time::format_date,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::DateTime;
@@ -584,6 +584,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                     </label>
                 </div>
 
+                <TimeDisplayControl />
             </div>
 
             <div class="logs-list" onscroll={on_scroll}>
@@ -615,11 +616,11 @@ fn render_log_entry(
     query: &LogsQuery,
 ) -> Html {
     // Format Timestamp
-    let time_str = if let Some(ts) = &entry.created_at {
+    let timestamp = if let Some(ts) = &entry.created_at {
         let date_time = DateTime::from(*ts);
-        format_date(date_time)
+        html! { <Timestamp target={date_time} /> }
     } else {
-        "Unknown Time".to_string()
+        html! { {"Unknown time"} }
     };
 
     let run_id_html = if show_run_id {
@@ -678,7 +679,7 @@ fn render_log_entry(
 
             html! {
                 <div class="log-row">
-                    <span class="time">{ format!("[{}]", time_str) }</span>
+                    <span class="time">{"["}{timestamp}{"]"}</span>
                     { execution_id_html }
                     { run_id_html }
                     <span class={classes!("kind", log_row_class)}>{ format!("[{}]", level_str) }</span>
@@ -698,7 +699,7 @@ fn render_log_entry(
 
             html! {
                 <div class="log-row">
-                     <span class="time">{ format!("[{}]", time_str) }</span>
+                     <span class="time">{"["}{timestamp}{"]"}</span>
                      { execution_id_html }
                      { run_id_html }
                      <span class={classes!("kind", log_row_class)}>{ format!("[{}]", stream_prefix) }</span>

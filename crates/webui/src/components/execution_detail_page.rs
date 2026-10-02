@@ -1,6 +1,7 @@
 use crate::components::execution_detail::utils::{compute_join_next_to_response, event_to_detail};
 use crate::components::execution_header::{ExecutionHeader, ExecutionLink};
 use crate::components::notification::{Notification, NotificationContext};
+use crate::components::time_display::{TimeDisplayControl, Timestamp};
 use crate::components::trace::highlight::{BacktraceJump, TraceHighlightJump};
 use crate::components::trace::trace_view::{
     PAGE, SLEEP_MILLIS, compute_submit_await_version_groups,
@@ -248,6 +249,7 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
     html! {
         <>
             <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::ExecutionLog} />
+            <div class="timeline-toolbar"><TimeDisplayControl /></div>
             <div class="timeline-container">
                 {details_html}
             </div>
@@ -427,8 +429,8 @@ fn render_execution_details(
                 false,
             );
             let event_created_at = DateTime::from(event.created_at.expect("created_at sent"));
-            let since_initially_scheduled = human_formatted_timedelta(
-                event_created_at - initially_scheduled_at,
+            let since_created = human_formatted_timedelta(
+                event_created_at - execution_created_at,
                 TimeGranularity::Fine,
             );
 
@@ -555,7 +557,7 @@ fn render_execution_details(
                             <div>
                                 if event.version == 0 {
                                     <span>
-                                        {format_date(event_created_at)}
+                                        {"+0s"}
                                         if let Some(initial_scheduling_duration) = &initial_scheduling_duration {
                                             {", scheduled +"}
                                             {initial_scheduling_duration}
@@ -563,10 +565,7 @@ fn render_execution_details(
                                     </span>
                                 } else {
                                     <span title={format!("Created at: {}", format_date(event_created_at))}>
-                                        {" +"}{since_initially_scheduled}
-                                        if event.version == 1 {
-                                            {" after initial scheduling"}
-                                        }
+                                        {" +"}{since_created}
                                     </span>
                                     if let Some(event_duration) = event_duration {
                                         <span class="event-duration">
@@ -576,6 +575,7 @@ fn render_execution_details(
                                 }
                             </div>
                             <div class="timeline-meta-actions">
+                                <Timestamp target={event_created_at} />
                                 {scroll_button}
                                 {trace_jump_button}
                                 {backtrace_link}
