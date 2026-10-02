@@ -453,7 +453,7 @@
     border-bottom: 1px solid $color-border-primary;
     margin: 0.75rem 0;
 
-    button {
+    button, a {
         background: none;
         border: none;
         border-bottom: 2px solid transparent;
@@ -461,6 +461,7 @@
         cursor: pointer;
         font-size: $font-size-base;
         padding: 0.35rem 0.75rem;
+        text-decoration: none;
 
         &:hover {
             color: $color-text-light;
