@@ -8,6 +8,17 @@
             const theme = localStorage.getItem("obelisk-webui-theme");
             if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
         } catch (_) { }
+        // Dark Reader's dynamic mode garbles SVG fills, so present our own dark theme and lock it out.
+        new MutationObserver((_, observer) => {
+            const root = document.documentElement;
+            if (root.dataset.darkreaderMode !== "dynamic") return;
+            observer.disconnect();
+            root.dataset.theme = "dark";
+            root.dataset.darkReaderLocked = "";
+            const lock = document.createElement("meta");
+            lock.name = "darkreader-lock";
+            document.head.append(lock);
+        }).observe(document.documentElement, { attributeFilter: ["data-darkreader-mode"] });
     </script>
     <link data-trunk rel="scss" href="/styles/styles.scss" />
     <link data-trunk rel="css" href="/syntect.css" />
