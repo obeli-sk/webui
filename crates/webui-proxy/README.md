@@ -9,6 +9,11 @@ The component is automatically loaded when `obelisk.toml` contains:
 webui.listening_addr = "127.0.0.1:8080"
 ```
 However, this loads the webui as specified in [webui-version.txt](../../assets/webui-version.txt).
+A debug build of `obelisk` loads a local build instead when `OBELISK_WEBUI_WASM` points to it:
+```sh
+just build
+OBELISK_WEBUI_WASM=$PWD/target/wasm32-wasip2/release/webui_proxy.wasm obelisk server run
+```
 
 Build
 ```sh

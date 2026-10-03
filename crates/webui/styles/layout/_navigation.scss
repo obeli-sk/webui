@@ -164,3 +164,6 @@ html { scroll-padding-top: $app-bar-clearance; }
   .app-bar-actions { margin-left: auto; }
   .app-bar .nav-submit { padding-inline: 0.55rem; }
 }
+
+// Dark Reader asks for dark, so the theme is forced (see index.html).
+:root[data-dark-reader-locked] .theme-toggle { display: none; }
