@@ -51,11 +51,11 @@ struct ComponentDeploymentConfig {
     sources: Vec<SourceView>,
 }
 
-/// Another component of the same deployment and the interfaces connecting it to the inspected one.
+/// Another component of the same deployment and the functions connecting it to the inspected one.
 #[derive(Debug, PartialEq)]
 pub(crate) struct ComponentConnection<'a> {
     pub(crate) component: &'a grpc_client::Component,
-    pub(crate) interfaces: Vec<IfcFqn>,
+    pub(crate) functions: Vec<FunctionFqn>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -114,29 +114,32 @@ fn interfaces(functions: &[FunctionDetail]) -> Vec<IfcFqn> {
         .collect()
 }
 
+fn ffqns(functions: &[FunctionDetail]) -> Vec<FunctionFqn> {
+    let mut ffqns = functions
+        .iter()
+        .map(|fn_detail| FunctionFqn::from_fn_detail(fn_detail).expect("ffqn should be parseable"))
+        .collect::<Vec<_>>();
+    ffqns.sort_by_cached_key(ToString::to_string);
+    ffqns
+}
+
 pub(crate) fn component_connections<'a>(
     component: &grpc_client::Component,
     deployment_components: &'a HashMap<String, grpc_client::Component>,
 ) -> ComponentConnections<'a> {
     let name = component_name(component);
-    let imports = interfaces(&component.imports);
-    let exports = interfaces(&component.exports);
+    let imports = ffqns(&component.imports);
+    let exports = ffqns(&component.exports);
     let mut others = deployment_components
         .iter()
         .filter(|(other_name, _)| other_name.as_str() != name)
-        .map(|(_, other)| {
-            (
-                other,
-                interfaces(&other.imports),
-                interfaces(&other.exports),
-            )
-        })
+        .map(|(_, other)| (other, ffqns(&other.imports), ffqns(&other.exports)))
         .collect::<Vec<_>>();
     others.sort_by(|(a, ..), (b, ..)| component_name(a).cmp(component_name(b)));
 
-    let connect = |ours: &[IfcFqn], theirs: &[IfcFqn]| {
+    let connect = |ours: &[FunctionFqn], theirs: &[FunctionFqn]| {
         ours.iter()
-            .filter(|ifc| theirs.contains(ifc))
+            .filter(|ffqn| theirs.contains(ffqn))
             .cloned()
             .collect::<Vec<_>>()
     };
@@ -144,24 +147,27 @@ pub(crate) fn component_connections<'a>(
         .iter()
         .map(|(other, _, other_exports)| ComponentConnection {
             component: other,
-            interfaces: connect(&imports, other_exports),
+            functions: connect(&imports, other_exports),
         })
-        .filter(|connection| !connection.interfaces.is_empty())
+        .filter(|connection| !connection.functions.is_empty())
         .collect::<Vec<_>>();
     let callers = others
         .iter()
         .map(|(other, other_imports, _)| ComponentConnection {
             component: other,
-            interfaces: connect(&exports, other_imports),
+            functions: connect(&exports, other_imports),
         })
-        .filter(|connection| !connection.interfaces.is_empty())
+        .filter(|connection| !connection.functions.is_empty())
         .collect();
-    let other_imports = imports
+    let other_imports = interfaces(&component.imports)
         .into_iter()
         .filter(|ifc| {
-            !dependencies
-                .iter()
-                .any(|dependency| dependency.interfaces.contains(ifc))
+            imports.iter().any(|ffqn| {
+                ffqn.ifc_fqn == *ifc
+                    && !dependencies
+                        .iter()
+                        .any(|dependency| dependency.functions.contains(ffqn))
+            })
         })
         .collect();
     ComponentConnections {
@@ -238,8 +244,8 @@ fn render_connections(
                             <li>
                                 { component_link(connection.component, deployment_id) }
                                 <ul class="component-connection-interfaces">
-                                    { for connection.interfaces.iter().map(|ifc| html! {
-                                        <li>{ifc.to_string()}</li>
+                                    { for connection.functions.iter().map(|ffqn| html! {
+                                        <li>{ffqn.to_string()}</li>
                                     }) }
                                 </ul>
                             </li>
@@ -485,16 +491,16 @@ pub fn component_detail(
         html! { <>
             {render_connections(
                 "Depends on",
-                "Components of this deployment exporting interfaces this component imports.",
-                "This component does not import interfaces of other components.",
+                "Components of this deployment exporting functions this component imports.",
+                "This component does not import functions of other components.",
                 dependencies_note,
                 &connections.dependencies,
                 deployment_id,
             )}
             {render_connections(
                 "Called by",
-                "Components of this deployment importing interfaces this component exports.",
-                "No other component imports interfaces of this component.",
+                "Components of this deployment importing functions this component exports.",
+                "No other component imports functions of this component.",
                 callers_note,
                 &connections.callers,
                 deployment_id,
@@ -503,7 +509,7 @@ pub fn component_detail(
                 <section class="component-connections">
                     <h4>{"Other imports"}</h4>
                     <p class="component-section-help">
-                        {"Imported interfaces no component of this deployment exports, e.g. those provided by the runtime."}
+                        {"Imported interfaces with functions no component of this deployment exports, e.g. those provided by the runtime."}
                     </p>
                     <ul class="component-connection-interfaces">
                         { for connections.other_imports.iter().map(|ifc| html! {
@@ -657,20 +663,25 @@ mod tests {
     }
 
     #[test]
-    fn connections_match_imports_to_exports_of_other_components() {
+    fn connections_match_imported_functions_to_exports_of_other_components() {
         let components = [
             component(
                 "workflow",
-                &["app:wf/api"],
+                &["app:wf/api.run"],
                 &[
-                    "app:act/api",
-                    "app:act-obelisk-ext/api",
-                    "obelisk:log/log@1.0.0",
+                    "app:act/api.add",
+                    "app:act-obelisk-ext/api.add-submit",
+                    "obelisk:log/log@1.0.0.info",
                 ],
             ),
-            component("activity", &["app:act/api", "app:act-obelisk-ext/api"], &[]),
-            component("webhook", &[], &["app:wf/api"]),
-            component("unrelated", &["app:other/api"], &[]),
+            component(
+                "activity-add",
+                &["app:act/api.add", "app:act-obelisk-ext/api.add-submit"],
+                &[],
+            ),
+            component("activity-fetch", &["app:act/api.fetch"], &[]),
+            component("webhook", &[], &["app:wf/api.run"]),
+            component("unrelated", &["app:other/api.f"], &[]),
         ]
         .into_iter()
         .map(|component| (component_name(&component).to_string(), component))
@@ -685,7 +696,7 @@ mod tests {
                     (
                         component_name(connection.component).to_string(),
                         connection
-                            .interfaces
+                            .functions
                             .iter()
                             .map(ToString::to_string)
                             .collect::<Vec<_>>(),
@@ -696,16 +707,16 @@ mod tests {
         assert_eq!(
             names(&connections.dependencies),
             [(
-                "activity".to_string(),
+                "activity-add".to_string(),
                 vec![
-                    "app:act/api".to_string(),
-                    "app:act-obelisk-ext/api".to_string()
+                    "app:act-obelisk-ext/api.add-submit".to_string(),
+                    "app:act/api.add".to_string()
                 ]
             )]
         );
         assert_eq!(
             names(&connections.callers),
-            [("webhook".to_string(), vec!["app:wf/api".to_string()])]
+            [("webhook".to_string(), vec!["app:wf/api.run".to_string()])]
         );
         assert_eq!(
             connections.other_imports,
@@ -718,29 +729,29 @@ mod tests {
         assert!(calls_dynamically(&component(
             "js-workflow",
             &[],
-            &["obelisk:workflow/workflow-dynamic-support-backtrace@7.0.0"],
+            &["obelisk:workflow/workflow-dynamic-support-backtrace@7.0.0.call"],
         )));
         assert!(calls_dynamically(&component(
             "js-webhook",
             &[],
-            &["obelisk:webhook/webhook-dynamic-support@7.0.0"],
+            &["obelisk:webhook/webhook-dynamic-support@7.0.0.call"],
         )));
         assert!(!calls_dynamically(&component(
             "wasm-workflow",
             &[],
-            &["obelisk:workflow/workflow-support@7.0.0", "app:act/api"],
+            &[
+                "obelisk:workflow/workflow-support@7.0.0.sleep",
+                "app:act/api.f"
+            ],
         )));
     }
 
     fn component(name: &str, exports: &[&str], imports: &[&str]) -> grpc_client::Component {
-        let functions = |interfaces: &[&str]| {
-            interfaces
+        let functions = |ffqns: &[&str]| {
+            ffqns
                 .iter()
-                .map(|interface| FunctionDetail {
-                    function_name: Some(grpc_client::FunctionName {
-                        interface_name: interface.to_string(),
-                        function_name: "f".to_string(),
-                    }),
+                .map(|ffqn| FunctionDetail {
+                    function_name: Some(FunctionFqn::from_str(ffqn).unwrap().into()),
                     ..Default::default()
                 })
                 .collect()

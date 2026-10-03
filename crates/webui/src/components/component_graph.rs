@@ -7,8 +7,8 @@ use crate::{
         deployment_detail_page::DeploymentQuery,
     },
     grpc::{
+        ffqn::FunctionFqn,
         grpc_client::{self, DeploymentId},
-        ifc_fqn::IfcFqn,
     },
 };
 use hashbrown::HashMap;
@@ -26,12 +26,12 @@ const CHAR_WIDTH: f64 = 7.9;
 const NODE_CHROME: f64 = 44.0;
 const BACK_EDGE_BULGE: f64 = 40.0;
 
-/// A caller importing interfaces exported by its dependency.
+/// A caller importing functions exported by its dependency.
 #[derive(Debug, PartialEq)]
 struct GraphEdge {
     from: usize,
     to: usize,
-    interfaces: Vec<IfcFqn>,
+    functions: Vec<FunctionFqn>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -175,7 +175,7 @@ pub fn component_graph(
                 .map(|dependency| GraphEdge {
                     from,
                     to: index_of[component_name(dependency.component)],
-                    interfaces: dependency.interfaces,
+                    functions: dependency.functions,
                 })
                 .collect::<Vec<_>>()
         })
@@ -292,7 +292,7 @@ pub fn component_graph(
             component_name(components[edge.from]),
             component_name(components[edge.to])
         ))
-        .chain(edge.interfaces.iter().map(ToString::to_string))
+        .chain(edge.functions.iter().map(ToString::to_string))
         .collect::<Vec<_>>()
         .join("\n");
         let marker = if state == Some("active") {
@@ -370,10 +370,10 @@ pub fn component_graph(
     html! {
         <section class="component-graph">
             if graph_nodes.is_empty() {
-                <p class="component-empty-state">{"No component imports interfaces of another component."}</p>
+                <p class="component-empty-state">{"No component imports functions of another component."}</p>
             } else {
                 <p class="component-section-help">
-                    {"Arrows point from a caller to the component exporting the interfaces it imports. Dashed components call functions dynamically. Click a component to open it."}
+                    {"Arrows point from a caller to the component exporting the functions it imports. Dashed components call functions dynamically. Click a component to open it."}
                 </p>
                 <div class="component-graph-scroll">
                     <svg
