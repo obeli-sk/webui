@@ -43,9 +43,11 @@
 }
 
 .version-circle {
-  width: 30px;
+  box-sizing: border-box;
+  min-width: 30px;
   height: 30px;
-  border-radius: 50%;
+  padding: 0 5px;
+  border-radius: 15px;
   background-color: $color-bg-tertiary;
   border: 2px solid $color-border-secondary;
   color: $color-text-primary;
