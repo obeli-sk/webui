@@ -15,8 +15,8 @@ pub fn generate_color_from_hash(hash: u64) -> String {
     let h = 20 + (hash % 321);
     // Saturation: 70-100% (Vibrant)
     let s = 70 + ((hash >> 16) % 31);
-    // Lightness: 65-85% (Readable on dark background)
-    let l = 65 + ((hash >> 32) % 21);
+    // Lightness: 74-85% (keeps saturated blues >= 4.5:1 contrast on the dark background)
+    let l = 74 + ((hash >> 32) % 12);
     // Light theme uses OKLCH so every hue keeps readable contrast on white; +20° keeps red (~29°) out.
     let light_h = (h + 20) % 360;
     let light_c = 0.10 + ((hash >> 16) % 5) as f64 * 0.01;
