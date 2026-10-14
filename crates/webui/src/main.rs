@@ -1,3 +1,4 @@
+use log::error;
 use webui::{
     app::{App, AppProps},
     loader::{get_current_deployment_id, load_components},
@@ -5,6 +6,9 @@ use webui::{
 
 fn main() {
     init_logging();
+    std::panic::set_hook(Box::new(|info| {
+        web_sys::console::error_1(&format!("RUST PANIC: {info}").into());
+    }));
     wasm_bindgen_futures::spawn_local(async move {
         let loaded = match load_components().await {
             Ok(loaded) => loaded,
