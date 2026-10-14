@@ -337,7 +337,7 @@ fn app_inner(
                                         ));
                                     }
                                     Err(e) => {
-                                        error!("Failed to reload components: {:?}", e);
+                                        error!("Failed to reload components: {e}");
                                     }
                                 }
                             }

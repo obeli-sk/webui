@@ -1,3 +1,4 @@
+use log::error;
 use webui::{
     app::{App, AppProps},
     loader::{get_current_deployment_id, load_components},
@@ -5,12 +6,19 @@ use webui::{
 
 fn main() {
     init_logging();
+    std::panic::set_hook(Box::new(|info| {
+        web_sys::console::error_1(&format!("RUST PANIC: {info}").into());
+    }));
+
     wasm_bindgen_futures::spawn_local(async move {
         let loaded = match load_components().await {
-            Ok(loaded) => loaded,
-            Err(status) if status.starts_with("HTTP 401:") => Default::default(),
-            Err(status) => panic!("cannot load components: {status}"),
-        };
+            Ok(loaded) => Some(loaded),
+            Err(e) => {
+                error!("Failed to reload components: {e}");
+                None
+            }
+        }
+        .unwrap_or_default();
         let deployment_id = get_current_deployment_id().await.ok();
 
         yew::Renderer::<App>::with_props(AppProps {

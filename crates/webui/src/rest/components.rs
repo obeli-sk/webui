@@ -136,6 +136,7 @@ impl TryFrom<Function> for grpc::FunctionDetail {
             Some("submit") => Some(grpc::FunctionExtension::Submit as i32),
             Some("await_next") => Some(grpc::FunctionExtension::AwaitNext as i32),
             Some("schedule") => Some(grpc::FunctionExtension::Schedule as i32),
+            Some("schedule_with_id") => Some(grpc::FunctionExtension::ScheduleWithId as i32),
             Some("stub") => Some(grpc::FunctionExtension::Stub as i32),
             Some("get") => Some(grpc::FunctionExtension::Get as i32),
             Some(other) => return Err(format!("Unknown function extension: {other}")),
@@ -168,6 +169,29 @@ impl TryFrom<Function> for grpc::FunctionDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn caller_supplied_schedule_id_extension_preserves_its_signature() {
+        let function: Function = serde_json::from_str(
+            r#"{
+            "ffqn":"sample:pkg-obelisk-schedule/ifc.run-schedule-with-id",
+            "parameter_types":[{"name":"execution-id","wit_type":"execution-id"}],
+            "return_type":"result<execution-id, schedule-with-id-error>",
+            "extension":"schedule_with_id","submittable":false
+        }"#,
+        )
+        .unwrap();
+        let mapped: grpc::FunctionDetail = function.try_into().unwrap();
+        assert_eq!(
+            mapped.extension,
+            Some(grpc::FunctionExtension::ScheduleWithId as i32)
+        );
+        assert_eq!(mapped.params[0].name, "execution-id");
+        assert_eq!(
+            mapped.return_type.unwrap().wit_type_inline,
+            "result<execution-id, schedule-with-id-error>"
+        );
+    }
 
     #[test]
     fn rest_component_preserves_function_types_and_files() {
