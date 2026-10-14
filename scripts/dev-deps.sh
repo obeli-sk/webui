@@ -30,6 +30,7 @@ rustc --version >> dev-deps.txt
 
 echo "sass $(sass --version)" >> dev-deps.txt # dart-sass for SCSS compilation
 wasm-opt --version >> dev-deps.txt # binaryen
+wasm-tools --version >> dev-deps.txt
 echo "trunk $(grep wasm_opt crates/webui/Trunk.toml)" >> dev-deps.txt
 trunk --version >> dev-deps.txt
 wasm-bindgen --version >> dev-deps.txt

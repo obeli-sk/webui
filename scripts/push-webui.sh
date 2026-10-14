@@ -16,7 +16,25 @@ if [ "$TAG" != "dry-run" ]; then
     WASM=target/wasm32-wasip2/release/webui_proxy.wasm
     REF="docker.io/getobelisk/webui:$TAG"
 
-    cargo run --quiet --package webui-oci-config -- "$WASM" "$TMP_DIR/config.json"
+    wasm-tools component wit --json "$WASM" | jq -c \
+        --arg created "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" \
+        --arg digest "sha256:$(sha256sum "$WASM" | cut -d' ' -f1)" '
+        . as $r
+        | def names: to_entries | map(
+            if .key | test("^interface-[0-9]+$") then
+                $r.interfaces[.value.interface.id] as $i
+                | ($r.packages[$i.package].name | split("@")) as [$pkg, $ver]
+                | "\($pkg)/\($i.name)" + (if $ver then "@\($ver)" else "" end)
+            else .key end);
+        (.worlds[] | select(.name == "root")) as $w
+        | {
+            created: $created,
+            author: null,
+            architecture: "wasm",
+            os: "wasip2",
+            layerDigests: [$digest],
+            component: { exports: ($w.exports | names), imports: ($w.imports | names), target: null }
+        }' > "$TMP_DIR/config.json"
     METADATA='{"component_type":"webhook_endpoint_wasm","env_vars":[],"allowed_hosts":[]}'
     DIGEST=$(oras push --no-tty --format 'go-template={{.digest}}' \
         --config "$TMP_DIR/config.json:application/vnd.wasm.config.v0+json" \

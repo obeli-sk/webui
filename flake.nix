@@ -32,6 +32,7 @@
             rustToolchain
             dart-sass # SCSS compiler for styles
             trunk
+            wasm-tools
             wasm-bindgen-cli
             yq-go
           ];
