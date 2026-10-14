@@ -48,3 +48,7 @@ pub async fn get_current_deployment_id() -> Result<DeploymentId, String> {
         .parse()
         .map_err(|err| format!("Invalid deployment ID: {err}"))
 }
+
+pub async fn get_app_name() -> Result<String, String> {
+    rest::get::<String>("/v1/app-name", &[]).await
+}

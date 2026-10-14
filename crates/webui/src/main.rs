@@ -1,7 +1,7 @@
 use log::error;
 use webui::{
     app::{App, AppProps},
-    loader::{get_current_deployment_id, load_components},
+    loader::{get_app_name, get_current_deployment_id, load_components},
 };
 
 fn main() {
@@ -20,10 +20,18 @@ fn main() {
         }
         .unwrap_or_default();
         let deployment_id = get_current_deployment_id().await.ok();
+        let app_name = get_app_name()
+            .await
+            .inspect_err(|e| error!("Failed to fetch app name: {e}"))
+            .ok();
+        if let Some(app_name) = &app_name {
+            gloo::utils::document().set_title(&format!("{app_name} | Obelisk WebUI"));
+        }
 
         yew::Renderer::<App>::with_props(AppProps {
             initial_components: loaded,
             initial_deployment_id: deployment_id,
+            app_name,
         })
         .render();
     });
