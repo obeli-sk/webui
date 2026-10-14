@@ -233,6 +233,7 @@ impl Route {
 pub struct AppProps {
     pub initial_components: LoadedComponents,
     pub initial_deployment_id: Option<DeploymentId>,
+    pub app_name: Option<String>,
 }
 
 #[component(App)]
@@ -240,6 +241,7 @@ pub fn app(
     AppProps {
         initial_components,
         initial_deployment_id,
+        app_name,
     }: &AppProps,
 ) -> Html {
     html! {
@@ -249,6 +251,7 @@ pub fn app(
                     <AppInner
                         initial_components={initial_components.clone()}
                         initial_deployment_id={*initial_deployment_id}
+                        app_name={app_name.clone()}
                     />
                 </TimeDisplayProvider>
             </NotificationProvider>
@@ -262,6 +265,7 @@ fn app_inner(
     AppProps {
         initial_components,
         initial_deployment_id,
+        app_name,
     }: &AppProps,
 ) -> Html {
     let notifications = use_context::<NotificationContext>()
@@ -356,7 +360,7 @@ fn app_inner(
                             <Link<Route> classes="app-brand" to={Route::Home}>
                                 <img class="app-brand-mark" src="/logo.png" alt="" />
                                 <span>{"Obelisk"}</span>
-                                <span class="app-brand-caption">{"WebUI"}</span>
+                                <span class="app-brand-caption">{app_name.as_deref().unwrap_or("WebUI")}</span>
                             </Link<Route>>
                             <div class="app-bar-actions">
                                 <ThemeToggle />
