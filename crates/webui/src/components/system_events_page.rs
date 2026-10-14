@@ -5,6 +5,7 @@ use crate::{
         system_nav::SystemNav,
         time_display::{TimeDisplayControl, TimeMode, Timestamp},
     },
+    loader::get_server_info,
     rest,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -214,8 +215,8 @@ pub fn system_events_page() -> Html {
         let notifications = notifications.clone();
         use_effect_with((), move |()| {
             spawn_local(async move {
-                match rest::get::<String>("/v1/admin/node-run-id", &[]).await {
-                    Ok(result) => current_run_id.set(Some(result)),
+                match get_server_info().await {
+                    Ok(info) => current_run_id.set(Some(info.node_run_id.to_string())),
                     Err(err) => {
                         error!("Failed to get current node run ID: {err:?}");
                         notifications.push(Notification::error(format!(

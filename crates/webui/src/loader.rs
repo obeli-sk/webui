@@ -5,7 +5,7 @@ use crate::rest;
 use concepts::{ComponentId, IfcFqnName, prefixed_ulid::DeploymentId};
 use hashbrown::HashMap;
 use log::debug;
-use rest_types::components::ComponentConfig;
+use rest_types::{components::ComponentConfig, server::ServerInfoResponse};
 use std::rc::Rc;
 
 /// Loaded component data from the server.
@@ -49,6 +49,6 @@ pub async fn get_current_deployment_id() -> Result<DeploymentId, String> {
         .map_err(|err| format!("Invalid deployment ID: {err}"))
 }
 
-pub async fn get_app_name() -> Result<String, String> {
-    rest::get::<String>("/v1/app-name", &[]).await
+pub async fn get_server_info() -> Result<ServerInfoResponse, String> {
+    rest::get("/v1/info", &[]).await
 }
