@@ -3,13 +3,11 @@
 use crate::{
     app::{AppState, Route},
     components::notification::{Notification, NotificationContext},
-    grpc::{
-        ffqn::FunctionFqn,
-        grpc_client::{self, ContentDigest, ExecutionId},
-    },
     rest,
 };
+use concepts::{ExecutionId, FunctionFqn, component_id::ComponentDigest, prefixed_ulid::DelayId};
 use log::{debug, error};
+use rest_types::replay::{CapturedWriteSer, ReplayOutcomeSer, ReplayResponseSer};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
@@ -25,15 +23,15 @@ pub struct ReplayButtonProps {
     pub execution_id: ExecutionId,
     /// Called with the captured writes when replay returns Advanceable with non-empty writes.
     #[prop_or_default]
-    pub on_replay_response: Option<Callback<grpc_client::ReplayExecutionResponse>>,
+    pub on_replay_response: Option<Callback<ReplayResponseSer>>,
 }
 
 /// Calls ReplayExecution and returns the response, or None on RPC error.
 pub async fn call_replay(
     execution_id: &ExecutionId,
     notifications: &NotificationContext,
-) -> Option<grpc_client::ReplayExecutionResponse> {
-    match rest::replay::replay(&execution_id.id).await {
+) -> Option<ReplayResponseSer> {
+    match rest::replay::replay(execution_id).await {
         Ok(resp) => Some(resp),
         Err(e) => {
             error!("Failed to replay execution {}: {:?}", execution_id, e);
@@ -46,20 +44,17 @@ pub async fn call_replay(
 /// Processes a ReplayExecutionResponse: shows notifications for non-advanceable outcomes,
 /// returns the captured_writes for Advanceable, or None.
 pub fn process_replay_response(
-    response: &grpc_client::ReplayExecutionResponse,
+    response: &ReplayResponseSer,
     notifications: &NotificationContext,
-) -> Option<Vec<grpc_client::CapturedWrite>> {
-    use grpc_client::replay_execution_response::Outcome;
-    let duration_ms = response.replay_duration.as_ref().map_or(0, |duration| {
-        duration.seconds.saturating_mul(1_000) + i64::from(duration.nanos) / 1_000_000
-    });
+) -> Option<Vec<CapturedWriteSer>> {
+    let duration_ms = response.replay_duration_ms;
     let replay_summary = format!(
         "Replayed {} events in {duration_ms} ms",
         response.replayed_event_count
     );
     match &response.outcome {
-        Some(Outcome::Advanceable(adv)) => {
-            if adv.captured_writes.is_empty() {
+        ReplayOutcomeSer::Advanceable { captured_writes } => {
+            if captured_writes.is_empty() {
                 notifications.push(Notification::info(format!(
                     "{replay_summary}; no advance writes available"
                 )));
@@ -67,30 +62,27 @@ pub fn process_replay_response(
             } else {
                 notifications.push(Notification::success(format!(
                     "{replay_summary}; {} advance writes available",
-                    adv.captured_writes.len()
+                    captured_writes.len()
                 )));
-                Some(adv.captured_writes.clone())
+                Some(captured_writes.clone())
             }
         }
-        Some(Outcome::Finished(_)) => {
+        ReplayOutcomeSer::Finished { .. } => {
             notifications.push(Notification::info(format!(
                 "{replay_summary}; execution finished"
             )));
             None
         }
-        Some(Outcome::Blocked(_)) => {
+        ReplayOutcomeSer::Blocked => {
             notifications.push(Notification::info(format!(
                 "{replay_summary}; execution is blocked"
             )));
             None
         }
-        Some(Outcome::ReplayFailed(failed)) => {
-            let structured = failed.failure.as_ref().map(|failure| {
-                let kind = grpc_client::ExecutionFailureKind::try_from(failure.kind)
-                    .unwrap_or(grpc_client::ExecutionFailureKind::Unspecified)
-                    .as_str_name();
+        ReplayOutcomeSer::ReplayFailed { error, failure, .. } => {
+            let structured = failure.as_ref().map(|failure| {
                 [
-                    Some(kind.to_string()),
+                    Some(failure.kind.to_string()),
                     failure.reason.clone(),
                     failure.detail.clone(),
                 ]
@@ -104,18 +96,14 @@ pub fn process_replay_response(
                 match structured.filter(|s| !s.is_empty()) {
                     Some(detail) => format!(
                         "Replay failed after replaying {} events in {duration_ms} ms: {} ({detail})",
-                        response.replayed_event_count, failed.error
+                        response.replayed_event_count, error
                     ),
                     None => format!(
                         "Replay failed after replaying {} events in {duration_ms} ms: {}",
-                        response.replayed_event_count, failed.error
+                        response.replayed_event_count, error
                     ),
                 },
             ));
-            None
-        }
-        None => {
-            notifications.push(Notification::error("Empty replay response"));
             None
         }
     }
@@ -180,9 +168,9 @@ pub fn replay_button(props: &ReplayButtonProps) -> Html {
 pub struct AdvanceButtonProps {
     pub execution_id: ExecutionId,
     /// Cached replay response from a previous Replay click.
-    pub cached_replay_response: Option<grpc_client::ReplayExecutionResponse>,
+    pub cached_replay_response: Option<ReplayResponseSer>,
     /// Called to open the advance modal with captured writes.
-    pub on_open_modal: Callback<Vec<grpc_client::CapturedWrite>>,
+    pub on_open_modal: Callback<Vec<CapturedWriteSer>>,
 }
 
 #[component(AdvanceButton)]
@@ -252,7 +240,7 @@ pub fn advance_button(props: &AdvanceButtonProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub struct UpgradeFormProps {
     pub execution_id: ExecutionId,
-    pub current_digest: ContentDigest,
+    pub current_digest: ComponentDigest,
     pub ffqn: Option<FunctionFqn>,
 }
 
@@ -261,11 +249,11 @@ pub struct UpgradeFormProps {
 fn find_upgrade_digest(
     app_state: &AppState,
     ffqn: &FunctionFqn,
-    current_digest: &ContentDigest,
-) -> Option<ContentDigest> {
+    current_digest: &ComponentDigest,
+) -> Option<ComponentDigest> {
     let (_, component_id) = app_state.ffqns_to_details.get(ffqn)?;
-    let digest = component_id.digest.as_ref()?;
-    if digest.digest != current_digest.digest {
+    let digest = &component_id.component_digest;
+    if digest != current_digest {
         Some(digest.clone())
     } else {
         None
@@ -284,7 +272,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
     let show_modal_state = use_state(|| false);
     // Tracks the digest after a successful upgrade, so we can disable the button
     // immediately without waiting for the parent to propagate the new digest.
-    let upgraded_digest = use_state(|| None::<ContentDigest>);
+    let upgraded_digest = use_state(|| None::<ComponentDigest>);
 
     // Use the upgraded digest if available, otherwise fall back to the prop.
     let effective_digest = upgraded_digest
@@ -382,8 +370,8 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
                     let result = rest::put::<_, serde_json::Value>(
                         &format!("/v1/executions/{execution_id}/upgrade"),
                         &serde_json::json!({
-                            "old": effective_digest.digest,
-                            "new": new_digest.digest,
+                            "old": effective_digest.to_string(),
+                            "new": new_digest.to_string(),
                             "skip_determinism_check": skip_determinism,
                         }),
                     )
@@ -393,7 +381,7 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
 
                     match result {
                         Ok(_) => {
-                            let digest_str = &new_digest.digest;
+                            let digest_str = new_digest.to_string();
                             debug!(
                                 "Upgrade requested for execution {} to {}",
                                 execution_id, digest_str
@@ -465,8 +453,8 @@ pub fn upgrade_form(props: &UpgradeFormProps) -> Html {
         })
     };
 
-    let target_digest = upgrade_digest.as_ref().map(|digest| digest.digest.clone());
-    let current_digest = effective_digest.digest.clone();
+    let target_digest = upgrade_digest.as_ref().map(ToString::to_string);
+    let current_digest = effective_digest.to_string();
 
     html! {
         <div class="action-container upgrade-action">
@@ -763,7 +751,7 @@ pub fn unpause_button(props: &UnpauseButtonProps) -> Html {
 
 #[derive(Properties, PartialEq)]
 pub struct CancelDelayButtonProps {
-    pub delay_id: grpc_client::DelayId,
+    pub delay_id: DelayId,
 }
 
 #[component(CancelDelayButton)]
@@ -833,7 +821,7 @@ pub fn cancel_delay_button(props: &CancelDelayButtonProps) -> Html {
 
 #[derive(Properties, PartialEq)]
 pub struct PauseDelayButtonProps {
-    pub delay_id: grpc_client::DelayId,
+    pub delay_id: DelayId,
 }
 
 #[component(PauseDelayButton)]
@@ -898,7 +886,7 @@ pub fn pause_delay_button(props: &PauseDelayButtonProps) -> Html {
 
 #[derive(Properties, PartialEq)]
 pub struct UnpauseDelayButtonProps {
-    pub delay_id: grpc_client::DelayId,
+    pub delay_id: DelayId,
 }
 
 #[component(UnpauseDelayButton)]

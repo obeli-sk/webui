@@ -1,51 +1,44 @@
+use crate::components::execution_detail::tree_component::TreeComponent;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    components::execution_detail::tree_component::TreeComponent,
-    grpc::{
-        grpc_client::{self, execution_event::component_upgrade_finished},
-        version::VersionType,
-    },
+use concepts::{
+    component_id::ComponentDigest,
+    prefixed_ulid::DeploymentId,
+    storage::{ComponentUpgradeOutcome, ComponentUpgradeReason, VersionType},
 };
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ComponentUpgradeFinishedEventProps {
-    pub event: grpc_client::execution_event::ComponentUpgradeFinished,
+    pub component_digest: ComponentDigest,
+    pub deployment_id: DeploymentId,
+    pub outcome: ComponentUpgradeOutcome,
     pub version: VersionType,
     pub is_selected: bool,
 }
 
 impl ComponentUpgradeFinishedEventProps {
     fn construct_tree(&self) -> TreeData<u32> {
-        let event = &self.event;
         let mut tree = TreeBuilder::new().build();
         let root_id = tree
             .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
             .unwrap();
 
-        let (header_label, outcome_label) = match &event.outcome {
-            Some(component_upgrade_finished::Outcome::Success(success)) => {
-                let reason_label = match &success.reason {
-                    Some(component_upgrade_finished::success::Reason::Auto(_)) => {
-                        "Reason: Auto".to_string()
+        let (header_label, outcome_label) = match &self.outcome {
+            ComponentUpgradeOutcome::Success { reason } => {
+                let reason_label = match reason {
+                    ComponentUpgradeReason::Auto => "Reason: Auto".to_string(),
+                    ComponentUpgradeReason::Manual { force } => {
+                        format!("Reason: Manual (force: {force})")
                     }
-                    Some(component_upgrade_finished::success::Reason::Manual(m)) => {
-                        format!("Reason: Manual (force: {})", m.force)
-                    }
-                    None => "Reason: (?)".to_string(),
                 };
                 (
                     format!("{}. Component Upgrade Succeeded", self.version),
                     reason_label,
                 )
             }
-            Some(component_upgrade_finished::Outcome::Failed(failed)) => (
+            ComponentUpgradeOutcome::Failed { reason } => (
                 format!("{}. Component Upgrade Failed", self.version),
-                format!("Reason: {}", failed.reason),
-            ),
-            None => (
-                format!("{}. Component Upgrade Finished", self.version),
-                "Outcome: (?)".to_string(),
+                format!("Reason: {reason}"),
             ),
         };
 
@@ -73,34 +66,30 @@ impl ComponentUpgradeFinishedEventProps {
         )
         .unwrap();
 
-        if let Some(digest) = &event.component_digest {
-            tree.insert(
-                Node::new(NodeData {
-                    icon: Icon::Tag,
-                    label: html! {<>
-                        {"Component Digest: "}
-                        <input type="text" value={ digest.digest.clone() } />
-                    </>},
-                    has_caret: false,
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&event_type),
-            )
-            .unwrap();
-        }
+        tree.insert(
+            Node::new(NodeData {
+                icon: Icon::Tag,
+                label: html! {<>
+                    {"Component Digest: "}
+                    <input type="text" value={ self.component_digest.to_string() } />
+                </>},
+                has_caret: false,
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&event_type),
+        )
+        .unwrap();
 
-        if let Some(deployment_id) = &event.deployment_id {
-            tree.insert(
-                Node::new(NodeData {
-                    icon: Icon::Antenna,
-                    label: html! { { format!("Deployment ID: {}", deployment_id.id) } },
-                    has_caret: false,
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&event_type),
-            )
-            .unwrap();
-        }
+        tree.insert(
+            Node::new(NodeData {
+                icon: Icon::Antenna,
+                label: html! { { format!("Deployment ID: {}", self.deployment_id) } },
+                has_caret: false,
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&event_type),
+        )
+        .unwrap();
 
         TreeData::from(tree)
     }

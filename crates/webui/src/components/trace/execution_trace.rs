@@ -1,7 +1,7 @@
 use super::data::TraceData;
 use super::highlight::{highlighted_version_from_hash, set_highlight_hash};
-use crate::grpc::version::VersionType;
 use chrono::{DateTime, Utc};
+use concepts::storage::VersionType;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 

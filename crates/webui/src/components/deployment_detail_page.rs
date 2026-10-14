@@ -7,13 +7,16 @@ use crate::{
         execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
         notification::{Notification, NotificationContext},
     },
-    grpc::grpc_client::{self, DeploymentExecutionSummary, DeploymentId, DeploymentStatus},
     rest,
     util::time::format_date,
 };
-use chrono::DateTime;
+use concepts::prefixed_ulid::DeploymentId;
 use hashbrown::HashMap;
 use log::error;
+use rest_types::{
+    components::ComponentConfig,
+    deployment::{DeploymentRecordSer, DeploymentStateSer, DeploymentStatusSer},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::ops::Deref;
@@ -66,12 +69,11 @@ impl DeploymentTab {
     }
 }
 
-fn status_badge(status: DeploymentStatus) -> Html {
+fn status_badge(status: DeploymentStatusSer) -> Html {
     match status {
-        DeploymentStatus::Active => html! { <span class="badge current">{"Active"}</span> },
-        DeploymentStatus::Enqueued => html! { <span class="badge enqueued">{"Enqueued"}</span> },
-        DeploymentStatus::Inactive => html! { <span class="badge inactive">{"Inactive"}</span> },
-        DeploymentStatus::Unspecified => html! {},
+        DeploymentStatusSer::Active => html! { <span class="badge current">{"Active"}</span> },
+        DeploymentStatusSer::Enqueued => html! { <span class="badge enqueued">{"Enqueued"}</span> },
+        DeploymentStatusSer::Inactive => html! { <span class="badge inactive">{"Inactive"}</span> },
     }
 }
 
@@ -90,10 +92,9 @@ pub fn deployment_detail_page(
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let app_state = use_context::<AppState>().expect("AppState context must be provided");
 
-    let deployment_state = use_state(|| None::<grpc_client::Deployment>);
-    let execution_summary = use_state(|| None::<DeploymentExecutionSummary>);
-    let components_by_name =
-        use_state(|| Rc::new(HashMap::<String, grpc_client::Component>::new()));
+    let deployment_state = use_state(|| None::<DeploymentRecordSer>);
+    let execution_summary = use_state(|| None::<DeploymentStateSer>);
+    let components_by_name = use_state(|| Rc::new(HashMap::<String, ComponentConfig>::new()));
     // Bumped after a successful switch action to refetch the deployment.
     let refresh = use_state(|| 0u32);
     let show_derived = use_state(|| false);
@@ -108,58 +109,52 @@ pub fn deployment_detail_page(
         let deployment_state = deployment_state.clone();
         let components_by_name = components_by_name.clone();
         let notifications = notifications.clone();
-        use_effect_with(
-            (deployment_id.clone(), *refresh),
-            move |(deployment_id, _)| {
-                let deployment_id = deployment_id.clone();
-                spawn_local(async move {
-                    match rest::deployments::get(&deployment_id.id).await {
-                        Ok(resp) => {
-                            deployment_state.set(Some(resp));
-                        }
-                        Err(e) => {
-                            error!("Failed to get deployment: {e:?}");
-                            notifications.push(Notification::error(format!(
-                                "Failed to get deployment: {}",
-                                e
-                            )));
-                        }
+        use_effect_with((*deployment_id, *refresh), move |(deployment_id, _)| {
+            let deployment_id = *deployment_id;
+            spawn_local(async move {
+                match rest::deployments::get(&deployment_id).await {
+                    Ok(resp) => {
+                        deployment_state.set(Some(resp));
                     }
-                    // Resolve component IDs of this deployment for links and source fetching.
-                    match rest::components::list(Some(&deployment_id.id), None).await {
-                        Ok(components) => {
-                            let map = components
-                                .into_iter()
-                                .filter_map(|component| {
-                                    let name = component.component_id.as_ref()?.name.clone();
-                                    Some((name, component))
-                                })
-                                .collect();
-                            components_by_name.set(Rc::new(map));
-                        }
-                        Err(e) => {
-                            // Components may be unavailable for old deployments; not fatal.
-                            error!("Failed to list components of the deployment: {e:?}");
-                        }
+                    Err(e) => {
+                        error!("Failed to get deployment: {e:?}");
+                        notifications.push(Notification::error(format!(
+                            "Failed to get deployment: {}",
+                            e
+                        )));
                     }
-                });
-            },
-        );
+                }
+                // Resolve component IDs of this deployment for links and source fetching.
+                match rest::components::list(Some(&deployment_id), None).await {
+                    Ok(components) => {
+                        let map = components
+                            .into_iter()
+                            .map(|component| (component.component_id.name.to_string(), component))
+                            .collect();
+                        components_by_name.set(Rc::new(map));
+                    }
+                    Err(e) => {
+                        // Components may be unavailable for old deployments; not fatal.
+                        error!("Failed to list components of the deployment: {e:?}");
+                    }
+                }
+            });
+        });
     }
 
     {
-        let deployment_id = deployment_id.clone();
+        let deployment_id = *deployment_id;
         let execution_summary = execution_summary.clone();
         let notifications = notifications.clone();
         use_effect_with(
-            (deployment_id.clone(), *show_derived, *refresh),
+            (deployment_id, *show_derived, *refresh),
             move |(deployment_id, show_derived, _)| {
-                let deployment_id = deployment_id.clone();
+                let deployment_id = *deployment_id;
                 let show_derived = *show_derived;
                 execution_summary.set(None);
                 spawn_local(async move {
                     let response = rest::deployments::list(
-                        Some(&deployment_id.id),
+                        Some(&deployment_id),
                         "older",
                         1,
                         true,
@@ -169,15 +164,9 @@ pub fn deployment_detail_page(
                     .await;
                     match response {
                         Ok(response) => {
-                            let summary =
-                                response
-                                    .into_iter()
-                                    .find(|summary| {
-                                        summary.deployment.as_ref().and_then(|deployment| {
-                                            deployment.deployment_id.as_ref()
-                                        }) == Some(&deployment_id)
-                                    })
-                                    .and_then(|summary| summary.execution_summary);
+                            let summary = response
+                                .into_iter()
+                                .find(|summary| summary.deployment_id == deployment_id);
                             execution_summary.set(summary);
                         }
                         Err(e) => {
@@ -196,19 +185,17 @@ pub fn deployment_detail_page(
     let Some(deployment) = deployment_state.deref().clone() else {
         return html! { <p>{"Loading..."}</p> };
     };
-    let status = deployment.status();
+    let status = deployment.status;
     let is_current = app_state.current_deployment_id.as_ref() == Some(deployment_id);
     let description = deployment
         .description
         .as_deref()
         .filter(|description| !description.trim().is_empty());
 
-    let parsed_manifest: Option<Result<Value, String>> = deployment
-        .deployment_toml
-        .as_ref()
-        .map(|manifest| toml::from_str::<Value>(manifest).map_err(|e| e.to_string()));
+    let parsed_manifest: Result<Value, String> =
+        toml::from_str::<Value>(&deployment.deployment_toml).map_err(|e| e.to_string());
     let exec_badge = match &parsed_manifest {
-        Some(Ok(manifest)) => match activity_exec_count(manifest) {
+        Ok(manifest) => match activity_exec_count(manifest) {
             0 => html! {},
             count => {
                 let activity_label = if count == 1 { "activity" } else { "activities" };
@@ -224,7 +211,7 @@ pub fn deployment_detail_page(
                 }
             }
         },
-        None | Some(Err(_)) => html! {
+        Err(_) => html! {
             <span
                 class="badge dangerous-exec"
                 title="The manifest could not be inspected; exec activity status is unknown"
@@ -235,13 +222,12 @@ pub fn deployment_detail_page(
     };
 
     // A deployment is empty when its manifest parses but yields no component sections.
-    let is_empty = matches!(&parsed_manifest, Some(Ok(manifest))
+    let is_empty = matches!(&parsed_manifest, Ok(manifest)
         if build_sections_from_manifest(manifest, &deployment.files).is_empty());
 
     let components_html = match &parsed_manifest {
-        None => html! { <p>{"The server did not return the deployment manifest."}</p> },
-        Some(Err(parse_err)) => {
-            let raw = deployment.deployment_toml.clone().unwrap_or_default();
+        Err(parse_err) => {
+            let raw = deployment.deployment_toml.clone();
             html! {<>
                 <p class="error">
                     { format!("Cannot parse the deployment manifest, it was probably \
@@ -253,7 +239,7 @@ pub fn deployment_detail_page(
                 </details>
             </>}
         }
-        Some(Ok(manifest)) => {
+        Ok(manifest) => {
             let sections = build_sections_from_manifest(manifest, &deployment.files);
             if sections.is_empty() {
                 html! { <p>{"This deployment is empty."}</p> }
@@ -262,17 +248,14 @@ pub fn deployment_detail_page(
                     <DeploymentConfigView
                         sections={sections}
                         components_by_name={components_by_name.deref().clone()}
-                        deployment_id={deployment_id.clone()}
+                        deployment_id={*deployment_id}
                         focused_component={focused_component.clone()}
                     />
                 }
             }
         }
     };
-    let toml_html = deployment.deployment_toml.as_ref().map_or_else(
-        || html! { <p>{"The server did not return the deployment manifest."}</p> },
-        |manifest| toml_block(manifest.clone()),
-    );
+    let toml_html = toml_block(deployment.deployment_toml.clone());
 
     let on_switched = {
         let refresh = refresh.clone();
@@ -293,7 +276,7 @@ pub fn deployment_detail_page(
                             count: u32,
                             status: Option<StatusFilterList>| {
             let query = ExecutionQuery {
-                deployment_id: Some(deployment_id.id.clone()),
+                deployment_id: Some(deployment_id.to_string()),
                 status,
                 show_derived: *show_derived,
                 ..Default::default()
@@ -393,7 +376,7 @@ pub fn deployment_detail_page(
         DeploymentTab::Overview => overview_html,
         DeploymentTab::Graph => html! {
             <ComponentGraph
-                deployment_id={deployment_id.clone()}
+                deployment_id={*deployment_id}
                 components_by_name={components_by_name.deref().clone()}
             />
         },
@@ -408,13 +391,11 @@ pub fn deployment_detail_page(
                     { status_badge(status) }
                     { exec_badge }
                 </div>
-                <div class="deployment-detail-id">{ &deployment_id.id }</div>
+                <div class="deployment-detail-id">{ deployment_id.to_string() }</div>
                 <div class="deployment-detail-metadata">
-                    if let Some(created_at) = deployment.created_at {
-                        <span>{"Created "}{ format_date(DateTime::from(created_at)) }{" UTC"}</span>
-                    }
+                    <span>{"Created "}{ format_date(deployment.created_at) }{" UTC"}</span>
                     if let Some(last_active_at) = deployment.last_active_at {
-                        <span>{"Last deployed "}{ format_date(DateTime::from(last_active_at)) }{" UTC"}</span>
+                        <span>{"Last deployed "}{ format_date(last_active_at) }{" UTC"}</span>
                     } else {
                         <span>{"Never deployed"}</span>
                     }
@@ -422,7 +403,7 @@ pub fn deployment_detail_page(
             </header>
             <div class="deployment-detail-tools">
                 <DeploymentActions
-                    deployment_id={deployment_id.clone()}
+                    deployment_id={*deployment_id}
                     status={status}
                     on_switched={on_switched}
                 />
@@ -430,8 +411,8 @@ pub fn deployment_detail_page(
                     && !is_current
                 {
                     <Link<Route> to={Route::DeploymentDiff {
-                        from: current_id.clone(),
-                        to: deployment_id.clone(),
+                        from: *current_id,
+                        to: *deployment_id,
                     }}>
                         {"Diff against current deployment"}
                     </Link<Route>>

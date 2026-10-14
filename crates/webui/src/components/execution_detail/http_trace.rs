@@ -1,12 +1,11 @@
-use crate::grpc::grpc_client;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, NodeId};
-use chrono::DateTime;
+use concepts::storage::http_client_trace::HttpClientTrace;
 use id_tree::Tree;
 
 pub fn attach_http_traces(
     tree: &mut Tree<NodeData<u32>>,
     root_id: &NodeId,
-    traces: &[grpc_client::HttpClientTrace],
+    traces: &[HttpClientTrace],
 ) {
     if traces.is_empty() {
         return;
@@ -25,19 +24,12 @@ pub fn attach_http_traces(
         .unwrap();
 
     for trace in traces {
-        let sent_at = DateTime::from(
-            trace
-                .sent_at
-                .expect("HttpClientTrace.sent_at is always sent"),
-        );
-        let finished_at = trace
-            .finished_at
-            .as_ref()
-            .map(|finished_at| DateTime::from(*finished_at));
+        let sent_at = trace.req.sent_at;
+        let finished_at = trace.resp.as_ref().map(|resp| resp.finished_at);
         let trace_node_label = format!(
             "{} {} ({})",
-            trace.method,
-            trace.uri,
+            trace.req.method,
+            trace.req.uri,
             if let Some(finished_at) = finished_at {
                 let duration = (finished_at - sent_at)
                     .to_std()
@@ -81,8 +73,8 @@ pub fn attach_http_traces(
             .unwrap();
         }
 
-        match &trace.result {
-            Some(grpc_client::http_client_trace::Result::Status(status)) => {
+        match trace.resp.as_ref().map(|resp| &resp.status) {
+            Some(Ok(status)) => {
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::Tag,
@@ -93,7 +85,7 @@ pub fn attach_http_traces(
                 )
                 .unwrap();
             }
-            Some(grpc_client::http_client_trace::Result::Error(error)) => {
+            Some(Err(error)) => {
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::Error,

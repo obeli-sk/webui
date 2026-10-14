@@ -6,49 +6,68 @@ use crate::components::execution_actions::{
 };
 use crate::components::execution_status::{ExecutionStatus, FinishedStatusMode};
 use crate::components::notification::{Notification, NotificationContext};
-use crate::grpc::ffqn::FunctionFqn;
-use crate::grpc::grpc_client::{
-    self, CapturedWrite, ComponentType, ContentDigest, ExecutionId, ExecutionSummary,
-    captured_write, execution_status,
+use crate::model::ExecutionIdExt as _;
+use concepts::{
+    ComponentType, ExecutionId, FunctionFqn,
+    component_id::ComponentDigest,
+    storage::{PendingState, VersionType},
 };
-use crate::grpc::version::VersionType;
 use gloo::timers::callback::Interval;
 use log::{debug, error};
+use rest_types::{
+    executions::ExecutionWithStateSer,
+    replay::{AdvanceErrorSer, CapturedWriteSer, ReplayOutcomeSer, ReplayResponseSer},
+};
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
-#[derive(Clone, PartialEq, Default)]
+#[derive(Clone, PartialEq)]
 struct ExecutionInfo {
     component_type: ComponentType,
-    component_digest: ContentDigest,
-    ffqn: Option<FunctionFqn>,
+    component_digest: ComponentDigest,
+    ffqn: FunctionFqn,
 }
 
 /// Compute the version of the last event written by the captured writes for the given execution.
-fn last_version_of(execution_id: &ExecutionId, writes: &[CapturedWrite]) -> Option<VersionType> {
-    let eid = &execution_id.id;
-    writes.iter().rev().find_map(|cw| match &cw.write {
-        Some(captured_write::Write::Append(a))
-            if a.execution_id.as_ref().is_some_and(|id| id.id == *eid) =>
-        {
-            Some(a.version)
+fn last_version_of(execution_id: &ExecutionId, writes: &[CapturedWriteSer]) -> Option<VersionType> {
+    let eid = execution_id.to_string();
+    let last_of_batch = |version: u32, events: usize| version + events.saturating_sub(1) as u32;
+    writes.iter().rev().find_map(|write| match write {
+        CapturedWriteSer::Append {
+            execution_id,
+            version,
+            ..
         }
-        Some(captured_write::Write::AppendBatch(b))
-            if b.execution_id.as_ref().is_some_and(|id| id.id == *eid) =>
-        {
-            Some(b.version + b.events.len().saturating_sub(1) as u32)
+        | CapturedWriteSer::AppendFinished {
+            execution_id,
+            version,
+            ..
+        } if *execution_id == eid => Some(*version),
+        CapturedWriteSer::AppendBatch {
+            execution_id,
+            version,
+            events,
+            ..
         }
-        Some(captured_write::Write::AppendBatchCreateNewExecution(b))
-            if b.execution_id.as_ref().is_some_and(|id| id.id == *eid) =>
-        {
-            Some(b.version + b.events.len().saturating_sub(1) as u32)
+        | CapturedWriteSer::AppendBatchCreateNewExecution {
+            execution_id,
+            version,
+            events,
+            ..
         }
-        Some(captured_write::Write::AppendFinished(f))
-            if f.execution_id.as_ref().is_some_and(|id| id.id == *eid) =>
-        {
-            Some(f.version)
+        | CapturedWriteSer::AppendBatchWithDelayResponse {
+            execution_id,
+            version,
+            events,
+            ..
         }
+        | CapturedWriteSer::AppendStubResponse {
+            execution_id,
+            version,
+            events,
+            ..
+        } if *execution_id == eid => Some(last_of_batch(*version, events.len())),
         _ => None,
     })
 }
@@ -79,9 +98,9 @@ pub fn execution_header(
     let is_cancelling = use_state(|| false);
 
     // Cached replay response for the Advance button
-    let cached_replay = use_state(|| None::<grpc_client::ReplayExecutionResponse>);
+    let cached_replay = use_state(|| None::<ReplayResponseSer>);
     // Captured writes to show in the modal (None = modal closed)
-    let modal_writes = use_state(|| None::<Vec<CapturedWrite>>);
+    let modal_writes = use_state(|| None::<Vec<CapturedWriteSer>>);
     // Whether replay returned Blocked — triggers polling
     let is_blocked = use_state(|| false);
     // Guard against overlapping poll requests
@@ -113,11 +132,11 @@ pub fn execution_header(
     // Callback to receive the summary from ExecutionStatus
     let on_summary = {
         let exec_info = exec_info.clone();
-        Callback::from(move |summary: ExecutionSummary| {
+        Callback::from(move |summary: ExecutionWithStateSer| {
             exec_info.set(Some(ExecutionInfo {
-                component_type: summary.component_type(),
-                component_digest: summary.component_digest.unwrap(),
-                ffqn: summary.function_name.map(FunctionFqn::from),
+                component_type: summary.component_type,
+                component_digest: summary.component_digest,
+                ffqn: summary.ffqn,
             }));
         })
     };
@@ -134,9 +153,9 @@ pub fn execution_header(
     let on_status_change = {
         let is_paused = is_paused.clone();
         let is_cancelling = is_cancelling.clone();
-        Callback::from(move |status: execution_status::Status| {
-            is_paused.set(matches!(status, execution_status::Status::Paused(_)));
-            is_cancelling.set(matches!(status, execution_status::Status::Cancelling(_)));
+        Callback::from(move |status: PendingState| {
+            is_paused.set(matches!(status, PendingState::Paused(_)));
+            is_cancelling.set(matches!(status, PendingState::Cancelling(_)));
         })
     };
 
@@ -156,16 +175,12 @@ pub fn execution_header(
     });
 
     let is_cancellable_workflow = exec_info.as_ref().is_some_and(|exec_info| {
-        exec_info.component_type == ComponentType::Workflow
-            && exec_info
-                .ffqn
-                .as_ref()
-                .is_some_and(FunctionFqn::is_cancellable)
+        exec_info.component_type == ComponentType::Workflow && exec_info.ffqn.is_cancellable()
     });
 
     let stub_info = exec_info.as_ref().and_then(|exec_info| {
         if exec_info.component_type == ComponentType::ActivityStub {
-            exec_info.ffqn.clone()
+            Some(exec_info.ffqn.clone())
         } else {
             None
         }
@@ -198,33 +213,31 @@ pub fn execution_header(
 
                     spawn_local(async move {
                         if let Some(response) = call_replay(&execution_id, &notifications).await {
-                            use grpc_client::replay_execution_response::Outcome;
                             cached_replay.set(Some(response.clone()));
                             match &response.outcome {
-                                Some(Outcome::Advanceable(adv))
-                                    if !adv.captured_writes.is_empty() =>
+                                ReplayOutcomeSer::Advanceable { captured_writes }
+                                    if !captured_writes.is_empty() =>
                                 {
-                                    modal_writes.set(Some(adv.captured_writes.clone()));
+                                    modal_writes.set(Some(captured_writes.clone()));
                                     is_blocked.set(false);
                                 }
-                                Some(Outcome::Finished(_)) => {
+                                ReplayOutcomeSer::Finished { .. } => {
                                     notifications.push(Notification::info("Execution finished"));
                                     modal_writes.set(None);
                                     is_blocked.set(false);
                                 }
-                                Some(Outcome::Blocked(_)) => {
+                                ReplayOutcomeSer::Blocked => {
                                     // Still blocked, continue polling
                                 }
-                                Some(Outcome::ReplayFailed(f)) => {
+                                ReplayOutcomeSer::ReplayFailed { error, .. } => {
                                     notifications.push(Notification::error(format!(
-                                        "Replay failed: {}",
-                                        f.error
+                                        "Replay failed: {error}"
                                     )));
                                     modal_writes.set(None);
                                     is_blocked.set(false);
                                 }
-                                _ => {
-                                    // Empty advanceable or unknown — keep polling
+                                ReplayOutcomeSer::Advanceable { .. } => {
+                                    // Empty advanceable — keep polling
                                 }
                             }
                         }
@@ -274,7 +287,7 @@ pub fn execution_header(
                         <UpgradeForm
                             execution_id={execution_id.clone()}
                             current_digest={workflow_digest}
-                            ffqn={exec_info.as_ref().and_then(|info| info.ffqn.clone())}
+                            ffqn={exec_info.as_ref().map(|info| info.ffqn.clone())}
                         />
                         if is_cancellable_workflow {
                             <CancelExecutionButton
@@ -286,7 +299,7 @@ pub fn execution_header(
                         execution_id={execution_id.clone()}
                         on_replay_response={
                             let cached_replay = cached_replay.clone();
-                            Callback::from(move |resp: grpc_client::ReplayExecutionResponse| {
+                            Callback::from(move |resp: ReplayResponseSer| {
                                 cached_replay.set(Some(resp));
                             })
                         }
@@ -298,7 +311,7 @@ pub fn execution_header(
                             cached_replay_response={(*cached_replay).clone()}
                             on_open_modal={
                                 let modal_writes = modal_writes.clone();
-                                Callback::from(move |writes: Vec<CapturedWrite>| {
+                                Callback::from(move |writes: Vec<CapturedWriteSer>| {
                                     modal_writes.set(Some(writes));
                                 })
                             }
@@ -320,7 +333,7 @@ pub fn execution_header(
                         let notifications = notifications.clone();
                         let is_blocked = is_blocked.clone();
                         let on_advanced = on_advanced.clone();
-                        Callback::from(move |writes: Vec<CapturedWrite>| {
+                        Callback::from(move |writes: Vec<CapturedWriteSer>| {
                             let execution_id = execution_id.clone();
                             let modal_writes = modal_writes.clone();
                             let cached_replay = cached_replay.clone();
@@ -329,99 +342,55 @@ pub fn execution_header(
                             let on_advanced = on_advanced.clone();
                             let advanced_version = last_version_of(&execution_id, &writes);
                             spawn_local(async move {
-                                let result = crate::rest::replay::advance(&execution_id.id, &writes).await;
+                                let result = crate::rest::replay::advance(&execution_id, writes).await;
                                 match result {
-                                    Ok(resp) => {
-                                        use grpc_client::advance_execution_response;
-                                        let inner = resp;
-                                        match inner.result {
-                                            Some(advance_execution_response::Result::Success(
-                                                _,
-                                            )) => {
-                                                debug!(
-                                                    "Advance succeeded for {}",
-                                                    execution_id
-                                                );
-                                                notifications.push(Notification::success(
-                                                    "Advance succeeded",
-                                                ));
-                                                if let Some(version) = advanced_version
-                                                    && let Some(cb) = &on_advanced
+                                    Ok(Ok(_)) => {
+                                        debug!("Advance succeeded for {execution_id}");
+                                        notifications.push(Notification::success("Advance succeeded"));
+                                        if let Some(version) = advanced_version
+                                            && let Some(cb) = &on_advanced
+                                        {
+                                            cb.emit(version);
+                                        }
+                                        // Replay again to check next state
+                                        if let Some(response) =
+                                            call_replay(&execution_id, &notifications).await
+                                        {
+                                            cached_replay.set(Some(response.clone()));
+                                            match &response.outcome {
+                                                ReplayOutcomeSer::Advanceable { captured_writes }
+                                                    if !captured_writes.is_empty() =>
                                                 {
-                                                    cb.emit(version);
+                                                    modal_writes.set(Some(captured_writes.clone()));
+                                                    return;
                                                 }
-                                                // Replay again to check next state
-                                                if let Some(response) =
-                                                    call_replay(&execution_id, &notifications).await
-                                                {
-                                                    use grpc_client::replay_execution_response::Outcome;
-                                                    cached_replay.set(Some(response.clone()));
-                                                    match &response.outcome {
-                                                        Some(Outcome::Advanceable(adv))
-                                                            if !adv.captured_writes.is_empty() =>
-                                                        {
-                                                            modal_writes.set(Some(
-                                                                adv.captured_writes.clone(),
-                                                            ));
-                                                            return;
-                                                        }
-                                                        Some(Outcome::Blocked(_)) => {
-                                                            is_blocked.set(true);
-                                                            return;
-                                                        }
-                                                        _ => {
-                                                            process_replay_response(
-                                                                &response,
-                                                                &notifications,
-                                                            );
-                                                        }
-                                                    }
+                                                ReplayOutcomeSer::Blocked => {
+                                                    is_blocked.set(true);
+                                                    return;
                                                 }
-                                            }
-                                            Some(advance_execution_response::Result::Error(
-                                                e,
-                                            )) => {
-                                                let msg = match e.error {
-                                                    Some(
-                                                        advance_execution_response::error::Error::VersionMismatch(
-                                                            vm,
-                                                        ),
-                                                    ) => format!(
-                                                        "Version mismatch (expected {})",
-                                                        vm.expected
-                                                    ),
-                                                    Some(
-                                                        advance_execution_response::error::Error::ReplayMismatch(
-                                                            _,
-                                                        ),
-                                                    ) => "Replay mismatch".to_string(),
-                                                    Some(
-                                                        advance_execution_response::error::Error::TransientError(
-                                                            te,
-                                                        ),
-                                                    ) => {
-                                                        format!("Transient error: {}", te.message)
-                                                    }
-                                                    None => "Unknown advance error".to_string(),
-                                                };
-                                                notifications
-                                                    .push(Notification::error(msg));
-                                            }
-                                            None => {
-                                                notifications.push(Notification::error(
-                                                    "Empty advance response",
-                                                ));
+                                                _ => {
+                                                    process_replay_response(&response, &notifications);
+                                                }
                                             }
                                         }
                                     }
+                                    Ok(Err(e)) => {
+                                        let msg = match e {
+                                            AdvanceErrorSer::VersionMismatch { expected } => {
+                                                format!("Version mismatch (expected {expected})")
+                                            }
+                                            AdvanceErrorSer::ReplayMismatch => {
+                                                "Replay mismatch".to_string()
+                                            }
+                                            AdvanceErrorSer::Transient(message) => {
+                                                format!("Transient error: {message}")
+                                            }
+                                        };
+                                        notifications.push(Notification::error(msg));
+                                    }
                                     Err(e) => {
-                                        error!(
-                                            "Advance failed for {}: {:?}",
-                                            execution_id, e
-                                        );
-                                        notifications.push(Notification::error(
-                                            e,
-                                        ));
+                                        error!("Advance failed for {execution_id}: {e:?}");
+                                        notifications.push(Notification::error(e));
                                     }
                                 }
                                 // Close modal and invalidate cache

@@ -5,15 +5,12 @@ use crate::components::ffqn_with_links::FfqnWithLinks;
 use crate::components::json_tree::JsonValue;
 use crate::components::json_tree::insert_json_into_tree;
 use crate::components::time_display::Timestamp;
-use crate::grpc::ffqn::FunctionFqn;
-use crate::grpc::grpc_client;
-use crate::grpc::grpc_client::ComponentId;
-use crate::grpc::grpc_client::DeploymentId;
-use crate::grpc::grpc_client::ExecutionId;
-use crate::grpc::version::VersionType;
+use crate::model::{ComponentTypeExt as _, FunctionFqnExt as _};
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use chrono::{DateTime, Utc};
-use grpc_client::execution_event::Created;
+use concepts::prefixed_ulid::DeploymentId;
+use concepts::storage::{Created, VersionType};
+use concepts::{ComponentId, ExecutionId, FunctionFqn, JoinSetId};
 use serde_json::Value;
 use yew::Html;
 use yew::prelude::*;
@@ -27,28 +24,13 @@ pub struct CreatedEventProps {
 }
 impl CreatedEventProps {
     fn process(&self, app_state: &AppState) -> TreeData<u32> {
-        let Created {
-            function_name: Some(function_name),
-            params: Some(params),
-            scheduled_at,
-            component_id: Some(component_id),
-            scheduled_by,
-            deployment_id: Some(deployment_id),
-            ..
-        } = &self.created
-        else {
-            panic!("created must contain required fields - {:?}", self.created)
-        };
-        let ffqn = FunctionFqn::from(function_name.clone());
-        let params: Vec<serde_json::Value> =
-            serde_json::from_slice(&params.value).expect("`params` must be a JSON array");
-        let scheduled_at =
-            DateTime::from(scheduled_at.expect("`scheduled_at` is sent by the server"));
-        let scheduled_by = scheduled_by.clone();
+        let created = &self.created;
+        let ffqn = created.ffqn.clone();
+        let params = created.params.as_json_values().unwrap_or_default();
         let params = match app_state.ffqns_to_details.get(&ffqn) {
-            Some((function_detail, _)) if function_detail.params.len() == params.len() => {
+            Some((function_detail, _)) if function_detail.parameter_types.len() == params.len() => {
                 function_detail
-                    .params
+                    .parameter_types
                     .iter()
                     .zip(params.iter())
                     .map(|(fn_param, param_value)| (fn_param.name.clone(), param_value.clone()))
@@ -62,15 +44,18 @@ impl CreatedEventProps {
 
         let props = ProcessedProps {
             params,
-            scheduled_at,
+            scheduled_at: created.scheduled_at,
             ffqn,
-            scheduled_by,
-            parent_execution_id: self.created.parent_execution_id.clone(),
-            parent_join_set_id: self.created.parent_join_set_id.clone(),
-            metadata: self.created.metadata.clone(),
-            max_persisted_value_size_bytes: self.created.max_persisted_value_size_bytes,
-            component_id: component_id.clone(),
-            deployment_id: deployment_id.clone(),
+            scheduled_by: created.scheduled_by.clone(),
+            parent: created.parent.clone(),
+            metadata: created
+                .metadata
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            max_persisted_value_size_bytes: created.max_persisted_value_size_bytes,
+            component_id: created.component_id.clone(),
+            deployment_id: created.deployment_id,
             version: self.version,
             link: self.link,
             is_selected: self.is_selected,
@@ -84,9 +69,8 @@ struct ProcessedProps {
     scheduled_at: DateTime<Utc>,
     ffqn: FunctionFqn,
     scheduled_by: Option<ExecutionId>,
-    parent_execution_id: Option<ExecutionId>,
-    parent_join_set_id: Option<grpc_client::JoinSetId>,
-    metadata: std::collections::HashMap<String, String>,
+    parent: Option<(ExecutionId, JoinSetId)>,
+    metadata: Vec<(String, String)>,
     max_persisted_value_size_bytes: u64,
     component_id: ComponentId,
     deployment_id: DeploymentId,
@@ -176,7 +160,7 @@ impl ProcessedProps {
             let component_id_node = tree
                 .insert(
                     Node::new(NodeData {
-                        icon: self.component_id.component_type().as_icon(),
+                        icon: self.component_id.component_type.as_icon(),
                         label: html! {
                             { format!("Component: {}",  self.component_id.name) }
                         },
@@ -188,10 +172,10 @@ impl ProcessedProps {
                 .unwrap();
             tree.insert(
                 Node::new(NodeData {
-                    icon: self.component_id.component_type().as_icon(),
+                    icon: self.component_id.component_type.as_icon(),
                     label: html! {<>
                         {"Component Digest: "}
-                        <input type="text" value={ self.component_id.digest.as_ref().expect("component_id.digest is sent").digest.clone() } />
+                        <input type="text" value={ self.component_id.component_digest.to_string() } />
                     </>},
                     has_caret: false,
                     ..Default::default()
@@ -201,9 +185,9 @@ impl ProcessedProps {
             .unwrap();
             tree.insert(
                 Node::new(NodeData {
-                    icon: self.component_id.component_type().as_icon(),
+                    icon: self.component_id.component_type.as_icon(),
                     label: html! {
-                        { format!("Component Type: {}",  self.component_id.component_type()) }
+                        { format!("Component Type: {}",  self.component_id.component_type) }
                     },
                     has_caret: false,
                     ..Default::default()
@@ -218,7 +202,7 @@ impl ProcessedProps {
             Node::new(NodeData {
                 icon: Icon::Antenna,
                 label: html! {
-                    { format!("Deployment ID: {}", self.deployment_id.id) }
+                    { format!("Deployment ID: {}", self.deployment_id) }
                 },
                 has_caret: false,
                 ..Default::default()
@@ -243,7 +227,7 @@ impl ProcessedProps {
             .unwrap();
         }
         // parent execution
-        if let Some(parent_id) = self.parent_execution_id {
+        if let Some((parent_id, parent_js_id)) = self.parent {
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::Flows,
@@ -257,9 +241,7 @@ impl ProcessedProps {
                 InsertBehavior::UnderNode(&event_type),
             )
             .unwrap();
-        }
-        // parent join set
-        if let Some(parent_js_id) = self.parent_join_set_id {
+            // parent join set
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::Flows,

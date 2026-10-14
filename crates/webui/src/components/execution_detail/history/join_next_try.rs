@@ -1,12 +1,15 @@
-use crate::grpc::grpc_client::execution_event::history_event::join_next_try::Outcome;
-use crate::grpc::version::VersionType;
+use crate::components::execution_detail::tree_component::TreeComponent;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{components::execution_detail::tree_component::TreeComponent, grpc::grpc_client};
+use concepts::{
+    JoinSetId,
+    storage::{JoinNextTryOutcome, VersionType},
+};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinNextTryEventProps {
-    pub event: grpc_client::execution_event::history_event::JoinNextTry,
+    pub join_set_id: JoinSetId,
+    pub outcome: JoinNextTryOutcome,
     pub version: VersionType,
     pub is_selected: bool,
 }
@@ -18,17 +21,11 @@ impl HistoryJoinNextTryEventProps {
             .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
             .unwrap();
 
-        let join_set_id = self
-            .event
-            .join_set_id
-            .as_ref()
-            .expect("JoinNextTry.join_set_id is sent");
-
-        let outcome = Outcome::try_from(self.event.outcome).unwrap_or(Outcome::Found);
-        let (icon, status) = match outcome {
-            Outcome::Found => (Icon::Tick, "found"),
-            Outcome::Pending => (Icon::Search, "pending"),
-            Outcome::AllProcessed => (Icon::Error, "all processed"),
+        let join_set_id = self.join_set_id.to_string();
+        let (icon, status) = match self.outcome {
+            JoinNextTryOutcome::Found => (Icon::Tick, "found"),
+            JoinNextTryOutcome::Pending => (Icon::Search, "pending"),
+            JoinNextTryOutcome::AllProcessed => (Icon::Error, "all processed"),
         };
 
         tree.insert(

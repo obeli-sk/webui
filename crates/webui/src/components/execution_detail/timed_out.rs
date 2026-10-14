@@ -1,14 +1,15 @@
-use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    components::execution_detail::{http_trace::attach_http_traces, tree_component::TreeComponent},
-    grpc::{grpc_client, version::VersionType},
+use crate::components::execution_detail::{
+    http_trace::attach_http_traces, tree_component::TreeComponent,
 };
-use chrono::DateTime;
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
+use chrono::{DateTime, Utc};
+use concepts::storage::{VersionType, http_client_trace::HttpClientTrace};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct TemporarilyTimedOutEventProps {
-    pub event: grpc_client::execution_event::TemporarilyTimedOut,
+    pub backoff_expires_at: DateTime<Utc>,
+    pub http_client_traces: Vec<HttpClientTrace>,
     pub version: VersionType,
     pub is_selected: bool,
 }
@@ -31,7 +32,7 @@ impl TemporarilyTimedOutEventProps {
                 Node::new(NodeData {
                     icon: Icon::Time,
                     label: format!("{}. Temporarily Timed Out", self.version).into(),
-                    has_caret: self.event.backoff_expires_at.is_some(),
+                    has_caret: true,
                     is_selected: self.is_selected,
                     ..Default::default()
                 }),
@@ -40,11 +41,7 @@ impl TemporarilyTimedOutEventProps {
             .unwrap();
 
         // Add backoff expiration
-        let backoff_expires_at = DateTime::from(
-            self.event
-                .backoff_expires_at
-                .expect("`backoff_expires_at` is sent by the server"),
-        );
+        let backoff_expires_at = self.backoff_expires_at;
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Calendar,
@@ -57,7 +54,7 @@ impl TemporarilyTimedOutEventProps {
         .unwrap();
 
         // Add HTTP Traces
-        attach_http_traces(&mut tree, &timed_out_node, &self.event.http_client_traces);
+        attach_http_traces(&mut tree, &timed_out_node, &self.http_client_traces);
 
         TreeData::from(tree)
     }

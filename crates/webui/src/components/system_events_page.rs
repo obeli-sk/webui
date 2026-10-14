@@ -5,11 +5,12 @@ use crate::{
         system_nav::SystemNav,
         time_display::{TimeDisplayControl, TimeMode, Timestamp},
     },
-    grpc::grpc_client::{self, SystemEventLevel},
     rest,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
+use concepts::storage::SystemEventLevel;
 use log::error;
+use rest_types::admin::{SystemEventResponse as SystemEvent, SystemEventsResponse as EventPage};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Display, ops::Deref, str::FromStr};
 use wasm_bindgen_futures::spawn_local;
@@ -47,7 +48,7 @@ impl Display for LevelFilter {
             if index > 0 {
                 formatter.write_str(",")?;
             }
-            formatter.write_str(level.as_str_name())?;
+            formatter.write_str(level.as_str())?;
         }
         Ok(())
     }
@@ -61,8 +62,15 @@ impl FromStr for LevelFilter {
             .split(',')
             .filter(|value| !value.is_empty())
             .map(|value| {
-                SystemEventLevel::from_str_name(value)
-                    .filter(|level| FILTER_LEVELS.contains(level))
+                FILTER_LEVELS
+                    .into_iter()
+                    // backcompat: 0.42.0-rc links used the protobuf level names.
+                    .find(|level| {
+                        level.as_str() == value
+                            || value
+                                .strip_prefix("SYSTEM_EVENT_LEVEL_")
+                                .is_some_and(|name| name.eq_ignore_ascii_case(level.as_str()))
+                    })
                     .ok_or_else(|| format!("invalid system event level `{value}`"))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -95,25 +103,6 @@ pub struct SystemEventQuery {
     before: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     id: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-struct EventPage {
-    events: Vec<SystemEvent>,
-    next_cursor: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-struct SystemEvent {
-    event_id: String,
-    node_run_id: String,
-    created_at: DateTime<Utc>,
-    level: String,
-    code: String,
-    message: String,
-    execution_id: Option<String>,
-    deployment_id: Option<String>,
-    details: serde_json::Value,
 }
 
 fn selected_levels(query: &SystemEventQuery) -> Vec<SystemEventLevel> {
@@ -151,7 +140,6 @@ fn level_label(level: SystemEventLevel) -> &'static str {
         SystemEventLevel::Info => "Info",
         SystemEventLevel::Warning => "Warning",
         SystemEventLevel::Error => "Error",
-        SystemEventLevel::Unspecified => "Unspecified",
     }
 }
 
@@ -159,25 +147,19 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
     let created_at = event.created_at;
     let execution = event.execution_id.as_ref().map(|execution_id| {
         html! {
-            <Link<Route> to={Route::ExecutionTrace { execution_id: grpc_client::ExecutionId { id: execution_id.clone() } }}>
-                <code>{execution_id}</code>
+            <Link<Route> to={Route::ExecutionTrace { execution_id: execution_id.clone() }}>
+                <code>{execution_id.to_string()}</code>
             </Link<Route>>
         }
     });
     let deployment = event.deployment_id.as_ref().map(|deployment_id| {
         html! {
-            <Link<Route> to={Route::DeploymentDetail { deployment_id: grpc_client::DeploymentId { id: deployment_id.clone() } }}>
-                <code>{deployment_id}</code>
+            <Link<Route> to={Route::DeploymentDetail { deployment_id: *deployment_id }}>
+                <code>{deployment_id.to_string()}</code>
             </Link<Route>>
         }
     });
-    let level = match event.level.as_str() {
-        "debug" => SystemEventLevel::Debug,
-        "info" => SystemEventLevel::Info,
-        "warning" => SystemEventLevel::Warning,
-        "error" => SystemEventLevel::Error,
-        _ => SystemEventLevel::Unspecified,
-    };
+    let level = event.level;
     html! {
         <article class="system-event-list-item">
             <div class="system-event-heading">
@@ -191,11 +173,11 @@ fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
             <div class="system-event-metadata">
                 <Link<Route, SystemEventQuery>
                     to={Route::SystemEvents}
-                    query={Some(SystemEventQuery { id: Some(event.event_id.clone()), absolute_time, ..SystemEventQuery::default() })}
+                    query={Some(SystemEventQuery { id: Some(event.event_id.to_string()), absolute_time, ..SystemEventQuery::default() })}
                 >
-                    <code>{&event.event_id}</code>
+                    <code>{event.event_id.to_string()}</code>
                 </Link<Route, SystemEventQuery>>
-                <code title={event.node_run_id.clone()}>{&event.node_run_id}</code>
+                <code title={event.node_run_id.to_string()}>{event.node_run_id.to_string()}</code>
                 {deployment}
                 {execution}
             </div>
@@ -216,7 +198,7 @@ pub fn system_events_page() -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let app_state = use_context::<AppState>().expect("AppState context must be provided");
-    let current_deployment_id = app_state.current_deployment_id.clone();
+    let current_deployment_id = app_state.current_deployment_id;
     let query = location.query::<SystemEventQuery>().unwrap_or_default();
     let current_run_id = use_state(|| None::<String>);
     let response = use_state(|| None::<EventPage>);
@@ -251,7 +233,6 @@ pub fn system_events_page() -> Html {
         let response = response.clone();
         let notifications = notifications.clone();
         let current_run_id = current_run_id.deref().clone();
-        let current_deployment_id = current_deployment_id.clone();
         use_effect_with(
             (query, current_run_id, current_deployment_id, location.id()),
             move |(query, current_run_id, current_deployment_id, _)| {
@@ -314,14 +295,14 @@ pub fn system_events_page() -> Html {
                     query
                         .deployment_id
                         .clone()
-                        .or_else(|| current_deployment_id.as_ref().map(|id| id.id.clone()))
+                        .or_else(|| current_deployment_id.as_ref().map(ToString::to_string))
                 };
                 let levels = selected_levels(query);
                 // Selecting every level is the same as not filtering, so ask for all of them at once.
                 let requested_levels = if levels.len() == FILTER_LEVELS.len() {
-                    vec![SystemEventLevel::Unspecified]
+                    vec![None]
                 } else {
-                    levels
+                    levels.into_iter().map(Some).collect()
                 };
                 let query = query.clone();
                 response.set(None);
@@ -330,8 +311,8 @@ pub fn system_events_page() -> Html {
                     let mut has_more = false;
                     for level in requested_levels {
                         let mut params = vec![("limit", PAGE_SIZE.to_string())];
-                        if level != SystemEventLevel::Unspecified {
-                            params.push(("level", level_label(level).to_lowercase()));
+                        if let Some(level) = level {
+                            params.push(("level", level.as_str().to_string()));
                         }
                         if let Some(value) = query.code.as_ref().filter(|value| !value.is_empty()) {
                             params.push(("code", value.clone()));
@@ -366,11 +347,11 @@ pub fn system_events_page() -> Html {
                             }
                         }
                     }
-                    events.sort_unstable_by(|left, right| right.event_id.cmp(&left.event_id));
+                    events.sort_unstable_by_key(|event| std::cmp::Reverse(event.event_id));
                     has_more |= events.len() > PAGE_SIZE as usize;
                     events.truncate(PAGE_SIZE as usize);
                     let next_cursor = has_more
-                        .then(|| events.last().map(|event| event.event_id.clone()))
+                        .then(|| events.last().map(|event| event.event_id.to_string()))
                         .flatten();
                     response.set(Some(EventPage {
                         events,
@@ -459,7 +440,11 @@ pub fn system_events_page() -> Html {
             levels.retain(|candidate| *candidate != level);
             if !selected {
                 levels.push(level);
-                levels.sort_unstable_by_key(|level| *level as i32);
+                levels.sort_unstable_by_key(|level| {
+                    FILTER_LEVELS
+                        .iter()
+                        .position(|candidate| candidate == level)
+                });
             }
             query.levels = (levels != DEFAULT_LEVELS).then_some(LevelFilter(levels));
             query.before = None;
@@ -583,5 +568,17 @@ pub fn system_events_page() -> Html {
                 <p>{"Loading system events…"}</p>
             }
         </main>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_filter_accepts_current_and_protobuf_names() {
+        let filter: LevelFilter = "info,SYSTEM_EVENT_LEVEL_ERROR".parse().unwrap();
+        assert_eq!(filter.0, [SystemEventLevel::Info, SystemEventLevel::Error]);
+        assert_eq!(filter.to_string(), "info,error");
     }
 }

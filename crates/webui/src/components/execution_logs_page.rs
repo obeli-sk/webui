@@ -3,12 +3,13 @@ use crate::{
     components::execution_header::{ExecutionHeader, ExecutionLink},
     components::notification::{Notification, NotificationContext},
     components::time_display::{TimeDisplayControl, Timestamp},
-    grpc::grpc_client::{self, ExecutionId},
     rest,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
+use concepts::{ExecutionId, prefixed_ulid::RunId};
 use log::debug;
+use rest_types::logs::{LogEntryRowSer, LogEntrySer, LogLevelSer, LogStreamTypeSer};
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
 use web_sys::HtmlElement;
@@ -20,20 +21,20 @@ pub struct LogsPageProps {
     pub execution_id: ExecutionId,
 }
 
-const FILTER_LEVELS: [RestLogLevel; 5] = [
-    RestLogLevel::Trace,
-    RestLogLevel::Debug,
-    RestLogLevel::Info,
-    RestLogLevel::Warn,
-    RestLogLevel::Error,
+const FILTER_LEVELS: [LogLevelSer; 5] = [
+    LogLevelSer::Trace,
+    LogLevelSer::Debug,
+    LogLevelSer::Info,
+    LogLevelSer::Warn,
+    LogLevelSer::Error,
 ];
-const DEFAULT_LEVELS: [RestLogLevel; 5] = FILTER_LEVELS;
-const FILTER_STREAMS: [RestStreamType; 2] = [RestStreamType::Stdout, RestStreamType::Stderr];
+const DEFAULT_LEVELS: [LogLevelSer; 5] = FILTER_LEVELS;
+const FILTER_STREAMS: [LogStreamTypeSer; 2] = [LogStreamTypeSer::Stdout, LogStreamTypeSer::Stderr];
 
 #[derive(Clone, PartialEq)]
 struct LogFilters {
-    levels: Vec<RestLogLevel>,
-    streams: Vec<RestStreamType>,
+    levels: Vec<LogLevelSer>,
+    streams: Vec<LogStreamTypeSer>,
 }
 
 impl Default for LogFilters {
@@ -74,7 +75,7 @@ struct LogsQuery {
 }
 
 impl LogsQuery {
-    fn selected_levels(&self) -> Vec<RestLogLevel> {
+    fn selected_levels(&self) -> Vec<LogLevelSer> {
         match self.levels.as_deref() {
             None => DEFAULT_LEVELS.to_vec(),
             Some("") => Vec::new(),
@@ -90,7 +91,7 @@ impl LogsQuery {
         }
     }
 
-    fn selected_streams(&self) -> Vec<RestStreamType> {
+    fn selected_streams(&self) -> Vec<LogStreamTypeSer> {
         match self.streams.as_deref() {
             None => FILTER_STREAMS.to_vec(),
             Some("") => Vec::new(),
@@ -153,7 +154,7 @@ enum LogsAction {
         execution_id: ExecutionId,
         show_derived: bool,
         request_generation: u64,
-        response: grpc_client::ListLogsResponse,
+        response: DecodedLogs,
     },
     FetchError {
         execution_id: ExecutionId,
@@ -168,47 +169,45 @@ struct LogsState {
     show_derived: bool,
     filters: LogFilters,
     fetch_state: LogsFetchState,
-    logs: Vec<grpc_client::list_logs_response::LogEntry>,
+    logs: Vec<LogEntry>,
     next_page_token: String,
     request_generation: u64,
 }
 
-#[derive(Deserialize)]
-struct RestLogRow {
-    cursor: String,
-    run_id: String,
-    execution_id: String,
-    #[serde(flatten)]
-    entry: RestLogEntry,
+#[derive(Clone, Debug, PartialEq)]
+struct LogEntry {
+    created_at: DateTime<Utc>,
+    execution_id: ExecutionId,
+    run_id: RunId,
+    kind: LogKind,
 }
 
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum RestLogEntry {
+#[derive(Clone, Debug, PartialEq)]
+enum LogKind {
     Log {
-        created_at: DateTime<chrono::Utc>,
-        level: RestLogLevel,
+        level: LogLevelSer,
         message: String,
     },
     Stream {
-        created_at: DateTime<chrono::Utc>,
-        payload: String,
-        stream_type: RestStreamType,
+        payload: Vec<u8>,
+        stream_type: LogStreamTypeSer,
     },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-enum RestLogLevel {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
+#[derive(Clone, Debug, Default, PartialEq)]
+struct DecodedLogs {
+    logs: Vec<LogEntry>,
+    next_page_token: String,
 }
 
-impl RestLogLevel {
-    fn as_str(self) -> &'static str {
+trait LogLevelExt {
+    fn as_str(&self) -> &'static str;
+    fn label(self) -> &'static str;
+    fn css_class(self) -> &'static str;
+}
+
+impl LogLevelExt for LogLevelSer {
+    fn as_str(&self) -> &'static str {
         match self {
             Self::Trace => "trace",
             Self::Debug => "debug",
@@ -227,17 +226,26 @@ impl RestLogLevel {
             Self::Error => "Error",
         }
     }
+
+    fn css_class(self) -> &'static str {
+        match self {
+            Self::Trace => "kind-trace",
+            Self::Debug => "kind-debug",
+            Self::Info => "kind-info",
+            Self::Warn => "kind-warn",
+            Self::Error => "kind-error",
+        }
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-enum RestStreamType {
-    Stdout,
-    Stderr,
+trait LogStreamTypeExt {
+    fn as_str(&self) -> &'static str;
+    fn label(self) -> &'static str;
+    fn css_class(self) -> &'static str;
 }
 
-impl RestStreamType {
-    fn as_str(self) -> &'static str {
+impl LogStreamTypeExt for LogStreamTypeSer {
+    fn as_str(&self) -> &'static str {
         match self {
             Self::Stdout => "stdout",
             Self::Stderr => "stderr",
@@ -250,14 +258,16 @@ impl RestStreamType {
             Self::Stderr => "Stderr",
         }
     }
+
+    fn css_class(self) -> &'static str {
+        match self {
+            Self::Stdout => "kind-stdout",
+            Self::Stderr => "kind-stderr",
+        }
+    }
 }
 
-fn decode_logs(
-    rows: Vec<RestLogRow>,
-    page_size: usize,
-) -> Result<grpc_client::ListLogsResponse, String> {
-    use grpc_client::list_logs_response::{LogEntry, log_entry::Entry};
-
+fn decode_logs(rows: Vec<LogEntryRowSer>, page_size: usize) -> Result<DecodedLogs, String> {
     let next_page_token = if rows.len() == page_size {
         rows.last()
             .map(|row| row.cursor.clone())
@@ -268,28 +278,13 @@ fn decode_logs(
     let logs = rows
         .into_iter()
         .map(|row| {
-            let (created_at, entry) = match row.entry {
-                RestLogEntry::Log {
+            let (created_at, kind) = match row.info {
+                LogEntrySer::Log {
                     created_at,
                     level,
                     message,
-                } => {
-                    let level = match level {
-                        RestLogLevel::Trace => 1,
-                        RestLogLevel::Debug => 2,
-                        RestLogLevel::Info => 3,
-                        RestLogLevel::Warn => 4,
-                        RestLogLevel::Error => 5,
-                    };
-                    (
-                        created_at,
-                        Entry::Log(grpc_client::list_logs_response::log_entry::LogVariant {
-                            level,
-                            message,
-                        }),
-                    )
-                }
-                RestLogEntry::Stream {
+                } => (created_at, LogKind::Log { level, message }),
+                LogEntrySer::Stream {
                     created_at,
                     payload,
                     stream_type,
@@ -297,33 +292,30 @@ fn decode_logs(
                     let payload = STANDARD
                         .decode(payload)
                         .map_err(|error| error.to_string())?;
-                    let stream_type = match stream_type {
-                        RestStreamType::Stdout => grpc_client::LogStreamType::Stdout as i32,
-                        RestStreamType::Stderr => grpc_client::LogStreamType::Stderr as i32,
-                    };
                     (
                         created_at,
-                        Entry::Stream(grpc_client::list_logs_response::log_entry::StreamVariant {
+                        LogKind::Stream {
                             payload,
                             stream_type,
-                        }),
+                        },
                     )
                 }
             };
+            let execution_id = row
+                .execution_id
+                .parse()
+                .map_err(|err| format!("cannot parse execution ID: {err}"))?;
             Ok(LogEntry {
-                created_at: Some(created_at.into()),
-                entry: Some(entry),
-                run_id: Some(grpc_client::RunId { id: row.run_id }),
-                execution_id: Some(ExecutionId {
-                    id: row.execution_id,
-                }),
+                created_at,
+                execution_id,
+                run_id: row.run_id,
+                kind,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    Ok(grpc_client::ListLogsResponse {
+    Ok(DecodedLogs {
         logs,
         next_page_token,
-        prev_page_token: None,
     })
 }
 
@@ -496,7 +488,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
         })
     };
 
-    let toggle_level = |level: RestLogLevel| {
+    let toggle_level = |level: LogLevelSer| {
         let logs_state = logs_state.clone();
         let execution_id = execution_id.clone();
         let navigator = navigator.clone();
@@ -515,7 +507,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
         })
     };
 
-    let toggle_stream = |stream: RestStreamType| {
+    let toggle_stream = |stream: LogStreamTypeSer| {
         let logs_state = logs_state.clone();
         let execution_id = execution_id.clone();
         let navigator = navigator.clone();
@@ -624,29 +616,22 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
 
 /// Helper to render individual log entries
 fn render_log_entry(
-    entry: &grpc_client::list_logs_response::LogEntry,
+    entry: &LogEntry,
     root_execution_id: &ExecutionId,
     show_derived: bool,
     show_run_id: bool,
     query: &LogsQuery,
 ) -> Html {
     // Format Timestamp
-    let timestamp = if let Some(ts) = &entry.created_at {
-        let date_time = DateTime::from(*ts);
-        html! { <Timestamp target={date_time} /> }
-    } else {
-        html! { {"Unknown time"} }
-    };
+    let timestamp = html! { <Timestamp target={entry.created_at} /> };
 
-    let execution_id_html = entry
-        .execution_id
-        .as_ref()
+    let execution_id_html = Some(&entry.execution_id)
         .filter(|execution_id| *execution_id != root_execution_id)
         .map(|execution_id| {
-            let child_id = execution_id
-                .id
+            let execution_id_str = execution_id.to_string();
+            let child_id = execution_id_str
                 .split_once('.')
-                .map_or(execution_id.id.as_str(), |(_, child_id)| child_id);
+                .map_or(execution_id_str.as_str(), |(_, child_id)| child_id);
             html! {
                 <Link<Route, LogsQuery>
                     to={Route::Logs { execution_id: execution_id.clone() }}
@@ -658,42 +643,17 @@ fn render_log_entry(
         })
         .unwrap_or_default();
 
-    let (kind_class, kind, payload) = match &entry.entry {
-        Some(grpc_client::list_logs_response::log_entry::Entry::Log(log_variant)) => {
-            let log_row_class = match log_variant.level {
-                1 => "kind-trace",
-                2 => "kind-debug",
-                3 => "kind-info",
-                4 => "kind-warn",
-                5 => "kind-error",
-                _ => "kind-unknown",
-            };
-
-            // Map int enum to string manually or via generated derived Debug/Display
-            let level_str = match log_variant.level {
-                1 => "TRACE",
-                2 => "DEBUG",
-                3 => "INFO",
-                4 => "WARN",
-                5 => "ERROR",
-                _ => "UNKNOWN",
-            };
-
-            (log_row_class, level_str, log_variant.message.clone())
-        }
-        Some(grpc_client::list_logs_response::log_entry::Entry::Stream(stream_variant)) => {
-            let (stream_prefix, log_row_class) = match stream_variant.stream_type() {
-                grpc_client::LogStreamType::Unspecified => ("UNKNOWN", "kind-unknown"),
-                grpc_client::LogStreamType::Stdout => ("STDOUT", "kind-stdout"),
-                grpc_client::LogStreamType::Stderr => ("STDERR", "kind-stderr"),
-            };
-
-            // Convert bytes to UTF-8 string (lossy to prevent crashes on binary data)
-            let payload_str = String::from_utf8_lossy(&stream_variant.payload).into_owned();
-
-            (log_row_class, stream_prefix, payload_str)
-        }
-        None => ("kind-unknown", "UNKNOWN", "Invalid Log Entry".to_owned()),
+    let (kind_class, kind, payload) = match &entry.kind {
+        LogKind::Log { level, message } => (level.css_class(), level.to_string(), message.clone()),
+        LogKind::Stream {
+            payload,
+            stream_type,
+        } => (
+            stream_type.css_class(),
+            stream_type.to_string(),
+            // Lossy to prevent crashes on binary data
+            String::from_utf8_lossy(payload).into_owned(),
+        ),
     };
 
     html! {
@@ -705,7 +665,7 @@ fn render_log_entry(
             }
             if show_run_id {
                 <td class="run-id">
-                    {entry.run_id.as_ref().map(|run_id| run_id.id.clone()).unwrap_or_default()}
+                    {entry.run_id.to_string()}
                 </td>
             }
             <td class="payload">{payload}</td>
@@ -743,8 +703,8 @@ fn fetch_logs_page(
         if !page_token.is_empty() {
             query.push(("cursor", page_token));
         }
-        let result = rest::get::<Vec<RestLogRow>>(
-            &format!("/v1/executions/{}/logs", execution_id.id),
+        let result = rest::get::<Vec<LogEntryRowSer>>(
+            &format!("/v1/executions/{execution_id}/logs"),
             &query,
         )
         .await
@@ -789,25 +749,26 @@ fn request_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grpc_client::list_logs_response::log_entry::Entry;
+
+    const EXECUTION_ID: &str = "E_01KABCDEFGHJKMNPQRSTVWXYZ0";
 
     #[test]
     fn log_query_preserves_levels_streams_and_empty_selection() {
         let levels = [
-            RestLogLevel::Debug,
-            RestLogLevel::Info,
-            RestLogLevel::Warn,
-            RestLogLevel::Error,
+            LogLevelSer::Debug,
+            LogLevelSer::Info,
+            LogLevelSer::Warn,
+            LogLevelSer::Error,
         ];
         let query = LogsQuery::from_filters(&LogFilters {
             levels: levels.to_vec(),
-            streams: vec![RestStreamType::Stdout],
+            streams: vec![LogStreamTypeSer::Stdout],
         });
         let serialized = serde_json::to_string(&query).unwrap();
         let restored: LogsQuery = serde_json::from_str(&serialized).unwrap();
         assert_eq!(restored.selected_levels(), levels);
         assert_eq!(restored.levels.as_deref(), Some("debug,info,warn,error"));
-        assert_eq!(restored.selected_streams(), [RestStreamType::Stdout]);
+        assert_eq!(restored.selected_streams(), [LogStreamTypeSer::Stdout]);
 
         let query = LogsQuery::from_filters(&LogFilters {
             levels: Vec::new(),
@@ -825,7 +786,7 @@ mod tests {
     fn stream_filters_disable_unselected_log_sources() {
         let params = LogFilters {
             levels: Vec::new(),
-            streams: vec![RestStreamType::Stderr],
+            streams: vec![LogStreamTypeSer::Stderr],
         }
         .query_params();
         assert_eq!(
@@ -837,7 +798,7 @@ mod tests {
             ]
         );
         let params = LogFilters {
-            levels: vec![RestLogLevel::Error],
+            levels: vec![LogLevelSer::Error],
             streams: Vec::new(),
         }
         .query_params();
@@ -853,17 +814,24 @@ mod tests {
 
     #[test]
     fn changing_filters_resets_pagination_and_rejects_stale_pages() {
-        let execution_id = ExecutionId { id: "E_1".into() };
+        let execution_id: ExecutionId = EXECUTION_ID.parse().unwrap();
         let state = Rc::new(LogsState::default()).reduce(LogsAction::Reset {
             execution_id: execution_id.clone(),
             show_derived: true,
             filters: LogFilters::default(),
         });
         let old_generation = state.request_generation;
-        let response = grpc_client::ListLogsResponse {
-            logs: vec![Default::default()],
+        let response = DecodedLogs {
+            logs: vec![LogEntry {
+                created_at: Utc::now(),
+                execution_id: execution_id.clone(),
+                run_id: RunId::generate(),
+                kind: LogKind::Log {
+                    level: LogLevelSer::Info,
+                    message: "hello".into(),
+                },
+            }],
             next_page_token: "next".into(),
-            prev_page_token: None,
         };
         let state = state.reduce(LogsAction::PageLoaded {
             execution_id: execution_id.clone(),
@@ -876,14 +844,14 @@ mod tests {
             execution_id: execution_id.clone(),
             show_derived: true,
             filters: LogFilters {
-                levels: vec![RestLogLevel::Error],
-                streams: vec![RestStreamType::Stderr],
+                levels: vec![LogLevelSer::Error],
+                streams: vec![LogStreamTypeSer::Stderr],
             },
         });
         assert!(state.logs.is_empty());
         assert!(state.next_page_token.is_empty());
-        assert_eq!(state.filters.levels, [RestLogLevel::Error]);
-        assert_eq!(state.filters.streams, [RestStreamType::Stderr]);
+        assert_eq!(state.filters.levels, [LogLevelSer::Error]);
+        assert_eq!(state.filters.streams, [LogStreamTypeSer::Stderr]);
         assert!(state.fetch_state == LogsFetchState::Pending);
         let unchanged = state.clone().reduce(LogsAction::PageLoaded {
             execution_id,
@@ -896,21 +864,24 @@ mod tests {
 
     #[test]
     fn rest_log_page_decodes_entries_and_cursor() {
-        let rows: Vec<RestLogRow> = serde_json::from_str(
+        let rows: Vec<LogEntryRowSer> = serde_json::from_str(
             r#"[
-                {"cursor":"first","run_id":"Run_1","execution_id":"E_1","type":"log","created_at":"2026-09-25T12:00:00Z","level":"warn","message":"warning"},
-                {"cursor":"second","run_id":"Run_2","execution_id":"E_1.0","type":"stream","created_at":"2026-09-25T12:00:01Z","stream_type":"stdout","payload":"aGk="}
+                {"cursor":"first","run_id":"Run_01KABCDEFGHJKMNPQRSTVWXYZ0","execution_id":"E_01KABCDEFGHJKMNPQRSTVWXYZ0","type":"log","created_at":"2026-09-25T12:00:00Z","level":"warn","message":"warning"},
+                {"cursor":"second","run_id":"Run_01KABCDEFGHJKMNPQRSTVWXYZ1","execution_id":"E_01KABCDEFGHJKMNPQRSTVWXYZ0.n:children_1","type":"stream","created_at":"2026-09-25T12:00:01Z","stream_type":"stdout","payload":"aGk="}
             ]"#,
         )
         .unwrap();
         let page = decode_logs(rows, 2).unwrap();
         assert_eq!(page.next_page_token, "second");
-        assert_eq!(page.logs[0].run_id.as_ref().unwrap().id, "Run_1");
-        assert!(
-            matches!(&page.logs[0].entry, Some(Entry::Log(log)) if log.level == 4 && log.message == "warning")
+        assert_eq!(
+            page.logs[0].run_id.to_string(),
+            "Run_01KABCDEFGHJKMNPQRSTVWXYZ0"
         );
         assert!(
-            matches!(&page.logs[1].entry, Some(Entry::Stream(stream)) if stream.payload == b"hi" && stream.stream_type == grpc_client::LogStreamType::Stdout as i32)
+            matches!(&page.logs[0].kind, LogKind::Log { level: LogLevelSer::Warn, message } if message == "warning")
+        );
+        assert!(
+            matches!(&page.logs[1].kind, LogKind::Stream { payload, stream_type: LogStreamTypeSer::Stdout } if payload == b"hi")
         );
     }
 }

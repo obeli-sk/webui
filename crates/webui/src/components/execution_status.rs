@@ -1,21 +1,21 @@
 use crate::{
     components::execution_detail::finished::FinishedEvent,
-    grpc::finished_result_kind::FinishedResultKind,
-    grpc::grpc_client::{
-        self, ExecutionStatus as GExecutionStatus, ExecutionSummary, FinishedStatus,
-        execution_status::{Finished, Locked, PendingAt},
-        get_status_response,
-    },
+    model::{FinishedResultKind, FinishedStatus, StatusMessage},
     util::{
         time::{TimeGranularity, format_date, relative_time, use_relative_now},
         trace_id,
     },
 };
 use chrono::{DateTime, Utc};
+use concepts::{
+    ExecutionId,
+    storage::{PendingState, PendingStateBlockedByJoinSet, PendingStateFinished},
+};
 use futures::FutureExt as _;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
+use rest_types::executions::ExecutionWithStateSer;
 use std::rc::Rc;
 use yew::prelude::*;
 
@@ -33,44 +33,33 @@ pub enum FinishedStatusMode {
 
 #[derive(Properties, PartialEq)]
 pub struct ExecutionStatusProps {
-    pub status: Option<grpc_client::execution_status::Status>,
-    pub execution_id: grpc_client::ExecutionId,
+    pub status: Option<PendingState>,
+    pub execution_id: ExecutionId,
     /// Controls whether to request detailed finished status and optional callback
     #[prop_or_default]
     pub finished_status: FinishedStatusMode,
     /// Called when the summary is received from the status stream
     #[prop_or_default]
-    pub on_summary: Option<Callback<ExecutionSummary>>,
+    pub on_summary: Option<Callback<ExecutionWithStateSer>>,
     /// Called when the pending state changes (provides the current status)
     #[prop_or_default]
-    pub on_status_change: Option<Callback<grpc_client::execution_status::Status>>,
-}
-
-fn status_as_message(
-    status: Option<&grpc_client::execution_status::Status>,
-) -> Option<get_status_response::Message> {
-    status.map(|s| {
-        get_status_response::Message::CurrentStatus(GExecutionStatus {
-            status: Some(s.clone()),
-            component_digest: None, // not displayed, not available
-        })
-    })
+    pub on_status_change: Option<Callback<PendingState>>,
 }
 
 pub enum StatusStateAction {
     Update {
-        execution_id: grpc_client::ExecutionId,
-        message: get_status_response::Message,
+        execution_id: ExecutionId,
+        message: StatusMessage,
     },
 }
 
 #[derive(Default, PartialEq)]
 pub struct StatusState {
-    pub statuses: HashMap<grpc_client::ExecutionId, get_status_response::Message>,
+    pub statuses: HashMap<ExecutionId, StatusMessage>,
     /// Last `Summary` message seen per execution. Kept separately because the
     /// immutable component metadata it carries is otherwise lost once a later
-    /// `CurrentStatus`/`FinishedStatus` message overwrites `statuses`.
-    pub summaries: HashMap<grpc_client::ExecutionId, ExecutionSummary>,
+    /// `CurrentStatus`/`Finished` message overwrites `statuses`.
+    pub summaries: HashMap<ExecutionId, ExecutionWithStateSer>,
 }
 
 impl Reducible for StatusState {
@@ -84,7 +73,7 @@ impl Reducible for StatusState {
             } => {
                 let mut statuses = self.statuses.clone();
                 let mut summaries = self.summaries.clone();
-                if let get_status_response::Message::Summary(summary) = &message {
+                if let StatusMessage::Summary(summary) = &message {
                     summaries.insert(execution_id.clone(), summary.clone());
                 }
                 statuses.insert(execution_id, message);
@@ -100,106 +89,78 @@ impl Reducible for StatusState {
 
 pub type StatusCacheContext = UseReducerHandle<StatusState>;
 
-fn is_finished_detailed(msg: &get_status_response::Message) -> bool {
-    matches!(msg, get_status_response::Message::FinishedStatus(_))
+fn is_finished_detailed(msg: &StatusMessage) -> bool {
+    matches!(msg, StatusMessage::Finished(_))
 }
 
-fn is_finished_any(msg: &get_status_response::Message) -> bool {
+fn is_finished_any(msg: &StatusMessage) -> bool {
     matches!(
         msg,
-        get_status_response::Message::FinishedStatus(_)
-            | get_status_response::Message::CurrentStatus(GExecutionStatus {
-                status: Some(grpc_client::execution_status::Status::Finished(_)),
-                ..
-            })
-            | get_status_response::Message::Summary(ExecutionSummary {
-                current_status: Some(GExecutionStatus {
-                    status: Some(grpc_client::execution_status::Status::Finished(_)),
-                    ..
-                }),
+        StatusMessage::Finished(_)
+            | StatusMessage::CurrentStatus(PendingState::Finished(_))
+            | StatusMessage::Summary(ExecutionWithStateSer {
+                pending_state: PendingState::Finished(_),
                 ..
             })
     )
 }
 
-/// Extracts the execution status from a GetStatusResponse message
-pub fn extract_status(
-    msg: &get_status_response::Message,
-) -> Option<grpc_client::execution_status::Status> {
+/// Extracts the execution status from a status message
+pub fn extract_status(msg: &StatusMessage) -> Option<PendingState> {
     match msg {
-        get_status_response::Message::CurrentStatus(GExecutionStatus {
-            status: Some(status),
-            ..
-        }) => Some(status.clone()),
-        get_status_response::Message::Summary(ExecutionSummary {
-            current_status:
-                Some(GExecutionStatus {
-                    status: Some(status),
-                    ..
-                }),
-            ..
-        }) => Some(status.clone()),
-        _ => None,
+        StatusMessage::CurrentStatus(status) => Some(status.clone()),
+        StatusMessage::Summary(summary) => Some(summary.pending_state.clone()),
+        StatusMessage::Finished(_) => None,
     }
 }
 
 async fn run_status_subscription(
     status_state: UseReducerHandle<StatusState>,
     connection_id: Rc<str>,
-    execution_id: grpc_client::ExecutionId,
+    execution_id: ExecutionId,
     finished_status: FinishedStatusMode,
     cancel_rx: futures::channel::oneshot::Receiver<()>,
-    on_summary: Option<Callback<ExecutionSummary>>,
-    on_status_change: Option<Callback<grpc_client::execution_status::Status>>,
+    on_summary: Option<Callback<ExecutionWithStateSer>>,
+    on_status_change: Option<Callback<PendingState>>,
 ) {
     let send_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
     let mut cancel_rx = cancel_rx.fuse();
     let mut last_status = None;
     loop {
         let summary = futures::select! {
-            result = crate::rest::executions::get(&execution_id.id).fuse() => result,
+            result = crate::rest::executions::get(&execution_id).fuse() => result,
             _ =  &mut cancel_rx => break,
         };
         match summary {
             Ok(summary) => {
-                let current_status = summary
-                    .current_status
-                    .as_ref()
-                    .and_then(|status| status.status.clone());
+                let current_status = Some(summary.pending_state.clone());
                 if last_status.is_none() {
                     if let Some(callback) = &on_summary {
                         callback.emit(summary.clone());
                     }
                     status_state.dispatch(StatusStateAction::Update {
                         execution_id: execution_id.clone(),
-                        message: get_status_response::Message::Summary(summary.clone()),
+                        message: StatusMessage::Summary(summary.clone()),
                     });
                 }
                 if current_status != last_status {
                     if let (Some(callback), Some(status)) = (&on_status_change, &current_status) {
                         callback.emit(status.clone());
                     }
-                    if let Some(status) = &summary.current_status {
-                        status_state.dispatch(StatusStateAction::Update {
-                            execution_id: execution_id.clone(),
-                            message: get_status_response::Message::CurrentStatus(status.clone()),
-                        });
-                    }
+                    status_state.dispatch(StatusStateAction::Update {
+                        execution_id: execution_id.clone(),
+                        message: StatusMessage::CurrentStatus(summary.pending_state.clone()),
+                    });
                     last_status = current_status;
                 }
-                let is_finished = matches!(
-                    last_status,
-                    Some(grpc_client::execution_status::Status::Finished(_))
-                );
+                let is_finished = matches!(last_status, Some(PendingState::Finished(_)));
                 if is_finished {
                     if send_finished_status {
-                        match crate::rest::executions::finished_status(&execution_id.id, &summary)
-                            .await
-                        {
+                        match crate::rest::executions::finished_status(&summary).await {
                             Ok(detail) => {
                                 status_state.dispatch(StatusStateAction::Update {
                                     execution_id: execution_id.clone(),
-                                    message: get_status_response::Message::FinishedStatus(detail),
+                                    message: StatusMessage::Finished(detail),
                                 });
                                 if let FinishedStatusMode::RequestAndNotify(ref callback) =
                                     finished_status
@@ -259,10 +220,10 @@ pub fn execution_status(
     use_effect_with((execution_id.clone(), status.clone()), {
         let status_state = status_state.clone();
         move |(execution_id, status)| {
-            if let Some(msg) = status_as_message(status.as_ref()) {
+            if let Some(status) = status {
                 status_state.dispatch(StatusStateAction::Update {
                     execution_id: execution_id.clone(),
-                    message: msg,
+                    message: StatusMessage::CurrentStatus(status.clone()),
                 });
             }
         }
@@ -356,71 +317,41 @@ pub fn execution_status(
                 {"Loading..."}
             }
         }
-        Some(get_status_response::Message::Summary(ExecutionSummary {
-            current_status:
-                Some(GExecutionStatus {
-                    status: Some(status),
-                    component_digest: _,
-                }),
+        Some(StatusMessage::Summary(ExecutionWithStateSer {
+            pending_state: status,
             ..
         }))
-        | Some(get_status_response::Message::CurrentStatus(GExecutionStatus {
-            status: Some(status),
-            component_digest: _,
-        })) => status_to_string(status),
-        Some(get_status_response::Message::FinishedStatus(FinishedStatus {
-            created_at: _,
-            scheduled_at: Some(scheduled_at),
-            finished_at: Some(finished_at),
-            value: Some(result_detail),
+        | Some(StatusMessage::CurrentStatus(status)) => status_to_string(status),
+        Some(StatusMessage::Finished(FinishedStatus {
+            scheduled_at,
+            finished_at,
+            retval,
         })) => {
-            let finished_at = DateTime::from(*finished_at);
-            let scheduled_at = DateTime::from(*scheduled_at);
-            let since_scheduled = relative_time(scheduled_at, finished_at, TimeGranularity::Fine);
+            let since_scheduled = relative_time(*scheduled_at, *finished_at, TimeGranularity::Fine);
             html! {<>
-                <FinishedEvent result_detail={result_detail.clone()} version={None} is_selected={false}/>
+                <FinishedEvent result_detail={retval.clone()} version={None} is_selected={false}/>
                 <p>{format!("Completed in {since_scheduled}.")}</p>
             </>}
         }
-        Some(unknown) => unreachable!("unexpected {unknown:?}"),
     }
 }
 
-pub fn status_to_string(status: &grpc_client::execution_status::Status) -> Html {
+pub fn status_to_string(status: &PendingState) -> Html {
     match status {
-        grpc_client::execution_status::Status::Locked(Locked {
-            lock_expires_at, ..
-        }) => match lock_expires_at.as_ref() {
-            Some(lock_expires_at) => html! {
-                <RelativeStatus target={DateTime::from(*lock_expires_at)} kind={RelativeStatusKind::Locked} />
-            },
-            None => html! { "Locked" },
+        PendingState::Locked(locked) => html! {
+            <RelativeStatus target={locked.lock_expires_at} kind={RelativeStatusKind::Locked} />
         },
-        grpc_client::execution_status::Status::PendingAt(PendingAt { scheduled_at }) => {
-            match scheduled_at.as_ref() {
-                Some(scheduled_at) => html! {
-                    <RelativeStatus target={DateTime::from(*scheduled_at)} kind={RelativeStatusKind::Pending} />
-                },
-                None => html! { "Pending" },
-            }
-        }
-        grpc_client::execution_status::Status::BlockedByJoinSet(
-            grpc_client::execution_status::BlockedByJoinSet { join_set_id, .. },
-        ) => {
-            let join_set_id = join_set_id.clone().expect("`join_set_id` is sent");
+        PendingState::PendingAt(pending_at) => html! {
+            <RelativeStatus target={pending_at.scheduled_at} kind={RelativeStatusKind::Pending} />
+        },
+        PendingState::BlockedByJoinSet(PendingStateBlockedByJoinSet { join_set_id, .. }) => {
             Html::from(format!("Blocked by {join_set_id}"))
         }
-        grpc_client::execution_status::Status::Finished(Finished { result_kind, .. }) => {
-            let result_kind = result_kind
-                .as_ref()
-                .expect("ResultKind must be present for Finished status");
-            match &result_kind.value {
-                Some(value) => Html::from(FinishedResultKind::from(value).to_string()),
-                None => html! {"Finished with unknown result"},
-            }
+        PendingState::Finished(PendingStateFinished { result_kind, .. }) => {
+            Html::from(FinishedResultKind::from(result_kind).to_string())
         }
-        grpc_client::execution_status::Status::Paused(_) => html! {"Paused"},
-        grpc_client::execution_status::Status::Cancelling(_) => html! {"Cancelling"},
+        PendingState::Paused(_) => html! {"Paused"},
+        PendingState::Cancelling(_) => html! {"Cancelling"},
     }
 }
 

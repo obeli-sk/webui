@@ -12,17 +12,17 @@ use crate::{
         function_signature::FunctionSignature,
         notification::{Notification, NotificationContext},
     },
-    grpc::{
-        ffqn::FunctionFqn,
-        function_detail::{InterfaceFilter, map_interfaces_to_fn_details},
-        grpc_client::{self, ComponentFileRole, DeploymentId, FunctionDetail},
-        ifc_fqn::IfcFqn,
+    model::{
+        ComponentConfigExt as _, ComponentTypeExt as _, InterfaceFilter,
+        map_interfaces_to_fn_details,
     },
     rest,
     util::wit_highlighter,
 };
+use concepts::{FunctionFqn, IfcFqnName, prefixed_ulid::DeploymentId, storage::ComponentFileRole};
 use hashbrown::{HashMap, HashSet};
 use log::{error, warn};
+use rest_types::components::{ComponentConfig, ComponentFileRef, FunctionMetadataLite};
 use std::ops::Deref;
 use std::rc::Rc;
 use yew::prelude::*;
@@ -30,10 +30,10 @@ use yew_router::prelude::Link;
 
 #[derive(Properties, PartialEq)]
 pub struct ComponentDetailProps {
-    pub component: Rc<grpc_client::Component>,
+    pub component: Rc<ComponentConfig>,
     pub deployment_id: DeploymentId,
     /// All components of the deployment by name, used to resolve dependencies and callers.
-    pub deployment_components: Rc<HashMap<String, grpc_client::Component>>,
+    pub deployment_components: Rc<HashMap<String, ComponentConfig>>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -54,7 +54,7 @@ struct ComponentDeploymentConfig {
 /// Another component of the same deployment and the functions connecting it to the inspected one.
 #[derive(Debug, PartialEq)]
 pub(crate) struct ComponentConnection<'a> {
-    pub(crate) component: &'a grpc_client::Component,
+    pub(crate) component: &'a ComponentConfig,
     pub(crate) functions: Vec<FunctionFqn>,
 }
 
@@ -63,77 +63,74 @@ pub(crate) struct ComponentConnections<'a> {
     pub(crate) dependencies: Vec<ComponentConnection<'a>>,
     callers: Vec<ComponentConnection<'a>>,
     /// Imports no other component of the deployment exports, e.g. those provided by the runtime.
-    other_imports: Vec<IfcFqn>,
+    other_imports: Vec<IfcFqnName>,
 }
 
-pub(crate) fn component_name(component: &grpc_client::Component) -> &str {
-    &component
-        .component_id
-        .as_ref()
-        .expect("`component_id` is sent")
-        .name
+pub(crate) fn component_name(component: &ComponentConfig) -> &str {
+    component.component_id.name.as_ref()
 }
 
 /// Whether the component imports a dynamic support interface, letting it call any function of
 /// the deployment by name. JS components do when their code imports the dynamic module.
-pub(crate) fn calls_dynamically(component: &grpc_client::Component) -> bool {
-    interfaces(&component.imports).iter().any(|ifc| {
-        let ifc_name = ifc
-            .ifc_name
-            .strip_suffix("-backtrace")
-            .unwrap_or(&ifc.ifc_name);
-        ifc.pkg_fqn.is_namespace_obelisk()
+pub(crate) fn calls_dynamically(component: &ComponentConfig) -> bool {
+    interfaces(component.imported_fns()).iter().any(|ifc| {
+        let ifc_name = ifc.ifc_name();
+        let ifc_name = ifc_name.strip_suffix("-backtrace").unwrap_or(ifc_name);
+        ifc.is_namespace_obelisk()
             && matches!(
-                (ifc.pkg_fqn.package_name.as_str(), ifc_name),
+                (ifc.package_name(), ifc_name),
                 ("workflow", "workflow-dynamic-support") | ("webhook", "webhook-dynamic-support")
             )
     })
 }
 
 /// Link opening the component on its deployment page.
-pub(crate) fn component_link(
-    component: &grpc_client::Component,
-    deployment_id: &DeploymentId,
-) -> Html {
+pub(crate) fn component_link(component: &ComponentConfig, deployment_id: &DeploymentId) -> Html {
     let name = component_name(component).to_string();
     html! {
         <Link<Route, DeploymentQuery>
-            to={Route::DeploymentDetail { deployment_id: deployment_id.clone() }}
+            to={Route::DeploymentDetail { deployment_id: *deployment_id }}
             query={Some(DeploymentQuery { component: Some(name.clone()) })}
         >
-            { component.as_type().as_icon_html() }
+            { component.component_type().as_icon_html() }
             {" "}
             {name}
         </Link<Route, DeploymentQuery>>
     }
 }
 
-fn interfaces(functions: &[FunctionDetail]) -> Vec<IfcFqn> {
+fn interfaces(functions: &[FunctionMetadataLite]) -> Vec<IfcFqnName> {
     map_interfaces_to_fn_details(functions, InterfaceFilter::All)
         .into_keys()
         .collect()
 }
 
-fn ffqns(functions: &[FunctionDetail]) -> Vec<FunctionFqn> {
+fn ffqns(functions: &[FunctionMetadataLite]) -> Vec<FunctionFqn> {
     let mut ffqns = functions
         .iter()
-        .map(|fn_detail| FunctionFqn::from_fn_detail(fn_detail).expect("ffqn should be parseable"))
+        .map(|fn_detail| fn_detail.ffqn.clone())
         .collect::<Vec<_>>();
     ffqns.sort_by_cached_key(ToString::to_string);
     ffqns
 }
 
 pub(crate) fn component_connections<'a>(
-    component: &grpc_client::Component,
-    deployment_components: &'a HashMap<String, grpc_client::Component>,
+    component: &ComponentConfig,
+    deployment_components: &'a HashMap<String, ComponentConfig>,
 ) -> ComponentConnections<'a> {
     let name = component_name(component);
-    let imports = ffqns(&component.imports);
-    let exports = ffqns(&component.exports);
+    let imports = ffqns(component.imported_fns());
+    let exports = ffqns(component.exported_fns());
     let mut others = deployment_components
         .iter()
         .filter(|(other_name, _)| other_name.as_str() != name)
-        .map(|(_, other)| (other, ffqns(&other.imports), ffqns(&other.exports)))
+        .map(|(_, other)| {
+            (
+                other,
+                ffqns(other.imported_fns()),
+                ffqns(other.exported_fns()),
+            )
+        })
         .collect::<Vec<_>>();
     others.sort_by(|(a, ..), (b, ..)| component_name(a).cmp(component_name(b)));
 
@@ -159,7 +156,7 @@ pub(crate) fn component_connections<'a>(
         })
         .filter(|connection| !connection.functions.is_empty())
         .collect();
-    let other_imports = interfaces(&component.imports)
+    let other_imports = interfaces(component.imported_fns())
         .into_iter()
         .filter(|ifc| {
             imports.iter().any(|ffqn| {
@@ -177,17 +174,16 @@ pub(crate) fn component_connections<'a>(
     }
 }
 
-fn component_file_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<SourceView> {
+fn component_file_sources(files: &[ComponentFileRef]) -> Vec<SourceView> {
     let mut sources = files
         .iter()
         .filter_map(|file_ref| {
-            let role = ComponentFileRole::try_from(file_ref.role)
-                .unwrap_or(ComponentFileRole::Unspecified);
+            let role = file_ref.role;
             // WIT sources are shown in the dedicated "WIT" tab, not here.
             if role == ComponentFileRole::WitSource {
                 return None;
             }
-            let file = file_ref.file.as_ref().expect("`file` is sent");
+            let file = &file_ref.file;
             Some(SourceView {
                 file_name: file.path.clone(),
                 content: SourceContent::FetchFile {
@@ -218,7 +214,6 @@ fn component_file_role_label(role: ComponentFileRole) -> &'static str {
         ComponentFileRole::JsModule => "JS module",
         ComponentFileRole::BacktraceSource => "backtrace source",
         ComponentFileRole::WitSource => "WIT source",
-        ComponentFileRole::Unspecified => "unspecified",
     }
 }
 
@@ -280,7 +275,7 @@ pub fn component_detail(
     use_effect_with(
         (
             component.clone(),
-            deployment_id.clone(),
+            *deployment_id,
             is_active_deployment,
             *selected_tab,
         ),
@@ -294,25 +289,17 @@ pub fn component_detail(
                 if *selected_tab != ComponentDetailTab::Wit {
                     return;
                 }
-                let component_digest = component
-                    .component_id
-                    .as_ref()
-                    .expect("`component_id` is sent")
-                    .digest
-                    .clone()
-                    .expect("`digest` is sent");
+                let component_digest = component.component_id.component_digest.clone();
                 let render_ffqn_with_links = component
-                    .exports
+                    .exported_fns()
                     .iter()
                     .filter(|fn_detail| *is_active_deployment && fn_detail.submittable)
-                    .map(|fn_detail| {
-                        FunctionFqn::from_fn_detail(fn_detail).expect("fn_detail must be parseable")
-                    })
+                    .map(|fn_detail| fn_detail.ffqn.clone())
                     .collect::<HashSet<_>>();
-                let deployment_id = deployment_id.id.clone();
+                let deployment_id = deployment_id.to_string();
                 wasm_bindgen_futures::spawn_local(async move {
                     let response = rest::get_text(
-                        &format!("/v1/components/{}/wit", component_digest.digest),
+                        &format!("/v1/components/{component_digest}/wit"),
                         &[("deployment_id", deployment_id)],
                     )
                     .await;
@@ -338,7 +325,7 @@ pub fn component_detail(
         },
     );
 
-    use_effect_with((component.clone(), deployment_id.clone(), *selected_tab), {
+    use_effect_with((component.clone(), *deployment_id, *selected_tab), {
         let deployment_config = deployment_config.clone();
         let notifications = notifications.clone();
         move |(component, deployment_id, selected_tab)| {
@@ -351,44 +338,43 @@ pub fn component_detail(
                 return;
             }
             let component_name = component_name(component).to_string();
-            let deployment_id = deployment_id.clone();
+            let deployment_id = *deployment_id;
             wasm_bindgen_futures::spawn_local(async move {
-                let response = rest::deployments::get(&deployment_id.id).await;
+                let response = rest::deployments::get(&deployment_id).await;
                 match response {
                     Ok(deployment) => {
-                        let result = deployment
-                            .deployment_toml
-                            .as_deref()
-                            .map(|manifest| {
-                                let manifest = toml::from_str::<serde_json::Value>(manifest)
-                                    .map_err(|error| error.to_string())?;
-                                let sources =
-                                    build_sections_from_manifest(&manifest, &deployment.files)
-                                        .into_iter()
-                                        .find_map(|section| {
-                                            section
-                                                .components
-                                                .into_iter()
-                                                .find(|component| component.name == component_name)
-                                                .map(|component| component.sources)
-                                        });
-                                Ok(MANIFEST_SECTIONS.iter().find_map(|(toml_key, _)| {
-                                    manifest
-                                        .get(toml_key)
-                                        .and_then(serde_json::Value::as_array)
-                                        .and_then(|components| {
-                                            components.iter().find(|component| {
-                                                component_display_name(component) == component_name
+                        let result =
+                            toml::from_str::<serde_json::Value>(&deployment.deployment_toml)
+                                .map_err(|error| error.to_string())
+                                .map(|manifest| {
+                                    let sources =
+                                        build_sections_from_manifest(&manifest, &deployment.files)
+                                            .into_iter()
+                                            .find_map(|section| {
+                                                section
+                                                    .components
+                                                    .into_iter()
+                                                    .find(|component| {
+                                                        component.name == component_name
+                                                    })
+                                                    .map(|component| component.sources)
+                                            });
+                                    MANIFEST_SECTIONS.iter().find_map(|(toml_key, _)| {
+                                        manifest
+                                            .get(toml_key)
+                                            .and_then(serde_json::Value::as_array)
+                                            .and_then(|components| {
+                                                components.iter().find(|component| {
+                                                    component_display_name(component)
+                                                        == component_name
+                                                })
                                             })
-                                        })
-                                        .map(|component| ComponentDeploymentConfig {
-                                            toml: component_to_toml(toml_key, component),
-                                            sources: sources.clone().unwrap_or_default(),
-                                        })
-                                }))
-                            })
-                            .transpose()
-                            .map(Option::flatten);
+                                            .map(|component| ComponentDeploymentConfig {
+                                                toml: component_to_toml(toml_key, component),
+                                                sources: sources.clone().unwrap_or_default(),
+                                            })
+                                    })
+                                });
                         deployment_config.set(Some(result));
                     }
                     Err(error) => {
@@ -404,13 +390,13 @@ pub fn component_detail(
         }
     });
 
-    let exports = map_interfaces_to_fn_details(&component.exports, InterfaceFilter::All);
-    let render_exported_ifc_with_fns = |ifc_fqn: &IfcFqn, fn_details: &[FunctionDetail]| {
-        let exported_fn_details = fn_details
+    let exports = map_interfaces_to_fn_details(component.exported_fns(), InterfaceFilter::All);
+    let render_exported_ifc_with_fns =
+        |ifc_fqn: &IfcFqnName, fn_details: &[FunctionMetadataLite]| {
+            let exported_fn_details = fn_details
             .iter()
             .map(|fn_detail| {
-                let ffqn =
-                    FunctionFqn::from_fn_detail(fn_detail).expect("ffqn should be parseable");
+                let ffqn = fn_detail.ffqn.clone();
                 html! {
                     <li>
                         <FfqnWithLinks
@@ -419,30 +405,30 @@ pub fn component_detail(
                         />
                         {": "}
                         <span>
-                            <FunctionSignature params = {fn_detail.params.clone()} return_type={fn_detail.return_type.clone()} />
+                            <FunctionSignature params={fn_detail.parameter_types.clone()} return_type={fn_detail.return_type.clone()} />
                         </span>
                     </li>
                 }
             })
             .collect::<Vec<_>>();
 
-        html! {
-            <section class="types-interface">
-                <h4>
-                    // show searchable interface link
-                    <Link<Route, ExecutionQuery>
-                        to={Route::ExecutionList}
-                        query={ExecutionQuery { ffqn_prefix: Some(ifc_fqn.to_string()), show_derived: true, ..Default::default() }}
-                    >
-                        {ifc_fqn.to_string()}
-                    </Link<Route, ExecutionQuery>>
-                </h4>
-                <ul>
-                    {exported_fn_details}
-                </ul>
-            </section>
-        }
-    };
+            html! {
+                <section class="types-interface">
+                    <h4>
+                        // show searchable interface link
+                        <Link<Route, ExecutionQuery>
+                            to={Route::ExecutionList}
+                            query={ExecutionQuery { ffqn_prefix: Some(ifc_fqn.to_string()), show_derived: true, ..Default::default() }}
+                        >
+                            {ifc_fqn.to_string()}
+                        </Link<Route, ExecutionQuery>>
+                    </h4>
+                    <ul>
+                        {exported_fn_details}
+                    </ul>
+                </section>
+            }
+        };
     let exported_ifcs_fns = exports
         .iter()
         .map(|(ifc_fqn, fn_details)| render_exported_ifc_with_fns(ifc_fqn, fn_details))
@@ -475,7 +461,7 @@ pub fn component_detail(
         } else {
             html! {}
         };
-        let callers_note = if !component.exports.is_empty() && !dynamic_callers.is_empty() {
+        let callers_note = if !component.exported_fns().is_empty() && !dynamic_callers.is_empty() {
             html! {
                 <p class="component-dynamic-note">
                     {"Also callable by name from components calling dynamically: "}
@@ -521,7 +507,7 @@ pub fn component_detail(
         </>}
     };
 
-    let component_id = component.component_id.clone();
+    let component_id = Some(component.component_id.clone());
     let component_sources = component_file_sources(&component.files);
     let tab_button = |label: &'static str, tab: ComponentDetailTab| {
         let selected_tab = selected_tab.clone();
@@ -720,7 +706,7 @@ mod tests {
         );
         assert_eq!(
             connections.other_imports,
-            [IfcFqn::from_str("obelisk:log/log@1.0.0").unwrap()]
+            [IfcFqnName::from_str("obelisk:log/log@1.0.0").unwrap()]
         );
     }
 
@@ -746,23 +732,31 @@ mod tests {
         )));
     }
 
-    fn component(name: &str, exports: &[&str], imports: &[&str]) -> grpc_client::Component {
+    fn component(name: &str, exports: &[&str], imports: &[&str]) -> ComponentConfig {
         let functions = |ffqns: &[&str]| {
             ffqns
                 .iter()
-                .map(|ffqn| FunctionDetail {
-                    function_name: Some(FunctionFqn::from_str(ffqn).unwrap().into()),
-                    ..Default::default()
+                .map(|ffqn| FunctionMetadataLite {
+                    ffqn: FunctionFqn::from_str(ffqn).unwrap(),
+                    parameter_types: Vec::new(),
+                    return_type: String::new(),
+                    extension: None,
+                    submittable: false,
                 })
                 .collect()
         };
-        grpc_client::Component {
-            component_id: Some(grpc_client::ComponentId {
-                name: name.to_string(),
-                ..Default::default()
-            }),
-            exports: functions(exports),
-            imports: functions(imports),
+        ComponentConfig {
+            component_id: concepts::ComponentId::new(
+                concepts::ComponentType::Workflow,
+                name.to_string().into(),
+                concepts::component_id::ComponentDigest::from_str(
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+            exports: Some(functions(exports)),
+            imports: Some(functions(imports)),
             files: Vec::new(),
         }
     }
@@ -772,14 +766,14 @@ mod tests {
         digest: &str,
         size: u64,
         role: ComponentFileRole,
-    ) -> grpc_client::ComponentFileRef {
-        grpc_client::ComponentFileRef {
-            file: Some(grpc_client::FileRef {
+    ) -> ComponentFileRef {
+        ComponentFileRef {
+            file: rest_types::components::ComponentFile {
                 path: path.to_string(),
                 digest: digest.to_string(),
                 size,
-            }),
-            role: role as i32,
+            },
+            role,
         }
     }
 }

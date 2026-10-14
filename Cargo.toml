@@ -4,8 +4,9 @@ members = [
     "obelisk/crates/val-json",
     "crates/webui",
     "crates/webui-proxy",
-    "crates/webui-oci-config",
 ]
+# Inherit their dependencies from the obelisk workspace.
+exclude = ["obelisk/crates/concepts", "obelisk/crates/rest-types"]
 
 [workspace.package]
 version = "0.28.1"
@@ -17,11 +18,14 @@ rust-version = "1.98.1"
 
 [workspace.dependencies]
 val-json = { package = "obeli-sk-val-json", path = "obelisk/crates/val-json" }
+concepts = { package = "obeli-sk-concepts", path = "obelisk/crates/concepts", default-features = false }
+rest-types = { package = "obeli-sk-rest-types", path = "obelisk/crates/rest-types" }
 
 cargo_metadata = "0.23"
 
 # webui
 getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] } # ulid 3 via concepts
 gloo = "0.11.0"
 id-arena = "2.3.0"
 id_tree = "1.8.0"
@@ -62,12 +66,10 @@ derive_more = { version = "2.1.1", features = [
 futures = { version = "0.3.32", default-features = false }
 hashbrown = { version = "0.16.1", features = ["serde"] }
 indexmap = { version = "2.13", features = ["serde"] }
-prost = "0.14.3"
 rand = "0.9"
 schemars = { version = "1.2.1", features = ["indexmap2", "chrono04"] }
 serde = "1"
 serde_json = { version = "1.0.149", features = ["preserve_order"] }
-sha2 = "0.10"
 serde_with = "3.16.1"
 similar = "2"
 toml = { version = "1.1.2", features = ["preserve_order"] }
@@ -80,7 +82,6 @@ syntect = { version = "5.3.0", default-features = false, features = [
 ] }
 wasm-logger = "0.2.0"
 once_cell = "1.21.3"
-ulid = { version = "=1.1.4", features = ["serde"] }
 
 # val-json
 itertools = "0.15"

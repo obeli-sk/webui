@@ -1,5 +1,6 @@
 use crate::tree::Icon;
-use crate::{app::Route, components::execution_list_page::ExecutionQuery, grpc::ffqn::FunctionFqn};
+use crate::{app::Route, components::execution_list_page::ExecutionQuery};
+use concepts::FunctionFqn;
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
@@ -19,7 +20,7 @@ pub fn ffqn_with_links(
         hide_submit,
     }: &FfqnWithLinksProps,
 ) -> Html {
-    let ext = ffqn.ifc_fqn.pkg_fqn.is_extension();
+    let ext = ffqn.ifc_fqn.is_extension();
     html! {
         <span class="ffqn">
             if *fully_qualified {

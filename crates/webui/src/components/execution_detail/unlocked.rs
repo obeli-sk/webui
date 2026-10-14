@@ -1,13 +1,11 @@
+use crate::components::execution_detail::tree_component::TreeComponent;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    components::execution_detail::tree_component::TreeComponent,
-    grpc::{grpc_client, version::VersionType},
-};
+use concepts::storage::{Unlocked, VersionType};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct UnlockedEventProps {
-    pub event: grpc_client::execution_event::Unlocked,
+    pub event: Unlocked,
     pub version: VersionType,
     pub is_selected: bool,
 }
@@ -35,7 +33,7 @@ impl UnlockedEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Error,
-                label: self.event.reason.as_str().into(),
+                label: self.event.reason.to_string().into(),
                 ..Default::default()
             }),
             InsertBehavior::UnderNode(&unlocked_node_id),

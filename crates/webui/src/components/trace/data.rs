@@ -1,8 +1,6 @@
-use crate::{
-    components::execution_status::status_to_string,
-    grpc::{finished_result_kind::FinishedResultKind, grpc_client, version::VersionType},
-};
+use crate::{components::execution_status::status_to_string, model::FinishedResultKind};
 use chrono::{DateTime, TimeDelta, Utc};
+use concepts::storage::{PendingState, VersionType};
 use std::time::Duration;
 use yew::Html;
 
@@ -194,7 +192,7 @@ pub struct TraceDataRoot {
     pub busy: Vec<BusyInterval>,
     pub children: Vec<TraceData>,
     pub load_button: Option<Html>,
-    pub current_status: Option<grpc_client::execution_status::Status>,
+    pub current_status: Option<PendingState>,
     pub link: Option<TraceLink>,
 }
 impl TraceDataRoot {
@@ -220,23 +218,9 @@ pub struct TraceDataChild {
     pub link: Option<TraceLink>,
 }
 
-mod grpc {
-    use super::BusyIntervalStatus;
-    use crate::grpc::finished_result_kind::FinishedResultKind;
-    use crate::grpc::grpc_client::supported_function_result;
-
-    impl From<&supported_function_result::Value> for BusyIntervalStatus {
-        fn from(supported_function_result_value: &supported_function_result::Value) -> Self {
-            BusyIntervalStatus::ExecutionFinished(FinishedResultKind::from(
-                supported_function_result_value,
-            ))
-        }
-    }
-}
-
 mod css {
     use super::BusyIntervalStatus;
-    use crate::grpc::finished_result_kind::FinishedResultKind;
+    use crate::model::FinishedResultKind;
 
     impl BusyIntervalStatus {
         pub fn get_css_class(&self) -> &'static str {

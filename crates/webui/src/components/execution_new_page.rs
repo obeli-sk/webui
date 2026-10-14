@@ -1,7 +1,5 @@
-use crate::{
-    app::{AppState, Route},
-    grpc::{ffqn::FunctionFqn, grpc_client::ComponentType},
-};
+use crate::app::{AppState, Route};
+use concepts::{ComponentType, FunctionFqn};
 use hashbrown::{HashMap, HashSet};
 use std::{collections::BTreeMap, str::FromStr};
 use yew::prelude::*;
@@ -24,18 +22,18 @@ fn build_function_picker_data(
     let mut functions_by_interface: HashMap<String, HashSet<String>> = HashMap::new();
 
     for (ffqn, (function_detail, component_id)) in &app_state.ffqns_to_details {
-        let component_type = component_id.component_type();
+        let component_type = component_id.component_type;
         let type_is_visible = match component_type {
             ComponentType::Workflow => show_workflows,
             ComponentType::Activity => show_activities,
             _ => false,
         };
 
-        if !function_detail.submittable || !type_is_visible || ffqn.ifc_fqn.pkg_fqn.is_extension() {
+        if !function_detail.submittable || !type_is_visible || ffqn.ifc_fqn.is_extension() {
             continue;
         }
 
-        let package = ffqn.ifc_fqn.pkg_fqn.to_string();
+        let package = ffqn.ifc_fqn.pkg_fqn_name().to_string();
         let interface = ffqn.ifc_fqn.to_string();
         let function = ffqn.to_string();
 
@@ -206,7 +204,7 @@ pub fn execution_new_page() -> Html {
                     {for functions.iter().map(|function| {
                         let ffqn = FunctionFqn::from_str(function);
                         let function_name = ffqn.as_ref()
-                            .map(|f| f.function_name.clone())
+                            .map(|f| f.function_name.to_string())
                             .unwrap_or_else(|_| function.clone());
                         let navigator = navigator.clone();
                         let onclick = Callback::from(move |_| {

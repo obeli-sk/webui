@@ -1,14 +1,12 @@
 use crate::{
     app::Route,
     components::notification::{Notification, NotificationContext},
-    grpc::{
-        ffqn::FunctionFqn,
-        grpc_client::{self, ExecutionId},
-    },
     rest,
     util::wit_type_formatter::format_wit_type,
 };
+use concepts::ExecutionId;
 use log::{debug, error, trace, warn};
+use rest_types::components::FunctionMetadataLite;
 use serde_json::json;
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -25,21 +23,17 @@ struct FormData {
 
 impl FormData {
     fn validate_param(
-        function_detail: &grpc_client::FunctionDetail,
+        function_detail: &FunctionMetadataLite,
         param_value: &str,
         idx: usize,
     ) -> Result<(), String> {
         match serde_json::from_str::<serde_json::Value>(param_value) {
             Ok(param_value) => {
                 let wit_type_inline = function_detail
-                    .params
+                    .parameter_types
                     .get(idx)
-                    .as_ref()
-                    .expect("FunctionDetail.params cardinality must match FormData.param_refs")
-                    .r#type
-                    .as_ref()
-                    .expect("`FunctionParameter.type` is sent")
-                    .wit_type_inline
+                    .expect("parameter_types cardinality must match FormData.param_refs")
+                    .wit_type
                     .as_str();
                 let type_and_value_json = json!({
                     "type": wit_type_inline,
@@ -60,7 +54,7 @@ impl FormData {
         }
     }
 
-    fn validate(&mut self, function_detail: &grpc_client::FunctionDetail) -> Result<(), String> {
+    fn validate(&mut self, function_detail: &FunctionMetadataLite) -> Result<(), String> {
         let mut is_err = false;
         for (idx, param_ref) in self.param_refs.iter().enumerate() {
             let param_value = param_ref.cast::<HtmlTextAreaElement>().unwrap().value();
@@ -82,7 +76,7 @@ impl FormData {
 
 #[derive(Properties, PartialEq)]
 pub struct ExecutionSubmitFormProps {
-    pub function_detail: grpc_client::FunctionDetail,
+    pub function_detail: FunctionMetadataLite,
 }
 #[component(ExecutionSubmitForm)]
 pub fn execution_submit_form(
@@ -90,7 +84,7 @@ pub fn execution_submit_form(
         function_detail: fn_detail,
     }: &ExecutionSubmitFormProps,
 ) -> Html {
-    let ffqn = FunctionFqn::from_fn_detail(fn_detail).expect("ffqn should be parseable");
+    let ffqn = fn_detail.ffqn.clone();
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
 
@@ -99,9 +93,9 @@ pub fn execution_submit_form(
     // Initialize form state with default values
     let form_data_state = use_state(|| FormData {
         param_refs: std::iter::repeat_with(NodeRef::default)
-            .take(fn_detail.params.len())
+            .take(fn_detail.parameter_types.len())
             .collect(),
-        param_errs: std::iter::repeat_n(None, fn_detail.params.len()).collect(),
+        param_errs: std::iter::repeat_n(None, fn_detail.parameter_types.len()).collect(),
     });
     // Tracks validation errors (shown inline)
     let validation_err_state = use_state(|| None::<String>);
@@ -196,14 +190,10 @@ pub fn execution_submit_form(
     };
 
     let params_html: Vec<_> = fn_detail
-        .params
+        .parameter_types
         .iter()
         .enumerate()
         .map(|(idx, param)| {
-            let ty = param.r#type
-                .as_ref()
-                .expect("`FunctionParameter.type` is sent")
-                ;
             let id = format!("param_{ffqn}_{idx}");
 
             let on_param_change = {
@@ -235,12 +225,12 @@ pub fn execution_submit_form(
                     expanded_type_hints.set(set);
                 })
             };
-            let wit_type_formatted = format_wit_type(&ty.wit_type_inline);
+            let wit_type_formatted = format_wit_type(&param.wit_type);
 
             html! {<div class="form-field">
                 <div class="form-field-row">
                     <label for={id.clone()}>{ format!("{}:", &param.name) }</label>
-                    <textarea id={id} rows="1" placeholder={ty.wit_type.clone()} ref={&form_data_state.param_refs[idx]} oninput={Callback::from(move |_| { on_param_change()})} />
+                    <textarea id={id} rows="1" placeholder={param.wit_type.clone()} ref={&form_data_state.param_refs[idx]} oninput={Callback::from(move |_| { on_param_change()})} />
                     <span class="wit-type-toggle" onclick={on_toggle_type} title="Show full type">{ "ℹ" }</span>
                     if let Some(Some(err)) = form_data_state.param_errs.get(idx) {
                         <span class="validation-error">{err.clone()}</span>

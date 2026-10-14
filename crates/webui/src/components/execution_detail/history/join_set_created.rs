@@ -1,13 +1,11 @@
+use crate::components::execution_detail::tree_component::TreeComponent;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    components::execution_detail::tree_component::TreeComponent,
-    grpc::{grpc_client, version::VersionType},
-};
+use concepts::{JoinSetId, storage::VersionType};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinSetCreatedEventProps {
-    pub event: grpc_client::execution_event::history_event::JoinSetCreated,
+    pub join_set_id: JoinSetId,
     pub version: VersionType,
     pub is_selected: bool,
 }
@@ -20,11 +18,7 @@ impl HistoryJoinSetCreatedEventProps {
             .unwrap();
 
         // Add node for JoinSet ID
-        let join_set_id = &self
-            .event
-            .join_set_id
-            .as_ref()
-            .expect("join_set_id must be sent");
+        let join_set_id = self.join_set_id.to_string();
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::History,
