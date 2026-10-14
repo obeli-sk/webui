@@ -2678,6 +2678,7 @@ pub enum FunctionExtension {
     Schedule = 3,
     Stub = 4,
     Get = 5,
+    ScheduleWithId = 6,
 }
 impl FunctionExtension {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2692,6 +2693,7 @@ impl FunctionExtension {
             Self::Schedule => "FUNCTION_EXTENSION_SCHEDULE",
             Self::Stub => "FUNCTION_EXTENSION_STUB",
             Self::Get => "FUNCTION_EXTENSION_GET",
+            Self::ScheduleWithId => "FUNCTION_EXTENSION_SCHEDULE_WITH_ID",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2703,6 +2705,7 @@ impl FunctionExtension {
             "FUNCTION_EXTENSION_SCHEDULE" => Some(Self::Schedule),
             "FUNCTION_EXTENSION_STUB" => Some(Self::Stub),
             "FUNCTION_EXTENSION_GET" => Some(Self::Get),
+            "FUNCTION_EXTENSION_SCHEDULE_WITH_ID" => Some(Self::ScheduleWithId),
             _ => None,
         }
     }

@@ -10,6 +10,6 @@ serve:
 
 build:
     rm -rf crates/webui/dist
-    cargo build --package webui --release --target=wasm32-unknown-unknown # Trunk fails to run this before needing CSS files
-    trunk --log=debug --offline=true build --config crates/webui/Trunk.toml
-    cargo build --package webui-proxy --target=wasm32-wasip2 --release
+    env -u CARGO_TARGET_DIR cargo build --package webui --release --target=wasm32-unknown-unknown # Trunk fails to run this before needing CSS files
+    env -u CARGO_TARGET_DIR trunk --log=debug --offline=true build --config crates/webui/Trunk.toml
+    env -u CARGO_TARGET_DIR cargo build --package webui-proxy --target=wasm32-wasip2 --release
