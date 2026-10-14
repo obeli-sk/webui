@@ -6,19 +6,18 @@ use crate::components::trace::highlight::{BacktraceJump, TraceHighlightJump};
 use crate::components::trace::trace_view::{
     PAGE, SLEEP_MILLIS, compute_submit_await_version_groups,
 };
-use crate::grpc::grpc_client::{
-    self, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent, ResponseWithCursor,
-    execution_event,
-    execution_event::history_event::{
-        Event as HistoryEventEnum, JoinNext, JoinNextTooMany, JoinNextTry, JoinSetCreated,
-        JoinSetRequest, join_set_request,
-    },
-};
+use crate::model::{ColorExt as _, ExecutionIdExt as _};
 use crate::util::time::{
     TimeGranularity, format_date, human_formatted_timedelta, relative_time_if_significant,
 };
 use assert_matches::assert_matches;
-use chrono::DateTime;
+use concepts::{
+    ExecutionId, JoinSetId,
+    storage::{
+        Created, ExecutionEvent, ExecutionRequest, HistoryEvent, JoinSetRequest,
+        JoinSetResponseEventOuter, ResponseWithCursor,
+    },
+};
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{error, trace};
@@ -28,7 +27,7 @@ use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct ExecutionLogPageProps {
-    pub execution_id: grpc_client::ExecutionId,
+    pub execution_id: ExecutionId,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -62,7 +61,7 @@ enum ExecutionLogAction {
     /// Store a fetched child execution's `Created` event.
     SaveChildCreated {
         execution_id: ExecutionId,
-        created: Box<execution_event::Created>,
+        created: Box<Created>,
     },
 }
 
@@ -70,11 +69,11 @@ enum ExecutionLogAction {
 struct ExecutionLogState {
     execution_ids_to_fetch_state: HashMap<ExecutionId, ExecutionFetchState>,
     events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
-    responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
+    responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
     /// Cache of direct child executions' `Created` (version 0) events, used to show the
     /// function name and parameters on the "Submit child" rows. Kept separate from `events`
     /// so that navigating into a child still performs a full fetch. `None` = fetch in-flight.
-    child_created: HashMap<ExecutionId, Option<execution_event::Created>>,
+    child_created: HashMap<ExecutionId, Option<Created>>,
 }
 
 impl Reducible for ExecutionLogState {
@@ -126,13 +125,8 @@ impl Reducible for ExecutionLogState {
 
                 let join_set_to_resps = this.responses.entry(execution_id.clone()).or_default();
                 for response in new_responses {
-                    let response = response
-                        .event
-                        .expect("`event` is sent in `ResponseWithCursor`");
-                    let join_set_id = response
-                        .join_set_id
-                        .clone()
-                        .expect("`join_set_id` is sent in `JoinSetResponseEvent`");
+                    let response = response.event;
+                    let join_set_id = response.event.join_set_id.clone();
                     let execution_responses = join_set_to_resps.entry(join_set_id).or_default();
                     execution_responses.push(response);
                 }
@@ -196,13 +190,17 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
             let dummy = Vec::new();
             let events = log_state.events.get(execution_id).unwrap_or(&dummy);
             for event in events {
-                if let Some(execution_event::Event::HistoryVariant(h)) = &event.event
-                    && let Some(HistoryEventEnum::JoinSetRequest(JoinSetRequest {
-                        join_set_request:
-                            Some(join_set_request::JoinSetRequest::ChildExecutionRequest(req)),
-                        ..
-                    })) = &h.event
-                    && let Some(child_id) = &req.child_execution_id
+                if let ExecutionRequest::HistoryEvent {
+                    event:
+                        HistoryEvent::JoinSetRequest {
+                            request:
+                                JoinSetRequest::ChildExecutionRequest {
+                                    child_execution_id, ..
+                                },
+                            ..
+                        },
+                } = &event.event
+                    && let child_id = &ExecutionId::Derived(child_execution_id.clone())
                     && !log_state.child_created.contains_key(child_id)
                 {
                     log_state.dispatch(ExecutionLogAction::RequestChildCreated(child_id.clone()));
@@ -227,12 +225,11 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
     let submit_await_version_groups = compute_submit_await_version_groups(events, responses);
 
     // Build map of child execution ID -> Created event from the child-created cache.
-    let child_created_events: HashMap<grpc_client::ExecutionId, execution_event::Created> =
-        log_state
-            .child_created
-            .iter()
-            .filter_map(|(id, created)| created.clone().map(|created| (id.clone(), created)))
-            .collect();
+    let child_created_events: HashMap<ExecutionId, Created> = log_state
+        .child_created
+        .iter()
+        .filter_map(|(id, created)| created.clone().map(|created| (id.clone(), created)))
+        .collect();
 
     let details_html = if !events.is_empty() {
         render_execution_details(
@@ -265,7 +262,7 @@ fn fetch_child_created(
     notifications: NotificationContext,
 ) {
     wasm_bindgen_futures::spawn_local(async move {
-        let response = crate::rest::events::child_created(&child_execution_id.id).await;
+        let response = crate::rest::events::child_created(&child_execution_id).await;
         match response {
             Ok(created) => {
                 if let Some(created) = created {
@@ -305,7 +302,7 @@ fn on_state_change(
         let notifications = notifications.clone();
         wasm_bindgen_futures::spawn_local(async move {
             let response = crate::rest::events::history_page(
-                &execution_id.id,
+                &execution_id,
                 cursors.version_from,
                 cursors.responses_cursor_from,
                 PAGE,
@@ -317,17 +314,17 @@ fn on_state_change(
                     let server_resp = resp;
                     let last_event = server_resp.events.last();
                     let is_finished = matches!(
-                        last_event.and_then(|e| e.event.as_ref()),
-                        Some(execution_event::Event::Finished(_))
+                        last_event.map(|e| &e.event),
+                        Some(ExecutionRequest::Finished { .. })
                     );
                     let cursors = Cursors {
                         version_from: last_event
-                            .map(|e| e.version + 1)
+                            .map(|e| e.version.0 + 1)
                             .unwrap_or(cursors.version_from),
                         responses_cursor_from: server_resp
                             .responses
                             .last()
-                            .map(|resp| resp.cursor)
+                            .map(|resp| resp.cursor.0)
                             .unwrap_or(cursors.responses_cursor_from),
                     };
                     log_state.dispatch(ExecutionLogAction::SavePage {
@@ -359,44 +356,34 @@ fn on_state_change(
 fn render_execution_details(
     current_execution_id: &ExecutionId,
     events: &[ExecutionEvent],
-    join_next_version_to_response: &HashMap<u32, &JoinSetResponseEvent>,
+    join_next_version_to_response: &HashMap<u32, &JoinSetResponseEventOuter>,
     submit_await_version_groups: &HashMap<u32, Vec<u32>>,
-    child_created_events: &HashMap<ExecutionId, execution_event::Created>,
+    child_created_events: &HashMap<ExecutionId, Created>,
 ) -> Html {
     let create_event = events.first().expect("not found");
-    let execution_created_at = DateTime::from(create_event.created_at.expect("crated_at is sent"));
-    let create_event = create_event.event.as_ref().expect("event sent");
+    let execution_created_at = create_event.created_at;
     let create_event = assert_matches!(
-        create_event,
-        grpc_client::execution_event::Event::Created(created) => created
+        &create_event.event,
+        ExecutionRequest::Created(created) => created
     );
-    let initially_scheduled_at =
-        DateTime::from(create_event.scheduled_at.expect("scheduled_at sent"));
+    let initially_scheduled_at = create_event.scheduled_at;
 
     let initial_scheduling_duration =
         relative_time_if_significant(execution_created_at, initially_scheduled_at);
 
     let mut submit_version_to_color = HashMap::new();
     for event in events {
-        let event_inner = event.event.as_ref().unwrap();
-
-        if let execution_event::Event::HistoryVariant(h) = event_inner
-            && let Some(HistoryEventEnum::JoinSetRequest(JoinSetRequest {
-                join_set_request: Some(inner_req),
-                ..
-            })) = &h.event
+        if let ExecutionRequest::HistoryEvent {
+            event: HistoryEvent::JoinSetRequest { request, .. },
+        } = &event.event
         {
-            let color = match inner_req {
-                join_set_request::JoinSetRequest::ChildExecutionRequest(req) => {
-                    let exe_id = req.child_execution_id.as_ref().expect("id is always sent");
-                    exe_id.color()
-                }
-                join_set_request::JoinSetRequest::DelayRequest(req) => {
-                    let delay_id = req.delay_id.as_ref().expect("id is always sent");
-                    delay_id.color()
-                }
+            let color = match request {
+                JoinSetRequest::ChildExecutionRequest {
+                    child_execution_id, ..
+                } => ExecutionId::Derived(child_execution_id.clone()).color(),
+                JoinSetRequest::DelayRequest { delay_id, .. } => delay_id.color(),
             };
-            submit_version_to_color.insert(event.version, color);
+            submit_version_to_color.insert(event.version.0, color);
         }
     }
 
@@ -428,50 +415,49 @@ fn render_execution_details(
                 ExecutionLink::ExecutionLog,
                 false,
             );
-            let event_created_at = DateTime::from(event.created_at.expect("created_at sent"));
+            let event_created_at = event.created_at;
+            let version = event.version.0;
             let since_created = human_formatted_timedelta(
                 event_created_at - execution_created_at,
                 TimeGranularity::Fine,
             );
 
-            let event_inner = event.event.as_ref().unwrap();
+            let event_inner = &event.event;
             let mut circle_class = "version-circle";
             let mut circle_color_style = "".to_string();
             let mut join_set_id = None;
 
             match event_inner {
-                execution_event::Event::Created(_) => circle_class = "version-circle is-created",
-                execution_event::Event::Finished(_) => circle_class = "version-circle is-finished",
-                execution_event::Event::TemporarilyFailed(_) | execution_event::Event::TemporarilyTimedOut(_) => {
+                ExecutionRequest::Created(_) => circle_class = "version-circle is-created",
+                ExecutionRequest::Finished { .. } => circle_class = "version-circle is-finished",
+                ExecutionRequest::TemporarilyFailed { .. } | ExecutionRequest::TemporarilyTimedOut { .. } => {
                     circle_class = "version-circle is-error"
                 },
-                execution_event::Event::HistoryVariant(h) => {
-                    if let Some(history_event) = &h.event {
-                        join_set_id = match history_event {
-                            HistoryEventEnum::JoinSetRequest(JoinSetRequest { join_set_id: Some(jid), .. }) => Some(jid),
-                            HistoryEventEnum::JoinNext(JoinNext { join_set_id: Some(jid), .. }) => Some(jid),
-                            HistoryEventEnum::JoinSetCreated(JoinSetCreated { join_set_id: Some(jid), .. }) => Some(jid),
-                            HistoryEventEnum::JoinNextTry(JoinNextTry { join_set_id: Some(jid), .. }) => Some(jid),
-                            HistoryEventEnum::JoinNextTooMany(JoinNextTooMany { join_set_id: Some(jid), .. }) => Some(jid),
-                            _ => None
-                        };
+                ExecutionRequest::HistoryEvent { event: history_event } => {
+                    join_set_id = match history_event {
+                        HistoryEvent::JoinSetRequest { join_set_id, .. }
+                        | HistoryEvent::JoinNext { join_set_id, .. }
+                        | HistoryEvent::JoinSetCreate { join_set_id }
+                        | HistoryEvent::JoinNextTry { join_set_id, .. }
+                        | HistoryEvent::JoinNextTooMany { join_set_id, .. } => Some(join_set_id),
+                        _ => None,
+                    };
 
-                        if let Some(join_set_id) = join_set_id {
-                            circle_class = "version-circle is-join";
-                            let color = join_set_id.color();
-                            circle_color_style = format!("border-color: {0}; color: {0};", color);
-                        }
+                    if let Some(join_set_id) = join_set_id {
+                        circle_class = "version-circle is-join";
+                        let color = join_set_id.color();
+                        circle_color_style = format!("border-color: {0}; color: {0};", color);
                     }
                 },
                 _ => {}
             }
 
             // Scroll Button
-            let scroll_button = if let Some((target_version, color)) = event_links.get(&event.version) {
-                let diff = (*target_version).abs_diff(event.version);
+            let scroll_button = if let Some((target_version, color)) = event_links.get(&version) {
+                let diff = (*target_version).abs_diff(version);
 
                 if diff > 1 {
-                    let label = if *target_version > event.version {
+                    let label = if *target_version > version {
                         "Go to Await ↓"
                     } else {
                         "Go to Submit ↑"
@@ -512,24 +498,24 @@ fn render_execution_details(
 
             // Jump to this event highlighted in the trace view (correlated events only).
             let trace_jump_button = submit_await_version_groups
-                .contains_key(&event.version)
+                .contains_key(&version)
                 .then(|| html! {
                     <TraceHighlightJump
                         execution_id={current_execution_id.clone()}
-                        version={event.version}
+                        version={version}
                     />
                 });
 
-            let backtrace_link = event.backtrace_id.map(|version| html! {
-                <BacktraceJump execution_id={current_execution_id.clone()} {version} />
+            let backtrace_link = event.backtrace_id.as_ref().map(|backtrace_id| html! {
+                <BacktraceJump execution_id={current_execution_id.clone()} version={backtrace_id.0} />
             });
 
             let class = format!("{} {}", circle_class, if circle_color_style.is_empty() { ""} else { "is-join" });
-            let content_id = format!("event-content-{}", event.version);
+            let content_id = format!("event-content-{version}");
 
             // Timeline Line Logic
             // Do not show line if this is the last event OR if the event is Finished
-            let is_finished = matches!(event_inner, execution_event::Event::Finished(_));
+            let is_finished = matches!(event_inner, ExecutionRequest::Finished { .. });
 
             let timeline_line = if !is_finished {
                  html! { <div class="timeline-line"></div> }
@@ -537,8 +523,8 @@ fn render_execution_details(
                  html! {}
             };
 
-            let event_duration = if let Some(next_event) = events.get(usize::try_from(event.version + 1).unwrap()) {
-                relative_time_if_significant(event_created_at, DateTime::from(next_event.created_at.expect("created_at sent")))
+            let event_duration = if let Some(next_event) = events.get(usize::try_from(version + 1).unwrap()) {
+                relative_time_if_significant(event_created_at, next_event.created_at)
             } else {
                 // Don't display event duration
                 None
@@ -548,14 +534,14 @@ fn render_execution_details(
                 <div class="timeline-row">
                     <div class="timeline-left">
                         <div class={class} style={circle_color_style} title={title}>
-                            {event.version}
+                            {version}
                         </div>
                         {timeline_line}
                     </div>
                     <div class="timeline-content" id={content_id}>
                         <div class="timeline-meta">
                             <div>
-                                if event.version == 0 {
+                                if version == 0 {
                                     <span>
                                         {"+0s"}
                                         if let Some(initial_scheduling_duration) = &initial_scheduling_duration {

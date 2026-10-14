@@ -1,4 +1,4 @@
-use crate::grpc::version::VersionType;
+use concepts::storage::VersionType;
 use std::collections::BTreeSet;
 use yew::prelude::*;
 

@@ -7,9 +7,9 @@ use super::execution_trace::{
     clear_all_linked_highlights, scroll_linked_item, set_linked_highlight,
 };
 use crate::app::{Route, query::BacktraceVersionsPath};
-use crate::grpc::grpc_client::ExecutionId;
-use crate::grpc::version::VersionType;
 use crate::tree::Icon;
+use concepts::ExecutionId;
+use concepts::storage::VersionType;
 use hashbrown::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;

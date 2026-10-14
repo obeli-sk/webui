@@ -6,13 +6,12 @@ use crate::{
         },
         deployment_detail_page::DeploymentQuery,
     },
-    grpc::{
-        ffqn::FunctionFqn,
-        grpc_client::{self, DeploymentId},
-    },
+    model::{ComponentConfigExt as _, ComponentTypeExt as _},
 };
+use concepts::{FunctionFqn, prefixed_ulid::DeploymentId};
 use hashbrown::HashMap;
 use log::error;
+use rest_types::components::ComponentConfig;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew_router::hooks::use_navigator;
@@ -145,7 +144,7 @@ fn layout_graph(node_count: usize, edges: &[(usize, usize)]) -> GraphLayout {
 #[derive(Properties, PartialEq)]
 pub struct ComponentGraphProps {
     pub deployment_id: DeploymentId,
-    pub components_by_name: Rc<HashMap<String, grpc_client::Component>>,
+    pub components_by_name: Rc<HashMap<String, ComponentConfig>>,
 }
 
 #[component(ComponentGraph)]
@@ -311,14 +310,14 @@ pub fn component_graph(
         let component = components[idx];
         let name = component_name(component).to_string();
         let (x, y) = positions[graph_idx];
-        let component_type = component.as_type();
+        let component_type = component.component_type();
         let onclick = {
             let navigator = navigator.clone();
-            let deployment_id = deployment_id.clone();
+            let deployment_id = *deployment_id;
             let name = name.clone();
             Callback::from(move |_: MouseEvent| {
                 let route = Route::DeploymentDetail {
-                    deployment_id: deployment_id.clone(),
+                    deployment_id,
                 };
                 let query = DeploymentQuery {
                     component: Some(name.clone()),
@@ -363,7 +362,7 @@ pub fn component_graph(
         }
     });
 
-    let link = |component: &grpc_client::Component| {
+    let link = |component: &ComponentConfig| {
         html! { <li>{ component_link(component, deployment_id) }</li> }
     };
 

@@ -5,18 +5,16 @@ use crate::{
         notification::{Notification, NotificationContext},
         pagination::page_link,
     },
-    grpc::grpc_client::{
-        DeploymentComponentType, DeploymentId, DeploymentStatus, DeploymentSummary,
-    },
     rest,
     util::time::{RelativeAgo, format_date},
 };
-use chrono::DateTime;
+use concepts::prefixed_ulid::DeploymentId;
 use gloo::timers::callback::Timeout;
 use log::{debug, error};
+use rest_types::deployment::{DeploymentComponentType, DeploymentStateSer, DeploymentStatusSer};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::{ops::Deref, str::FromStr};
+use std::ops::Deref;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
@@ -54,54 +52,29 @@ impl Direction {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    derive_more::Display,
-    serde_with::SerializeDisplay,
-    serde_with::DeserializeFromStr,
-)]
-#[display("{_0}")]
-pub struct DeploymentCursor(String);
-
-impl FromStr for DeploymentCursor {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(DeploymentCursor(s.to_string()))
-    }
-}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DeploymentCursor(DeploymentId);
 
 impl DeploymentCursor {
-    fn from_deployment(deployment: &DeploymentSummary) -> Self {
-        DeploymentCursor(
-            deployment
-                .deployment
-                .as_ref()
-                .expect("`deployment` is sent by the server")
-                .deployment_id
-                .as_ref()
-                .expect("`deployment_id` is sent by the server")
-                .id
-                .clone(),
-        )
+    fn from_deployment(deployment: &DeploymentStateSer) -> Self {
+        DeploymentCursor(deployment.deployment_id)
     }
 }
 
-fn exec_activity_count(summary: &DeploymentSummary) -> Option<u32> {
+fn exec_activity_count(summary: &DeploymentStateSer) -> Option<u32> {
     summary.component_summary.as_ref().map(|component_summary| {
         component_summary
             .components
             .iter()
-            .filter(|component| component.component_type() == DeploymentComponentType::ActivityExec)
+            .filter(|component| component.component_type == DeploymentComponentType::ActivityExec)
             .map(|component| component.count)
             .sum()
     })
 }
 
 /// A deployment is "empty" when its component summary reports no components.
-fn is_empty_deployment(summary: &DeploymentSummary) -> bool {
+fn is_empty_deployment(summary: &DeploymentStateSer) -> bool {
     summary
         .component_summary
         .as_ref()
@@ -122,7 +95,7 @@ pub fn deployment_list_page() -> Html {
 
     // Get current deployment ID from AppState to trigger refresh on change
     let app_state = use_context::<AppState>().expect("AppState context must be provided");
-    let current_deployment_id = app_state.current_deployment_id.clone();
+    let current_deployment_id = app_state.current_deployment_id;
 
     // Deserialize query from URL or use default
     let query = location.query::<DeploymentQuery>().unwrap_or_default();
@@ -131,7 +104,7 @@ pub fn deployment_list_page() -> Html {
     let response_state = use_state(|| None);
 
     // Selection serves both comparison and deletion.
-    let selected_deployments = use_state(BTreeSet::<String>::new);
+    let selected_deployments = use_state(BTreeSet::<DeploymentId>::new);
     let delete_executions = use_state(|| false);
     let delete_armed = use_state(|| false);
     let delete_in_flight = use_state(|| false);
@@ -162,7 +135,7 @@ pub fn deployment_list_page() -> Html {
                     };
                     debug!("Fetching deployments with direction: {direction}");
                     let response = rest::deployments::list(
-                        query_params.cursor.as_ref().map(|cursor| cursor.0.as_str()),
+                        query_params.cursor.as_ref().map(|cursor| &cursor.0),
                         direction,
                         page_size,
                         query_params.include_cursor,
@@ -191,28 +164,20 @@ pub fn deployment_list_page() -> Html {
     if let Some(response) = response_state.deref() {
         let rows = response.iter()
             .map(|deployment_summary| {
-                let deployment = deployment_summary
-                    .deployment
-                    .as_ref()
-                    .expect("`deployment` is sent");
-                let deployment_id = deployment
-                    .deployment_id
-                    .as_ref()
-                    .expect("`deployment_id` is sent")
-                    .id
-                    .clone();
+                let deployment = deployment_summary;
+                let deployment_id = deployment.deployment_id;
                 let description = deployment
                     .description
                     .as_deref()
                     .filter(|description| !description.trim().is_empty());
-                let status_badge = match deployment.status() {
-                    DeploymentStatus::Active => {
+                let status_badge = match deployment.status {
+                    DeploymentStatusSer::Active => {
                         html! { <span class="badge current">{"Current"}</span> }
                     }
-                    DeploymentStatus::Enqueued => {
+                    DeploymentStatusSer::Enqueued => {
                         html! { <span class="badge enqueued">{"Enqueued"}</span> }
                     }
-                    DeploymentStatus::Inactive | DeploymentStatus::Unspecified => html! {},
+                    DeploymentStatusSer::Inactive => html! {},
                 };
                 let exec_badge = match exec_activity_count(deployment_summary) {
                     Some(0) => html! {},
@@ -240,9 +205,9 @@ pub fn deployment_list_page() -> Html {
                     html! {}
                 };
 
-                let deployed_at = deployment.last_active_at.map(DateTime::from);
-                let deployment_age = match (deployment.status(), deployed_at) {
-                    (DeploymentStatus::Active, Some(deployed_at)) => html! {
+                let deployed_at = deployment.last_active_at;
+                let deployment_age = match (deployment.status, deployed_at) {
+                    (DeploymentStatusSer::Active, Some(deployed_at)) => html! {
                         <span title={format!("Deployed: {} UTC", format_date(deployed_at))}>
                             {"Deployed "}<RelativeAgo target={deployed_at} />
                         </span>
@@ -255,18 +220,18 @@ pub fn deployment_list_page() -> Html {
                     _ => html! { <span class="not-deployed">{"Not deployed yet"}</span> },
                 };
 
-                let execution_summary = deployment_summary.execution_summary.as_ref();
-                let locked = execution_summary.map_or(0, |summary| summary.locked);
-                let pending = execution_summary.map_or(0, |summary| summary.pending);
-                let scheduled = execution_summary.map_or(0, |summary| summary.scheduled);
-                let blocked = execution_summary.map_or(0, |summary| summary.blocked);
-                let paused = execution_summary.map_or(0, |summary| summary.paused);
-                let cancelling = execution_summary.map_or(0, |summary| summary.cancelling);
-                let finished_ok = execution_summary.map_or(0, |summary| summary.finished_ok);
-                let finished_error =
-                    execution_summary.map_or(0, |summary| summary.finished_error);
-                let finished_execution_failure =
-                    execution_summary.map_or(0, |summary| summary.finished_execution_failure);
+                let DeploymentStateSer {
+                    locked,
+                    pending,
+                    scheduled,
+                    blocked,
+                    paused,
+                    cancelling,
+                    finished_ok,
+                    finished_error,
+                    finished_execution_failure,
+                    ..
+                } = *deployment_summary;
                 let in_progress = locked + pending + blocked;
                 let total = locked
                     + pending
@@ -278,11 +243,11 @@ pub fn deployment_list_page() -> Html {
                     + finished_error
                     + finished_execution_failure;
                 let all_executions_query = ExecutionQuery {
-                    deployment_id: Some(deployment_id.clone()),
+                    deployment_id: Some(deployment_id.to_string()),
                     ..Default::default()
                 };
                 let in_progress_query = ExecutionQuery {
-                    deployment_id: Some(deployment_id.clone()),
+                    deployment_id: Some(deployment_id.to_string()),
                     status: Some(StatusFilterList::in_progress()),
                     ..Default::default()
                 };
@@ -291,12 +256,11 @@ pub fn deployment_list_page() -> Html {
                     let selected_deployments = selected_deployments.clone();
                     let delete_armed = delete_armed.clone();
                     let disarm_timer = disarm_timer.clone();
-                    let deployment_id = deployment_id.clone();
                     Callback::from(move |event: Event| {
                         let input: HtmlInputElement = event.target_unchecked_into();
                         let mut selected = selected_deployments.deref().clone();
                         if input.checked() {
-                            selected.insert(deployment_id.clone());
+                            selected.insert(deployment_id);
                         } else {
                             selected.remove(&deployment_id);
                         }
@@ -308,7 +272,7 @@ pub fn deployment_list_page() -> Html {
 
                 html! {
                     <article
-                        key={deployment_id.clone()}
+                        key={deployment_id.to_string()}
                         class="deployment-list-item"
                     >
                         <label class="deployment-compare" title="Select for comparison or deletion">
@@ -323,12 +287,12 @@ pub fn deployment_list_page() -> Html {
                         <div class="deployment-summary">
                             <div class="deployment-title">
                                 <Link<Route> to={Route::DeploymentDetail {
-                                    deployment_id: DeploymentId { id: deployment_id.clone() },
+                                    deployment_id,
                                 }}>
                                     if let Some(description) = description {
                                         <span class="deployment-name">{ description }</span>
                                     } else {
-                                        <span class="deployment-name deployment-id-primary">{&deployment_id}</span>
+                                        <span class="deployment-name deployment-id-primary">{deployment_id.to_string()}</span>
                                     }
                                 </Link<Route>>
                                 {status_badge}
@@ -336,7 +300,7 @@ pub fn deployment_list_page() -> Html {
                                 {empty_badge}
                             </div>
                             if description.is_some() {
-                                <div class="deployment-id">{ &deployment_id }</div>
+                                <div class="deployment-id">{ deployment_id.to_string() }</div>
                             }
                         </div>
                         <div class="deployment-activity">{ deployment_age }</div>
@@ -372,8 +336,8 @@ pub fn deployment_list_page() -> Html {
             let mut selected = selected_deployments.iter();
             match (selected.next(), selected.next(), selected.next()) {
                 (Some(older), Some(newer), None) => Some(Route::DeploymentDiff {
-                    from: DeploymentId { id: older.clone() },
-                    to: DeploymentId { id: newer.clone() },
+                    from: *older,
+                    to: *newer,
                 }),
                 _ => None,
             }

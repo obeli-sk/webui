@@ -1,7 +1,6 @@
+use crate::components::execution_detail::tree_component::TreeComponent;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    components::execution_detail::tree_component::TreeComponent, grpc::version::VersionType,
-};
+use concepts::storage::VersionType;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]

@@ -1,10 +1,10 @@
-use crate::grpc::grpc_client;
+use rest_types::components::ParameterTypeLite;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct FunctionSignatureProps {
-    pub params: Vec<grpc_client::FunctionParameter>,
-    pub return_type: Option<grpc_client::WitType>,
+    pub params: Vec<ParameterTypeLite>,
+    pub return_type: String,
 }
 #[component(FunctionSignature)]
 pub fn function_signature(
@@ -17,16 +17,14 @@ pub fn function_signature(
         {"func ("}
             <FunctionParameterList params = {params.clone()} />
         {")"}
-        if let Some(return_type) = return_type {
-            {" -> "}
-            { &return_type.wit_type }
-        }
+        {" -> "}
+        { return_type }
     </>}
 }
 
 #[derive(Properties, PartialEq)]
 pub struct FunctionParameterListProps {
-    pub params: Vec<grpc_client::FunctionParameter>,
+    pub params: Vec<ParameterTypeLite>,
 }
 #[component(FunctionParameterList)]
 pub fn function_parameter_list(
@@ -36,12 +34,7 @@ pub fn function_parameter_list(
         .iter()
         .enumerate()
         .map(|(idx, param)| {
-            let ty = param
-                .r#type
-                .as_ref()
-                .expect("`FunctionParameter.type` is sent")
-                .wit_type
-                .as_str();
+            let ty = &param.wit_type;
             html! {<>
                 if idx > 0 {
                     {", "}

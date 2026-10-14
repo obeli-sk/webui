@@ -7,13 +7,11 @@ use crate::{
         ffqn_with_links::FfqnWithLinks,
         notification::{Notification, NotificationContext},
     },
-    grpc::{
-        ffqn::FunctionFqn,
-        grpc_client::{self, ExecutionId},
-    },
+    model::{ComponentConfigExt as _, ComponentTypeExt as _},
     rest,
     util::{wit_highlighter, wit_type_formatter::format_wit_type},
 };
+use concepts::{ExecutionId, FunctionFqn};
 use log::{debug, error, trace, warn};
 use serde_json::json;
 use std::ops::Deref;
@@ -46,13 +44,9 @@ pub fn execution_stub_result_page(
         .get(ffqn)
         .expect("`ffqns_to_details` and `components_by_exported_ifc` must be consistent, based from `ListComponentsResponse`").0
         .return_type
-        .as_ref()
-        .expect("return type must exist");
+        .clone();
 
-    let component_id = component
-        .component_id
-        .clone()
-        .expect("`component_id` is sent");
+    let component_id = component.component_id.clone();
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
     // disable the submit button while a request is inflight
@@ -68,11 +62,7 @@ pub fn execution_stub_result_page(
         let component_id = component_id.clone();
         move |_ffqn| {
             wasm_bindgen_futures::spawn_local(async move {
-                let digest = &component_id
-                    .digest
-                    .as_ref()
-                    .expect("`digest` is sent")
-                    .digest;
+                let digest = &component_id.component_digest;
                 match rest::get_text(&format!("/v1/components/{digest}/wit"), &[]).await {
                     Ok(wit) => wit_state.set(Some(wit)),
                     Err(error) => log::error!("Failed to fetch WIT: {error}"),
@@ -181,17 +171,17 @@ pub fn execution_stub_result_page(
             </h1>
             <h3>
                 {"Provided by "}
-                { component.as_type().as_icon_html() }
+                { component.component_type().as_icon_html() }
                 {" "}
                 if let Some(deployment_id) = &app_state.current_deployment_id {
                     <Link<Route, DeploymentQuery>
-                        to={Route::DeploymentDetail { deployment_id: deployment_id.clone() }}
-                        query={Some(DeploymentQuery { component: Some(component_id.name.clone()) })}
+                        to={Route::DeploymentDetail { deployment_id: *deployment_id }}
+                        query={Some(DeploymentQuery { component: Some(component_id.name.to_string()) })}
                     >
-                        {&component_id.name}
+                        {component_id.name.to_string()}
                     </Link<Route, DeploymentQuery>>
                 } else {
-                    {&component_id.name}
+                    {component_id.name.to_string()}
                 }
             </h3>
         </header>
@@ -199,7 +189,7 @@ pub fn execution_stub_result_page(
             <div class="form-field">
                 <div class="form-field-row">
                     <label for="input">{"result:"}</label>
-                    <textarea id="input" rows="1" placeholder={return_type.wit_type.clone()} ref={input_ref.clone()} {oninput} />
+                    <textarea id="input" rows="1" placeholder={return_type.clone()} ref={input_ref.clone()} {oninput} />
                     <span class="wit-type-toggle" onclick={{
                         let type_hint_expanded = type_hint_expanded.clone();
                         Callback::from(move |_: MouseEvent| {
@@ -211,7 +201,7 @@ pub fn execution_stub_result_page(
                     }
                 </div>
                 if *type_hint_expanded {
-                    <pre class="wit-type-inline">{ format_wit_type(&return_type.wit_type_inline) }</pre>
+                    <pre class="wit-type-inline">{ format_wit_type(&return_type) }</pre>
                 }
             </div>
             <button type="submit" id={SUBMIT_RETVAL} disabled={*request_processing_state || validation_err_state.is_some()}>
@@ -225,12 +215,11 @@ pub fn execution_stub_result_page(
     </>}
 }
 
-fn validate_response(return_type: &grpc_client::WitType, value: &str) -> Result<(), String> {
+fn validate_response(return_type: &str, value: &str) -> Result<(), String> {
     match serde_json::from_str::<serde_json::Value>(value) {
         Ok(value) => {
-            let wit_type_inline = return_type.wit_type_inline.as_str();
             let type_and_value_json = json!({
-                "type": wit_type_inline,
+                "type": return_type,
                 "value": value,
             });
             match serde_json::from_value::<WastValWithType>(type_and_value_json) {

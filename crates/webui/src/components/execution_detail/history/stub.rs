@@ -1,15 +1,19 @@
+use crate::components::{
+    execution_detail::tree_component::TreeComponent, execution_header::ExecutionLink,
+};
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    components::{
-        execution_detail::tree_component::TreeComponent, execution_header::ExecutionLink,
-    },
-    grpc::{grpc_client, version::VersionType},
+use concepts::{
+    ExecutionId,
+    prefixed_ulid::ExecutionIdDerived,
+    storage::{StubError, StubRetValHash, VersionType},
 };
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryStubEventProps {
-    pub event: grpc_client::execution_event::history_event::Stub,
+    pub target_execution_id: ExecutionIdDerived,
+    pub retval_hash: StubRetValHash,
+    pub result: Result<(), StubError>,
     pub version: VersionType,
     pub link: ExecutionLink,
     pub is_selected: bool,
@@ -22,16 +26,8 @@ impl HistoryStubEventProps {
             .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
             .unwrap();
 
-        let stubbed_execution_id = self
-            .event
-            .execution_id
-            .clone()
-            .expect("`execution_id` is sent by the server");
-
-        let is_ok = matches!(
-            self.event.result,
-            Some(grpc_client::execution_event::history_event::stub::Result::Ok(_))
-        );
+        let stubbed_execution_id = ExecutionId::Derived(self.target_execution_id.clone());
+        let is_ok = self.result.is_ok();
 
         let stub_node = tree
             .insert(
@@ -40,7 +36,7 @@ impl HistoryStubEventProps {
                     label: html! {<>
                         { self.version }
                         {". Stubbed execution "}
-                        { self.link.link(stubbed_execution_id.clone(), &stubbed_execution_id.id) }
+                        { self.link.link(stubbed_execution_id.clone(), &stubbed_execution_id.to_string()) }
                     </>},
                     has_caret: true,
                     is_selected: self.is_selected,
@@ -50,35 +46,22 @@ impl HistoryStubEventProps {
             )
             .unwrap();
 
-        // retval_hash
-        if !self.event.retval_hash.is_empty() {
-            tree.insert(
-                Node::new(NodeData {
-                    icon: Icon::IdNumber,
-                    label: format!("Return Value Hash: {}", self.event.retval_hash).into(),
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&stub_node),
-            )
-            .unwrap();
-        }
+        tree.insert(
+            Node::new(NodeData {
+                icon: Icon::IdNumber,
+                label: format!("Return Value Hash: {}", self.retval_hash).into(),
+                ..Default::default()
+            }),
+            InsertBehavior::UnderNode(&stub_node),
+        )
+        .unwrap();
 
         // Error detail
-        if let Some(grpc_client::execution_event::history_event::stub::Result::Error(err)) =
-            &self.event.result
-        {
+        if let Err(err) = &self.result {
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::Error,
-                    label: format!(
-                        "Error: {:?}{}",
-                        err.kind(),
-                        err.detail
-                            .as_deref()
-                            .map(|d| format!(" - {d}"))
-                            .unwrap_or_default()
-                    )
-                    .into(),
+                    label: format!("Error: {err}").into(),
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&stub_node),

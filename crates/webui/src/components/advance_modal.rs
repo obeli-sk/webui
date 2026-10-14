@@ -15,18 +15,23 @@ use crate::{
         ffqn_with_links::FfqnWithLinks,
         json_tree::{JsonValue, insert_json_into_tree},
     },
-    grpc::{
-        ffqn::FunctionFqn,
-        grpc_client::{
-            self, CapturedBacktrace, CapturedWrite, ComponentId, CreateExecutionRequest,
-            ExecutionId, JoinSetResponseEvent, captured_write,
-            execution_event::{self, history_event},
-        },
-    },
+    model::FunctionFqnExt as _,
     tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData},
+};
+use concepts::{
+    ComponentId, ExecutionId, SupportedFunctionReturnValue,
+    storage::{
+        AppendRequest, CreateRequest, Created, ExecutionEvent, ExecutionRequest, HistoryEvent,
+        JoinSetRequest, JoinSetResponseEventOuter, Version,
+    },
 };
 use hashbrown::{HashMap, HashSet};
 use log::trace;
+use rest_types::{
+    backtrace::BacktraceInfoSer,
+    executions::RetVal,
+    replay::{CapturedWriteSer, CreateRequestSer, StubResponseSer},
+};
 use std::path::PathBuf;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
@@ -34,34 +39,32 @@ use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
 // ============================================================================
-// Helpers: summarise a CapturedWrite for the left-pane list
+// Helpers: summarise a CapturedWriteSer for the left-pane list
 // ============================================================================
 
-/// One-line label for an `ExecutionEvent` variant.
-fn event_type_name(event: &grpc_client::ExecutionEvent) -> &'static str {
-    match &event.event {
-        Some(execution_event::Event::Created(_)) => "Created",
-        Some(execution_event::Event::Locked(_)) => "Locked",
-        Some(execution_event::Event::Unlocked(_)) => "Unlocked",
-        Some(execution_event::Event::TemporarilyFailed(_)) => "TemporarilyFailed",
-        Some(execution_event::Event::TemporarilyTimedOut(_)) => "TemporarilyTimedOut",
-        Some(execution_event::Event::Finished(_)) => "Finished",
-        Some(execution_event::Event::Paused(_)) => "Paused",
-        Some(execution_event::Event::Unpaused(_)) => "Unpaused",
-        Some(execution_event::Event::CancellationRequested(_)) => "CancellationRequested",
-        Some(execution_event::Event::ComponentUpgradeFinished(_)) => "ComponentUpgradeFinished",
-        Some(execution_event::Event::HistoryVariant(h)) => match &h.event {
-            Some(history_event::Event::Persist(_)) => "Persist",
-            Some(history_event::Event::JoinSetCreated(_)) => "JoinSetCreated",
-            Some(history_event::Event::JoinSetRequest(_)) => "JoinSetRequest",
-            Some(history_event::Event::JoinNext(_)) => "JoinNext",
-            Some(history_event::Event::JoinNextTooMany(_)) => "JoinNextTooMany",
-            Some(history_event::Event::JoinNextTry(_)) => "JoinNextTry",
-            Some(history_event::Event::Schedule(_)) => "Schedule",
-            Some(history_event::Event::Stub(_)) => "Stub",
-            None => "History(?)",
+/// One-line label for an `ExecutionRequest` variant.
+fn event_type_name(event: &ExecutionRequest) -> &'static str {
+    match event {
+        ExecutionRequest::Created(_) => "Created",
+        ExecutionRequest::Locked(_) => "Locked",
+        ExecutionRequest::Unlocked { .. } => "Unlocked",
+        ExecutionRequest::TemporarilyFailed { .. } => "TemporarilyFailed",
+        ExecutionRequest::TemporarilyTimedOut { .. } => "TemporarilyTimedOut",
+        ExecutionRequest::Finished { .. } => "Finished",
+        ExecutionRequest::Paused => "Paused",
+        ExecutionRequest::Unpaused => "Unpaused",
+        ExecutionRequest::CancellationRequested => "CancellationRequested",
+        ExecutionRequest::ComponentUpgradeFinished { .. } => "ComponentUpgradeFinished",
+        ExecutionRequest::HistoryEvent { event } => match event {
+            HistoryEvent::Persist { .. } => "Persist",
+            HistoryEvent::JoinSetCreate { .. } => "JoinSetCreated",
+            HistoryEvent::JoinSetRequest { .. } => "JoinSetRequest",
+            HistoryEvent::JoinNext { .. } => "JoinNext",
+            HistoryEvent::JoinNextTooMany { .. } => "JoinNextTooMany",
+            HistoryEvent::JoinNextTry { .. } => "JoinNextTry",
+            HistoryEvent::Schedule { .. } => "Schedule",
+            HistoryEvent::Stub { .. } => "Stub",
         },
-        None => "(?)",
     }
 }
 
@@ -71,217 +74,231 @@ struct WriteSummary {
 }
 
 fn summarise_write(
-    cw: &CapturedWrite,
-    child_created: &HashMap<ExecutionId, execution_event::Created>,
+    cw: &CapturedWriteSer,
+    child_created: &HashMap<ExecutionId, Created>,
 ) -> WriteSummary {
-    match &cw.write {
-        Some(captured_write::Write::Append(a)) => {
-            let name = a.event.as_ref().map(event_type_name).unwrap_or("(empty)");
-            WriteSummary {
-                kind: "Append",
-                detail: name.to_string(),
-            }
-        }
-        Some(captured_write::Write::AppendBatch(b)) => WriteSummary {
+    match cw {
+        CapturedWriteSer::Append { event, .. } => WriteSummary {
+            kind: "Append",
+            detail: event_type_name(&event.event).to_string(),
+        },
+        CapturedWriteSer::AppendBatch { events, .. } => WriteSummary {
             kind: "AppendBatch",
-            detail: format!("{} events", b.events.len()),
+            detail: format!("{} events", events.len()),
         },
-        Some(captured_write::Write::AppendBatchWithDelayResponse(b)) => WriteSummary {
+        CapturedWriteSer::AppendBatchWithDelayResponse { events, .. } => WriteSummary {
             kind: "AppendBatch+DelayResponse",
-            detail: format!("{} events", b.events.len()),
+            detail: format!("{} events", events.len()),
         },
-        Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => WriteSummary {
+        CapturedWriteSer::AppendBatchCreateNewExecution {
+            events,
+            child_requests,
+            ..
+        } => WriteSummary {
             kind: "AppendBatch+Create",
             detail: format!(
                 "{} events + {} child exec",
-                b.events.len(),
-                b.child_requests.len()
+                events.len(),
+                child_requests.len()
             ),
         },
-        Some(captured_write::Write::AppendStubResponse(s)) => {
-            let fn_name = s
-                .child_execution_id
-                .as_ref()
-                .and_then(|id| child_created.get(id))
-                .and_then(|c| c.function_name.as_ref())
-                .map(|f| FunctionFqn::from(f.clone()).short().to_string());
+        CapturedWriteSer::AppendStubResponse { response, .. } => {
+            let fn_name = stub_child_execution_id(response)
+                .and_then(|id| child_created.get(&id))
+                .map(|created| created.ffqn.short());
             WriteSummary {
                 kind: "AppendStubResponse",
                 detail: fn_name.map(|n| format!("`{n}`")).unwrap_or_default(),
             }
         }
-        Some(captured_write::Write::AppendFinished(captured_write::AppendFinished {
-            event,
-            ..
-        })) => WriteSummary {
+        CapturedWriteSer::AppendFinished { retval, .. } => WriteSummary {
             kind: "AppendFinished",
-            detail: match event
-                .as_ref()
-                .unwrap()
-                .value
-                .as_ref()
-                .unwrap()
-                .value
-                .as_ref()
-                .expect("`value` is sent in `execution_event::Finished` message")
-            {
-                grpc_client::supported_function_result::Value::Ok(_) => "OK",
-                grpc_client::supported_function_result::Value::Error(_) => "Error",
-                grpc_client::supported_function_result::Value::ExecutionFailure(_) => {
-                    "Execution Failure"
-                }
+            detail: match retval {
+                SupportedFunctionReturnValue::Ok(_) => "OK",
+                SupportedFunctionReturnValue::Err(_) => "Error",
+                SupportedFunctionReturnValue::ExecutionFailure(_) => "Execution Failure",
             }
             .to_string(),
         },
-        None => unreachable!("write is always sent for CapturedWrite"),
     }
 }
 
-/// Iterate all execution events within a captured write.
-fn iter_events(cw: &CapturedWrite) -> Box<dyn Iterator<Item = &grpc_client::ExecutionEvent> + '_> {
-    match &cw.write {
-        Some(captured_write::Write::Append(a)) => Box::new(a.event.iter()),
-        Some(captured_write::Write::AppendBatch(b)) => Box::new(b.events.iter()),
-        Some(captured_write::Write::AppendBatchWithDelayResponse(b)) => Box::new(b.events.iter()),
-        Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => Box::new(b.events.iter()),
-        Some(captured_write::Write::AppendStubResponse(s)) => Box::new(s.events.iter()),
-        _ => Box::new(std::iter::empty()),
+fn stub_child_execution_id(response: &StubResponseSer) -> Option<ExecutionId> {
+    response.child_execution_id.parse().ok()
+}
+
+/// Requests appended by a captured write along with the version of the first one.
+fn append_requests(cw: &CapturedWriteSer) -> (u32, &[AppendRequest]) {
+    match cw {
+        CapturedWriteSer::Append { version, event, .. } => (*version, std::slice::from_ref(event)),
+        CapturedWriteSer::AppendBatch {
+            version, events, ..
+        }
+        | CapturedWriteSer::AppendBatchWithDelayResponse {
+            version, events, ..
+        }
+        | CapturedWriteSer::AppendBatchCreateNewExecution {
+            version, events, ..
+        }
+        | CapturedWriteSer::AppendStubResponse {
+            version, events, ..
+        } => (*version, events),
+        CapturedWriteSer::AppendFinished { version, .. } => (*version, &[]),
     }
 }
 
-/// Check whether an event is a DelayRequest.
-fn is_delay_request_event(event: &grpc_client::ExecutionEvent) -> bool {
+fn append_requests_mut(cw: &mut CapturedWriteSer) -> &mut [AppendRequest] {
+    match cw {
+        CapturedWriteSer::Append { event, .. } => std::slice::from_mut(event),
+        CapturedWriteSer::AppendBatch { events, .. }
+        | CapturedWriteSer::AppendBatchWithDelayResponse { events, .. }
+        | CapturedWriteSer::AppendBatchCreateNewExecution { events, .. }
+        | CapturedWriteSer::AppendStubResponse { events, .. } => events,
+        CapturedWriteSer::AppendFinished { .. } => &mut [],
+    }
+}
+
+/// Execution events within a captured write, versioned as they will be persisted.
+fn iter_events(cw: &CapturedWriteSer) -> impl Iterator<Item = ExecutionEvent> + '_ {
+    let (version, requests) = append_requests(cw);
+    requests
+        .iter()
+        .zip(version..)
+        .map(|(request, version)| ExecutionEvent {
+            created_at: request.created_at,
+            event: request.event.clone(),
+            backtrace_id: None,
+            version: Version::new(version),
+        })
+}
+
+fn is_delay_request(event: &ExecutionRequest) -> bool {
     matches!(
-        &event.event,
-        Some(execution_event::Event::HistoryVariant(h))
-            if matches!(&h.event, Some(history_event::Event::JoinSetRequest(jsr))
-                if matches!(&jsr.join_set_request, Some(history_event::join_set_request::JoinSetRequest::DelayRequest(_))))
+        event,
+        ExecutionRequest::HistoryEvent {
+            event: HistoryEvent::JoinSetRequest {
+                request: JoinSetRequest::DelayRequest { .. },
+                ..
+            }
+        }
     )
 }
 
-fn has_delay_requests(writes: &[CapturedWrite]) -> bool {
+fn has_delay_requests(writes: &[CapturedWriteSer]) -> bool {
     writes
         .iter()
-        .flat_map(iter_events)
-        .any(is_delay_request_event)
+        .flat_map(|cw| append_requests(cw).1)
+        .any(|request| is_delay_request(&request.event))
 }
 
-fn has_child_execution_requests(writes: &[CapturedWrite]) -> bool {
+fn has_child_execution_requests(writes: &[CapturedWriteSer]) -> bool {
     writes.iter().any(|cw| {
         matches!(
-            &cw.write,
-            Some(captured_write::Write::AppendBatchCreateNewExecution(b)) if !b.child_requests.is_empty()
+            cw,
+            CapturedWriteSer::AppendBatchCreateNewExecution { child_requests, .. } if !child_requests.is_empty()
         )
     })
 }
 
 /// Set `paused = true` on a DelayRequest event if it is one.
-fn set_delay_paused(event: &mut grpc_client::ExecutionEvent) {
-    if let Some(execution_event::Event::HistoryVariant(h)) = &mut event.event
-        && let Some(history_event::Event::JoinSetRequest(jsr)) = &mut h.event
-        && let Some(history_event::join_set_request::JoinSetRequest::DelayRequest(dr)) =
-            &mut jsr.join_set_request
+fn set_delay_paused(event: &mut ExecutionRequest) {
+    if let ExecutionRequest::HistoryEvent {
+        event:
+            HistoryEvent::JoinSetRequest {
+                request: JoinSetRequest::DelayRequest { paused, .. },
+                ..
+            },
+    } = event
     {
-        dr.paused = true;
+        *paused = true;
     }
 }
 
 /// Clone captured writes with pause flags applied.
 fn apply_pause_flags(
-    writes: &[CapturedWrite],
+    writes: &[CapturedWriteSer],
     pause_delays: bool,
     pause_executions: bool,
-) -> Vec<CapturedWrite> {
+) -> Vec<CapturedWriteSer> {
     let mut writes = writes.to_vec();
     for cw in &mut writes {
-        match &mut cw.write {
-            Some(captured_write::Write::Append(a)) => {
-                if pause_delays && let Some(event) = &mut a.event {
-                    set_delay_paused(event);
-                }
+        if pause_delays {
+            for request in append_requests_mut(cw) {
+                set_delay_paused(&mut request.event);
             }
-            Some(captured_write::Write::AppendBatch(b)) if pause_delays => {
-                for event in &mut b.events {
-                    set_delay_paused(event);
-                }
+        }
+        if pause_executions
+            && let CapturedWriteSer::AppendBatchCreateNewExecution { child_requests, .. } = cw
+        {
+            for req in child_requests {
+                req.paused = true;
             }
-            Some(captured_write::Write::AppendBatchWithDelayResponse(b)) if pause_delays => {
-                for event in &mut b.events {
-                    set_delay_paused(event);
-                }
-            }
-            Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => {
-                if pause_delays {
-                    for event in &mut b.events {
-                        set_delay_paused(event);
-                    }
-                }
-                if pause_executions {
-                    for req in &mut b.child_requests {
-                        req.paused = true;
-                    }
-                }
-            }
-            _ => {}
         }
     }
     writes
 }
 
-/// Convert a `CreateExecutionRequest` to an `execution_event::Created`.
-fn create_req_to_created(req: &CreateExecutionRequest) -> execution_event::Created {
-    execution_event::Created {
-        function_name: req.function_name.clone(),
-        params: req.params.clone(),
-        scheduled_at: req.scheduled_at,
-        component_id: req.component_id.clone(),
-        scheduled_by: None,
-        deployment_id: req.deployment_id.clone(),
-        parent_execution_id: req.parent_execution_id.clone(),
-        parent_join_set_id: req.parent_join_set_id.clone(),
-        metadata: req.metadata.clone(),
-        max_persisted_value_size_bytes: req.max_persisted_value_size_bytes,
-    }
+/// Convert a captured child execution request to its `Created` event.
+fn create_req_to_created(req: &CreateRequestSer) -> Option<(ExecutionId, Created)> {
+    let req = CreateRequest::try_from(req.clone())
+        .inspect_err(|err| trace!("Cannot parse captured child execution request: {err}"))
+        .ok()?;
+    Some((
+        req.execution_id,
+        Created {
+            ffqn: req.ffqn,
+            params: req.params,
+            parent: req.parent,
+            scheduled_at: req.scheduled_at,
+            component_id: req.component_id,
+            deployment_id: req.deployment_id,
+            metadata: req.metadata,
+            scheduled_by: None,
+            max_persisted_value_size_bytes: req.max_persisted_value_size_bytes,
+        },
+    ))
 }
 
 /// Build a map from child execution ID to its Created event from captured writes.
-fn child_created_from_writes(
-    writes: &[CapturedWrite],
-) -> HashMap<ExecutionId, execution_event::Created> {
-    let mut map = HashMap::new();
-    for cw in writes {
-        if let Some(captured_write::Write::AppendBatchCreateNewExecution(b)) = &cw.write {
-            for req in &b.child_requests {
-                if let Some(id) = &req.execution_id {
-                    map.insert(id.clone(), create_req_to_created(req));
-                }
+fn child_created_from_writes(writes: &[CapturedWriteSer]) -> HashMap<ExecutionId, Created> {
+    writes
+        .iter()
+        .filter_map(|cw| match cw {
+            CapturedWriteSer::AppendBatchCreateNewExecution { child_requests, .. } => {
+                Some(child_requests)
             }
-        }
-    }
-    map
+            _ => None,
+        })
+        .flatten()
+        .filter_map(create_req_to_created)
+        .collect()
 }
 
 /// Collect child execution IDs referenced by `AppendStubResponse` writes and
 /// `ChildExecutionRequest` events. Their `Created` event (function name + params) may
 /// have been written in an earlier, already-applied batch, so it won't be present in
 /// `child_created_from_writes` for the currently displayed writes.
-fn referenced_child_execution_ids(writes: &[CapturedWrite]) -> HashSet<ExecutionId> {
+fn referenced_child_execution_ids(writes: &[CapturedWriteSer]) -> HashSet<ExecutionId> {
     let mut ids = HashSet::new();
     for cw in writes {
-        if let Some(captured_write::Write::AppendStubResponse(s)) = &cw.write
-            && let Some(id) = &s.child_execution_id
+        if let CapturedWriteSer::AppendStubResponse { response, .. } = cw
+            && let Some(id) = stub_child_execution_id(response)
         {
-            ids.insert(id.clone());
+            ids.insert(id);
         }
-        for event in iter_events(cw) {
-            if let Some(execution_event::Event::HistoryVariant(h)) = &event.event
-                && let Some(history_event::Event::JoinSetRequest(jsr)) = &h.event
-                && let Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
-                    child_req,
-                )) = &jsr.join_set_request
-                && let Some(id) = &child_req.child_execution_id
+        for request in append_requests(cw).1 {
+            if let ExecutionRequest::HistoryEvent {
+                event:
+                    HistoryEvent::JoinSetRequest {
+                        request:
+                            JoinSetRequest::ChildExecutionRequest {
+                                child_execution_id, ..
+                            },
+                        ..
+                    },
+            } = &request.event
             {
-                ids.insert(id.clone());
+                ids.insert(ExecutionId::Derived(child_execution_id.clone()));
             }
         }
     }
@@ -290,8 +307,8 @@ fn referenced_child_execution_ids(writes: &[CapturedWrite]) -> HashSet<Execution
 
 /// Build a tree displaying AppendStubResponse metadata: function name, params, parent execution.
 fn stub_response_tree(
-    stub: &captured_write::AppendStubResponse,
-    child_created: &HashMap<ExecutionId, execution_event::Created>,
+    stub: &StubResponseSer,
+    child_created: &HashMap<ExecutionId, Created>,
     app_state: &crate::app::AppState,
     link: ExecutionLink,
 ) -> TreeData<u32> {
@@ -301,13 +318,8 @@ fn stub_response_tree(
         .unwrap();
 
     // Function name + params from the child's Created event
-    if let Some(created) = stub
-        .child_execution_id
-        .as_ref()
-        .and_then(|id| child_created.get(id))
-        && let Some(fn_name) = &created.function_name
-    {
-        let ffqn = FunctionFqn::from(fn_name.clone());
+    if let Some(created) = stub_child_execution_id(stub).and_then(|id| child_created.get(&id)) {
+        let ffqn = created.ffqn.clone();
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Function,
@@ -319,17 +331,16 @@ fn stub_response_tree(
         )
         .unwrap();
 
-        if let Some(params_any) = &created.params
-            && let Ok(raw_params) =
-                serde_json::from_slice::<Vec<serde_json::Value>>(&params_any.value)
-        {
+        if let Some(raw_params) = created.params.as_json_values() {
             let params: Vec<(String, serde_json::Value)> = match app_state
                 .ffqns_to_details
                 .get(&ffqn)
             {
-                Some((function_detail, _)) if function_detail.params.len() == raw_params.len() => {
+                Some((function_detail, _))
+                    if function_detail.parameter_types.len() == raw_params.len() =>
+                {
                     function_detail
-                        .params
+                        .parameter_types
                         .iter()
                         .zip(raw_params.iter())
                         .map(|(fn_param, param_value)| (fn_param.name.clone(), param_value.clone()))
@@ -373,7 +384,7 @@ fn stub_response_tree(
     }
 
     // Parent execution link
-    if let Some(parent_id) = &stub.parent_execution_id {
+    if let Ok(parent_id) = stub.parent_execution_id.parse::<ExecutionId>() {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Flows,
@@ -393,25 +404,30 @@ fn stub_response_tree(
 }
 
 /// Build a tree displaying the finished result value.
-fn finished_tree(finished: &execution_event::Finished) -> TreeData<u32> {
+fn finished_tree(retval: &SupportedFunctionReturnValue) -> TreeData<u32> {
     let mut tree = TreeBuilder::new().build();
     let root_id = tree
         .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
         .unwrap();
-    if let Some(result) = &finished.value {
-        attach_result_detail(&mut tree, &root_id, result, None, false);
-    }
+    attach_result_detail(
+        &mut tree,
+        &root_id,
+        &RetVal::from(retval.clone()),
+        None,
+        false,
+    );
     TreeData::from(tree)
 }
 
 /// Extract backtraces from a captured write.
-fn backtraces_of(cw: &CapturedWrite) -> &[CapturedBacktrace] {
-    match &cw.write {
-        Some(captured_write::Write::Append(a)) => &a.backtraces,
-        Some(captured_write::Write::AppendBatch(b)) => &b.backtraces,
-        Some(captured_write::Write::AppendBatchCreateNewExecution(b)) => &b.backtraces,
-        Some(captured_write::Write::AppendStubResponse(s)) => &s.backtraces,
-        _ => &[],
+fn backtraces_of(cw: &CapturedWriteSer) -> &[BacktraceInfoSer] {
+    match cw {
+        CapturedWriteSer::Append { backtraces, .. }
+        | CapturedWriteSer::AppendBatch { backtraces, .. }
+        | CapturedWriteSer::AppendBatchWithDelayResponse { backtraces, .. }
+        | CapturedWriteSer::AppendBatchCreateNewExecution { backtraces, .. }
+        | CapturedWriteSer::AppendStubResponse { backtraces, .. } => backtraces,
+        CapturedWriteSer::AppendFinished { .. } => &[],
     }
 }
 
@@ -436,9 +452,9 @@ enum SourceState {
 #[derive(Properties, PartialEq)]
 pub struct AdvanceModalProps {
     pub execution_id: ExecutionId,
-    pub captured_writes: Vec<CapturedWrite>,
+    pub captured_writes: Vec<CapturedWriteSer>,
     pub is_blocked: bool,
-    pub on_advance: Callback<Vec<CapturedWrite>>,
+    pub on_advance: Callback<Vec<CapturedWriteSer>>,
     pub on_unpause: Callback<()>,
     pub on_close: Callback<()>,
 }
@@ -457,7 +473,7 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
     // Created events for children referenced by this batch (e.g. via `AppendStubResponse` or
     // `ChildExecutionRequest`) but created in an earlier, already-applied batch. Fetched lazily
     // since `child_created_from_writes` only sees children created within the current batch.
-    let fetched_child_created = use_state(HashMap::<ExecutionId, execution_event::Created>::new);
+    let fetched_child_created = use_state(HashMap::<ExecutionId, Created>::new);
     let child_created_requested = use_state(HashSet::<ExecutionId>::new);
 
     {
@@ -479,7 +495,7 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                 for id in needed {
                     let fetched_child_created = fetched_child_created.clone();
                     spawn_local(async move {
-                        let result = crate::rest::events::child_created(&id.id).await;
+                        let result = crate::rest::events::child_created(&id).await;
                         match result {
                             Ok(created) => {
                                 if let Some(created) = created {
@@ -517,7 +533,7 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
     let expansion_map = use_state(HashMap::<String, (usize, usize)>::new);
 
     // Fetch sources for the currently selected write's backtraces
-    let selected_backtraces: Vec<CapturedBacktrace> = props
+    let selected_backtraces: Vec<BacktraceInfoSer> = props
         .captured_writes
         .get(*selected_idx)
         .map(backtraces_of)
@@ -531,15 +547,8 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
         use_effect_with((*selected_idx, selected_backtraces.clone()), move |_| {
             let mut needed: Vec<(ComponentId, String)> = Vec::new();
             for bt in &selected_backtraces {
-                let component_id = match &bt.component_id {
-                    Some(id) => id.clone(),
-                    None => continue,
-                };
-                let wasm_bt = match &bt.wasm_backtrace {
-                    Some(b) => b,
-                    None => continue,
-                };
-                for frame in &wasm_bt.frames {
+                let component_id = &bt.component_id;
+                for frame in &bt.wasm_backtrace.frames {
                     for symbol in &frame.symbols {
                         if let Some(file) = &symbol.file {
                             let key = (component_id.clone(), file.clone());
@@ -626,9 +635,9 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
         });
     }
 
-    let empty_join_next: HashMap<u32, &JoinSetResponseEvent> = HashMap::new();
+    let empty_join_next: HashMap<u32, &JoinSetResponseEventOuter> = HashMap::new();
     // Local batch data takes precedence; fall back to lazily fetched child Created events.
-    let child_created: HashMap<ExecutionId, execution_event::Created> = fetched_child_created
+    let child_created: HashMap<ExecutionId, Created> = fetched_child_created
         .iter()
         .map(|(id, created)| (id.clone(), created.clone()))
         .chain(child_created_from_writes(&props.captured_writes))
@@ -650,13 +659,11 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                     selected_idx.set(idx);
                 })
             };
-            let events: Vec<_> = iter_events(cw).cloned().collect();
+            let events: Vec<_> = iter_events(cw).collect();
             let has_write_metadata = matches!(
-                &cw.write,
-                Some(
-                    captured_write::Write::AppendStubResponse(_)
-                        | captured_write::Write::AppendFinished(_)
-                )
+                cw,
+                CapturedWriteSer::AppendStubResponse { .. }
+                    | CapturedWriteSer::AppendFinished { .. }
             );
             let is_expandable = !events.is_empty() || has_write_metadata;
             let on_toggle_expand = {
@@ -673,23 +680,19 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                 })
             };
             let event_details = if is_expanded {
-                let write_tree = match &cw.write {
-                    Some(captured_write::Write::AppendStubResponse(stub)) => {
+                let write_tree = match cw {
+                    CapturedWriteSer::AppendStubResponse { response, .. } => {
                         let tree = stub_response_tree(
-                            stub,
+                            response,
                             &child_created,
                             &app_state,
                             ExecutionLink::ExecutionLog,
                         );
                         html! { <TreeComponent {tree} /> }
                     }
-                    Some(captured_write::Write::AppendFinished(f)) => {
-                        if let Some(finished) = &f.event {
-                            let tree = finished_tree(finished);
-                            html! { <TreeComponent {tree} /> }
-                        } else {
-                            html! {}
-                        }
+                    CapturedWriteSer::AppendFinished { retval, .. } => {
+                        let tree = finished_tree(retval);
+                        html! { <TreeComponent {tree} /> }
                     }
                     _ => html! {},
                 };
@@ -741,11 +744,8 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
         html! {
             <div class="advance-backtrace">
                 { for selected_backtraces.iter().map(|bt| {
-                    let component_id = bt.component_id.as_ref();
-                    let wasm_bt = match &bt.wasm_backtrace {
-                        Some(b) => b,
-                        None => return html! { <p class="backtrace-empty">{"No backtrace data"}</p> },
-                    };
+                    let component_id = &bt.component_id;
+                    let wasm_bt = &bt.wasm_backtrace;
                     html! {
                         { for wasm_bt.frames.iter().map(|frame| {
                             let mut frame_html: Vec<Html> = Vec::new();
@@ -767,15 +767,14 @@ pub fn advance_modal(props: &AdvanceModalProps) -> Html {
                                 frame_html.push(html! { <div class="symbol-info">{loc_str}</div> });
 
                                 // Source code block
-                                if let (Some(file), Some(line), Some(comp_id)) =
-                                    (&symbol.file, symbol.line, component_id)
+                                if let (Some(file), Some(line)) = (&symbol.file, symbol.line)
                                 {
                                     let new_position = seen_positions.insert((file.clone(), line));
                                     if new_position {
-                                        let key = (comp_id.clone(), file.clone());
+                                        let key = (component_id.clone(), file.clone());
                                         if let Some(SourceState::Found(source)) = sources.get(&key)
                                         {
-                                            let map_key = format!("{}:{}", comp_id.name, file);
+                                            let map_key = format!("{}:{}", component_id.name, file);
                                             let (cb_above, cb_below) = expansion_map
                                                 .get(&map_key)
                                                 .copied()

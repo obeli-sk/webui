@@ -1,8 +1,8 @@
 pub mod app;
 pub mod auth;
 pub mod components;
-pub mod grpc;
 pub mod loader;
+pub mod model;
 pub mod rest;
 pub mod tree;
 pub mod util;

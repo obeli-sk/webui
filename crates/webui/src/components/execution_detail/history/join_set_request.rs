@@ -7,24 +7,25 @@ use crate::components::execution_detail::utils::id_suffix;
 use crate::components::execution_header::ExecutionLink;
 use crate::components::ffqn_with_links::FfqnWithLinks;
 use crate::components::json_tree::{JsonValue, insert_json_into_tree};
-use crate::grpc::ffqn::FunctionFqn;
-use crate::grpc::grpc_client::{self, execution_event::history_event::join_set_request};
-use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::util::time::{TimeGranularity, format_date, relative_time, use_relative_now};
 use chrono::{DateTime, Utc};
+use concepts::{
+    ExecutionId,
+    storage::{Created, HistoryEventScheduleAt, JoinSetRequest, PersistedParams, VersionType},
+};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinSetRequestEventProps {
-    pub event: grpc_client::execution_event::history_event::JoinSetRequest,
+    pub request: JoinSetRequest,
     pub version: VersionType,
     pub link: ExecutionLink,
     pub is_selected: bool,
     /// Optional Created event of the child execution.
     /// When provided, the component displays the child's function name and parameters.
     #[prop_or_default]
-    pub child_created: Option<grpc_client::execution_event::Created>,
+    pub child_created: Option<Created>,
 }
 
 impl HistoryJoinSetRequestEventProps {
@@ -34,41 +35,25 @@ impl HistoryJoinSetRequestEventProps {
             .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
             .unwrap();
 
-        let join_set_request = self
-            .event
-            .join_set_request
-            .as_ref()
-            .expect("`join_set_request` is sent in `JoinSetRequest`");
         // For child executions, extract ffqn + params from the child's Created event
         // (when it was fetched) so we can label with the function name and flatten the
         // details directly under this node.
-        let child_info = match join_set_request {
-            join_set_request::JoinSetRequest::ChildExecutionRequest(_) => {
+        let child_info = match &self.request {
+            JoinSetRequest::ChildExecutionRequest { .. } => {
                 self.child_created.as_ref().map(|created| {
-                    let function_name = created
-                        .function_name
-                        .as_ref()
-                        .expect("`function_name` is sent in Created");
-                    let ffqn = FunctionFqn::from(function_name.clone());
-                    let raw_params: Vec<serde_json::Value> = serde_json::from_slice(
-                        &created
-                            .params
-                            .as_ref()
-                            .expect("`params` is sent in Created")
-                            .value,
-                    )
-                    .expect("`params` must be a JSON array");
+                    let ffqn = created.ffqn.clone();
+                    let raw_params = created.params.as_json_values().unwrap_or_default();
                     let params: Vec<(String, serde_json::Value)> =
                         match app_state.ffqns_to_details.get(&ffqn) {
                             Some((function_detail, _))
-                                if function_detail.params.len() == raw_params.len() =>
+                                if function_detail.parameter_types.len() == raw_params.len() =>
                             {
                                 function_detail
-                                    .params
+                                    .parameter_types
                                     .iter()
                                     .zip(raw_params.iter())
                                     .map(|(fn_param, param_value)| {
-                                        (fn_param.name.clone(), param_value.clone())
+                                        (fn_param.name.to_string(), param_value.clone())
                                     })
                                     .collect()
                             }
@@ -80,24 +65,14 @@ impl HistoryJoinSetRequestEventProps {
                     (ffqn, params)
                 })
             }
-            join_set_request::JoinSetRequest::DelayRequest(_) => None,
+            JoinSetRequest::DelayRequest { .. } => None,
         };
 
-        let (join_set_icon, id_suffix) = match join_set_request {
-            join_set_request::JoinSetRequest::DelayRequest(delay_req) => {
-                let delay_id = delay_req
-                    .delay_id
-                    .as_ref()
-                    .expect("`delay_id` is sent in `DelayRequest`");
-                (Icon::Time, id_suffix(&delay_id.id))
-            }
-            join_set_request::JoinSetRequest::ChildExecutionRequest(child_req) => {
-                let child_execution_id = child_req
-                    .child_execution_id
-                    .as_ref()
-                    .expect("`child_execution_id` is sent in `ChildExecutionRequest`");
-                (Icon::Function, id_suffix(&child_execution_id.id))
-            }
+        let (join_set_icon, id_suffix) = match &self.request {
+            JoinSetRequest::DelayRequest { delay_id, .. } => (Icon::Time, id_suffix(delay_id)),
+            JoinSetRequest::ChildExecutionRequest {
+                child_execution_id, ..
+            } => (Icon::Function, id_suffix(child_execution_id)),
         };
         let join_set_node = tree
             .insert(
@@ -117,18 +92,18 @@ impl HistoryJoinSetRequestEventProps {
             )
             .unwrap();
 
-        match join_set_request {
-            join_set_request::JoinSetRequest::DelayRequest(delay_req) => {
-                let (Some(delay_id), Some(expires_at)) =
-                    (&delay_req.delay_id, &delay_req.expires_at)
-                else {
-                    panic!("`delay_id` and `expires_at` are sent in `DelayRequest` message");
-                };
-                let expires_at = DateTime::from(*expires_at);
+        match &self.request {
+            JoinSetRequest::DelayRequest {
+                delay_id,
+                expires_at,
+                schedule_at,
+                paused,
+            } => {
+                let expires_at = *expires_at;
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::IdNumber,
-                        label: html! { {&delay_id.id} },
+                        label: html! { {delay_id.to_string()} },
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&join_set_node),
@@ -149,7 +124,7 @@ impl HistoryJoinSetRequestEventProps {
                 )
                 .unwrap();
                 // Paused flag
-                if delay_req.paused {
+                if *paused {
                     tree.insert(
                         Node::new(NodeData {
                             icon: Icon::Lock,
@@ -161,33 +136,22 @@ impl HistoryJoinSetRequestEventProps {
                     .unwrap();
                 }
                 // Scheduled at variant
-                if let Some(scheduled_at) = &delay_req.scheduled_at {
-                    use grpc_client::execution_event::history_event::join_set_request::delay_request::scheduled_at::Variant;
-                    let label: Html = match &scheduled_at.variant {
-                        Some(Variant::Now(_)) => "Scheduled At: Now".into(),
-                        Some(Variant::At(at)) => {
-                            let ts = at.at.map(DateTime::from);
-                            format!(
-                                "Scheduled At: {}",
-                                ts.map(|t| t.to_string()).unwrap_or_default()
-                            )
-                            .into()
-                        }
-                        Some(Variant::In(_)) => {
-                            html! { <RelativeScheduledIn expires_at={expires_at} /> }
-                        }
-                        None => "Scheduled At: (unknown)".into(),
-                    };
-                    tree.insert(
-                        Node::new(NodeData {
-                            icon: Icon::Time,
-                            label,
-                            ..Default::default()
-                        }),
-                        InsertBehavior::UnderNode(&join_set_node),
-                    )
-                    .unwrap();
-                }
+                let label: Html = match schedule_at {
+                    HistoryEventScheduleAt::Now => "Scheduled At: Now".into(),
+                    HistoryEventScheduleAt::At(at) => format!("Scheduled At: {at}").into(),
+                    HistoryEventScheduleAt::In(_) => {
+                        html! { <RelativeScheduledIn expires_at={expires_at} /> }
+                    }
+                };
+                tree.insert(
+                    Node::new(NodeData {
+                        icon: Icon::Time,
+                        label,
+                        ..Default::default()
+                    }),
+                    InsertBehavior::UnderNode(&join_set_node),
+                )
+                .unwrap();
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::Cross,
@@ -222,18 +186,21 @@ impl HistoryJoinSetRequestEventProps {
                 )
                 .unwrap();
             }
-            join_set_request::JoinSetRequest::ChildExecutionRequest(child_req) => {
-                let child_execution_id = child_req
-                    .child_execution_id
-                    .as_ref()
-                    .expect("`child_execution_id` is sent in `ChildExecutionRequest`");
+            JoinSetRequest::ChildExecutionRequest {
+                child_execution_id,
+                target_ffqn: _,
+                params_hash,
+                params,
+                result,
+            } => {
+                let child_execution_id = ExecutionId::Derived(child_execution_id.clone());
 
                 // Execution id link
                 tree.insert(
                     Node::new(NodeData {
                         icon: Icon::IdNumber,
                         label: html! {
-                            { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
+                            { self.link.link(child_execution_id.clone(), &child_execution_id.to_string()) }
                         },
                         ..Default::default()
                     }),
@@ -242,21 +209,11 @@ impl HistoryJoinSetRequestEventProps {
                 .unwrap();
 
                 // Error detail
-                if let Some(join_set_request::child_execution_request::Result::Error(err)) =
-                    &child_req.result
-                {
+                if let Err(err) = result {
                     tree.insert(
                         Node::new(NodeData {
                             icon: Icon::Error,
-                            label: format!(
-                                "Error: {:?}{}",
-                                err.kind(),
-                                err.detail
-                                    .as_deref()
-                                    .map(|d| format!(" - {d}"))
-                                    .unwrap_or_default()
-                            )
-                            .into(),
+                            label: format!("Error: {err}").into(),
                             ..Default::default()
                         }),
                         InsertBehavior::UnderNode(&join_set_node),
@@ -264,11 +221,11 @@ impl HistoryJoinSetRequestEventProps {
                     .unwrap();
                 }
 
-                if !child_req.params_hash.is_empty() {
+                if let Some(params_hash) = params_hash {
                     tree.insert(
                         Node::new(NodeData {
                             icon: Icon::IdNumber,
-                            label: format!("Parameters Hash: {}", child_req.params_hash).into(),
+                            label: format!("Parameters Hash: {params_hash}").into(),
                             ..Default::default()
                         }),
                         InsertBehavior::UnderNode(&join_set_node),
@@ -276,7 +233,7 @@ impl HistoryJoinSetRequestEventProps {
                     .unwrap();
                 }
 
-                if let Some(rejected) = &child_req.rejected_params {
+                if let PersistedParams::Rejected { rejected } = params {
                     tree.insert(
                         Node::new(NodeData {
                             icon: Icon::Error,

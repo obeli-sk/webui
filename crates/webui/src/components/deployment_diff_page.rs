@@ -7,10 +7,11 @@ use crate::{
         },
         notification::{Notification, NotificationContext},
     },
-    grpc::grpc_client::{self, ComponentFileRole, DeploymentId},
     rest,
 };
+use concepts::{ComponentId, prefixed_ulid::DeploymentId, storage::ComponentFileRole};
 use log::error;
+use rest_types::components::ComponentFileRef;
 use serde_json::Value;
 use similar::{ChangeTag, TextDiff};
 use std::collections::BTreeMap;
@@ -28,15 +29,14 @@ pub struct DeploymentDiffPageProps {
 #[derive(Clone)]
 struct DeploymentInfo {
     sections: Vec<SectionView>,
-    components_by_name: BTreeMap<String, grpc_client::ComponentId>,
+    components_by_name: BTreeMap<String, ComponentId>,
 }
 
 impl DeploymentInfo {
-    fn digest_of(&self, name: &str) -> Option<&str> {
+    fn digest_of(&self, name: &str) -> Option<String> {
         self.components_by_name
             .get(name)
-            .and_then(|id| id.digest.as_ref())
-            .map(|digest| digest.digest.as_str())
+            .map(|id| id.component_digest.to_string())
     }
 }
 
@@ -307,7 +307,9 @@ fn render_section_diff(
             .get(&(section_key.to_string(), name.clone()))
             .map(Vec::as_slice)
             .unwrap_or(&[]);
-        let digests = (diff_data.from.digest_of(name), diff_data.to.digest_of(name));
+        let (from_digest, to_digest) =
+            (diff_data.from.digest_of(name), diff_data.to.digest_of(name));
+        let digests = (from_digest.as_deref(), to_digest.as_deref());
         match (from_components.get(name), to_components.get(name)) {
             (Some(from), Some(to))
                 if from.config == to.config
@@ -355,29 +357,24 @@ fn render_section_diff(
 }
 
 async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<DeploymentInfo, String> {
-    let deployment = rest::deployments::get(&deployment_id.id)
+    let deployment = rest::deployments::get(&deployment_id)
         .await
-        .map_err(|e| format!("cannot get deployment {}: {e}", deployment_id.id))?;
-    let deployment_toml = deployment
-        .deployment_toml
-        .ok_or_else(|| format!("deployment {} has no manifest", deployment_id.id))?;
-    let config = toml::from_str(&deployment_toml)
-        .map_err(|e| format!("cannot parse manifest of {}: {e}", deployment_id.id))?;
+        .map_err(|e| format!("cannot get deployment {deployment_id}: {e}"))?;
+    let config = toml::from_str(&deployment.deployment_toml)
+        .map_err(|e| format!("cannot parse manifest of {deployment_id}: {e}"))?;
     let mut sections = build_sections_from_manifest(&config, &deployment.files);
 
-    let components = rest::components::list(Some(&deployment_id.id), None)
+    let components = rest::components::list(Some(&deployment_id), None)
         .await
         .unwrap_or_default();
     for component in sections
         .iter_mut()
         .flat_map(|section| section.components.iter_mut())
     {
-        if let Some(server_component) = components.iter().find(|server_component| {
-            server_component
-                .component_id
-                .as_ref()
-                .is_some_and(|id| id.name == component.name)
-        }) {
+        if let Some(server_component) = components
+            .iter()
+            .find(|server_component| server_component.component_id.name.as_ref() == component.name)
+        {
             component
                 .sources
                 .extend(module_sources(&server_component.files));
@@ -385,8 +382,12 @@ async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<Deployment
     }
     let components_by_name = components
         .into_iter()
-        .filter_map(|component| component.component_id)
-        .map(|component_id| (component_id.name.clone(), component_id))
+        .map(|component| {
+            (
+                component.component_id.name.to_string(),
+                component.component_id,
+            )
+        })
         .collect();
 
     Ok(DeploymentInfo {
@@ -396,16 +397,16 @@ async fn fetch_deployment_info(deployment_id: DeploymentId) -> Result<Deployment
 }
 
 /// Text files of a component that its manifest entry does not name: imported JS modules and WIT.
-fn module_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<SourceView> {
+fn module_sources(files: &[ComponentFileRef]) -> Vec<SourceView> {
     files
         .iter()
         .filter_map(|file_ref| {
-            let role = match ComponentFileRole::try_from(file_ref.role) {
-                Ok(ComponentFileRole::JsModule) => "JS module",
-                Ok(ComponentFileRole::WitSource) => "WIT source",
+            let role = match file_ref.role {
+                ComponentFileRole::JsModule => "JS module",
+                ComponentFileRole::WitSource => "WIT source",
                 _ => return None,
             };
-            let file = file_ref.file.as_ref()?;
+            let file = &file_ref.file;
             Some(SourceView {
                 file_name: file.path.clone(),
                 content: SourceContent::FetchFile {
@@ -420,10 +421,7 @@ fn module_sources(files: &[grpc_client::ComponentFileRef]) -> Vec<SourceView> {
         .collect()
 }
 
-async fn resolve_source(
-    source: SourceView,
-    component_id: Option<grpc_client::ComponentId>,
-) -> ResolvedSource {
+async fn resolve_source(source: SourceView, component_id: Option<ComponentId>) -> ResolvedSource {
     match source.content {
         SourceContent::Inline(content) => ResolvedSource::Text(content),
         SourceContent::Oci { image } => {
@@ -451,8 +449,8 @@ async fn resolve_source(
 async fn diff_sources(
     from_sources: &[SourceView],
     to_sources: &[SourceView],
-    from_component_id: Option<grpc_client::ComponentId>,
-    to_component_id: Option<grpc_client::ComponentId>,
+    from_component_id: Option<ComponentId>,
+    to_component_id: Option<ComponentId>,
 ) -> Vec<SourceDiff> {
     let from_sources: BTreeMap<String, SourceView> = from_sources
         .iter()
@@ -563,9 +561,9 @@ pub fn deployment_diff_page(
     {
         let diff_state = diff_state.clone();
         let notifications = notifications.clone();
-        use_effect_with((from.clone(), to.clone()), move |(from, to)| {
-            let from = from.clone();
-            let to = to.clone();
+        use_effect_with((*from, *to), move |(from, to)| {
+            let from = *from;
+            let to = *to;
             spawn_local(async move {
                 let result = fetch_diff_data(from, to).await;
                 if let Err(err) = &result {
@@ -598,14 +596,14 @@ pub fn deployment_diff_page(
             <h3>{"Deployment diff"}</h3>
             <p>
                 <span class="diff-del">
-                    <Link<Route> to={Route::DeploymentDetail { deployment_id: from.clone() }}>
-                        { &from.id }
+                    <Link<Route> to={Route::DeploymentDetail { deployment_id: *from }}>
+                        { from.to_string() }
                     </Link<Route>>
                 </span>
                 {" → "}
                 <span class="diff-ins">
-                    <Link<Route> to={Route::DeploymentDetail { deployment_id: to.clone() }}>
-                        { &to.id }
+                    <Link<Route> to={Route::DeploymentDetail { deployment_id: *to }}>
+                        { to.to_string() }
                     </Link<Route>>
                 </span>
             </p>

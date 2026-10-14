@@ -1,18 +1,21 @@
 use crate::{
     components::notification::{Notification, NotificationContext},
-    grpc::grpc_client::{DeploymentId, DeploymentStatus},
     rest,
 };
+use concepts::prefixed_ulid::DeploymentId;
 use gloo::timers::callback::Timeout;
 use log::error;
-use serde::Deserialize;
+use rest_types::{
+    MessageBody,
+    deployment::{DeploymentStatusSer, DeploymentSwitchPayload},
+};
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct DeploymentActionsProps {
     pub deployment_id: DeploymentId,
-    pub status: DeploymentStatus,
+    pub status: DeploymentStatusSer,
     /// Called after a successful `SwitchDeployment` so the parent can refresh.
     #[prop_or_default]
     pub on_switched: Callback<()>,
@@ -22,13 +25,6 @@ pub struct DeploymentActionsProps {
 enum ArmedAction {
     Apply,
     Enqueue,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum SwitchResult {
-    Success { ok: String },
-    Failure { err: String },
 }
 
 /// Buttons to apply a deployment immediately or enqueue it for the next server restart.
@@ -47,7 +43,7 @@ pub fn deployment_actions(
     // Dropping the previous timeout cancels it when another button is armed.
     let disarm_timer = use_mut_ref(|| None::<Timeout>);
 
-    if *status == DeploymentStatus::Active {
+    if *status == DeploymentStatusSer::Active {
         return html! {};
     }
 
@@ -66,7 +62,7 @@ pub fn deployment_actions(
     };
 
     let switch = {
-        let deployment_id = deployment_id.clone();
+        let deployment_id = *deployment_id;
         let notifications = notifications.clone();
         let on_switched = on_switched.clone();
         let in_flight = in_flight.clone();
@@ -74,7 +70,6 @@ pub fn deployment_actions(
         let disarm_timer = disarm_timer.clone();
         // `allow_unavailable` only matters for enqueueing; apply is always strict.
         move |apply: bool, allow_unavailable: bool| {
-            let deployment_id = deployment_id.clone();
             let notifications = notifications.clone();
             let on_switched = on_switched.clone();
             let in_flight = in_flight.clone();
@@ -83,23 +78,22 @@ pub fn deployment_actions(
             Callback::from(move |_| {
                 armed.set(None);
                 *disarm_timer.borrow_mut() = None;
-                let deployment_id = deployment_id.clone();
                 let notifications = notifications.clone();
                 let on_switched = on_switched.clone();
                 let in_flight = in_flight.clone();
                 in_flight.set(true);
                 spawn_local(async move {
-                    let response = rest::put::<_, SwitchResult>(
-                        &format!("/v1/deployments/{}/switch", deployment_id.id),
-                        &serde_json::json!({
-                            "allow_unavailable_runtime_config": allow_unavailable,
-                            "apply": apply,
-                        }),
+                    let response = rest::put::<_, MessageBody>(
+                        &format!("/v1/deployments/{deployment_id}/switch"),
+                        &DeploymentSwitchPayload {
+                            allow_unavailable_runtime_config: allow_unavailable,
+                            apply,
+                        },
                     )
                     .await;
                     in_flight.set(false);
                     match response {
-                        Ok(SwitchResult::Success { ok }) => {
+                        Ok(MessageBody::Ok { ok }) => {
                             match ok.as_str() {
                                 "switched" => notifications.push(Notification::success(
                                     "Apply succeeded, the deployment is now live",
@@ -112,7 +106,7 @@ pub fn deployment_actions(
                             }
                             on_switched.emit(());
                         }
-                        Ok(SwitchResult::Failure { err: e }) | Err(e) => {
+                        Ok(MessageBody::Err { err: e }) | Err(e) => {
                             error!("Failed to switch deployment: {e:?}");
                             notifications.push(Notification::error(format!(
                                 "Failed to switch deployment: {}",
@@ -125,7 +119,7 @@ pub fn deployment_actions(
         }
     };
 
-    let enqueue_disabled = *in_flight || *status == DeploymentStatus::Enqueued;
+    let enqueue_disabled = *in_flight || *status == DeploymentStatusSer::Enqueued;
     let apply_armed = *armed == Some(ArmedAction::Apply);
     let enqueue_armed = *armed == Some(ArmedAction::Enqueue);
     html! {
@@ -183,8 +177,8 @@ mod tests {
 
     #[test]
     fn switch_error_body_is_reported_as_failure() {
-        let outcome: SwitchResult = serde_json::from_str(r#"{"err":"component not found"}"#)
+        let outcome: MessageBody = serde_json::from_str(r#"{"err":"component not found"}"#)
             .expect("the API error body must be recognized");
-        assert!(matches!(outcome, SwitchResult::Failure { err } if err == "component not found"));
+        assert!(matches!(outcome, MessageBody::Err { err } if err == "component not found"));
     }
 }

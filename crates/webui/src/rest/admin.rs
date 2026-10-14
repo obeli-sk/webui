@@ -1,57 +1,12 @@
-use serde::{Deserialize, Serialize};
+use rest_types::admin::{
+    CleanupRequest, CleanupResponse, DeleteResponse, RetainDeploymentsRequest,
+    RetainSystemEventsRequest, RetainSystemEventsResponse,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RetentionPolicy {
     Count(u32),
     MaxAgeSeconds(u64),
-}
-
-#[derive(Serialize)]
-struct RetainExecutionsRequest {
-    retain_count: Option<u32>,
-    max_age_seconds: Option<u64>,
-    batch_size: u32,
-    force_non_terminal: bool,
-    dry_run: bool,
-}
-
-#[derive(Serialize)]
-struct RetainDeploymentsRequest {
-    retain_count: Option<u32>,
-    max_age_seconds: Option<u64>,
-    batch_size: u32,
-    delete_executions: bool,
-    force_non_terminal: bool,
-    dry_run: bool,
-}
-
-#[derive(Serialize)]
-struct RetainSystemEventsRequest {
-    max_age_seconds: u64,
-    batch_size: u32,
-    dry_run: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
-pub struct CleanupResponse {
-    pub deleted_execution_trees: u64,
-    pub deleted_deployments: u64,
-    pub retained: u64,
-    pub blocked_non_terminal: u64,
-    pub blocked_by_execution_reference: u64,
-    pub has_more: bool,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-pub struct RetainSystemEventsResponse {
-    pub deleted: u64,
-    pub has_more: bool,
-}
-
-#[derive(Deserialize)]
-pub struct DeleteResponse {
-    pub deleted: bool,
-    pub already_deleted: bool,
 }
 
 impl RetentionPolicy {
@@ -72,7 +27,7 @@ pub async fn retain_executions(
     let (retain_count, max_age_seconds) = policy.split();
     super::post(
         "/v1/admin/executions/retain",
-        &RetainExecutionsRequest {
+        &CleanupRequest {
             retain_count,
             max_age_seconds,
             batch_size,

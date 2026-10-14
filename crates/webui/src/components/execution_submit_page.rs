@@ -4,16 +4,14 @@ use crate::{
         code::code_block::CodeBlock,
         notification::{Notification, NotificationContext},
     },
-    grpc::{
-        SUFFIX_FN_SCHEDULE, SUFFIX_PKG_SCHEDULE,
-        ffqn::FunctionFqn,
-        grpc_client::{self, ExecutionId},
-        ifc_fqn::IfcFqn,
-    },
     rest,
     util::{wit_highlighter, wit_type_formatter::format_wit_type},
 };
+use concepts::{
+    ExecutionId, FnName, FunctionFqn, IfcFqnName, PkgFqn, SUFFIX_FN_SCHEDULE, SUFFIX_PKG_SCHEDULE,
+};
 use log::{debug, error, trace, warn};
+use rest_types::components::FunctionMetadataLite;
 use serde_json::json;
 use std::{collections::HashSet, ops::Deref};
 use val_json::wast_val::WastValWithType;
@@ -51,23 +49,15 @@ fn tz_name() -> String {
 
 /// Find the schedule-variant FFQN for a given function, if it exists.
 fn find_schedule_ffqn(ffqn: &FunctionFqn, app_state: &AppState) -> Option<FunctionFqn> {
-    let schedule_pkg_name = format!(
-        "{pkg}{SUFFIX_PKG_SCHEDULE}",
-        pkg = ffqn.ifc_fqn.pkg_fqn.package_name,
-    );
-    let schedule_ifc_fqn = IfcFqn {
-        pkg_fqn: crate::grpc::pkg_fqn::PkgFqn {
-            namespace: ffqn.ifc_fqn.pkg_fqn.namespace.clone(),
-            package_name: schedule_pkg_name,
-            version: ffqn.ifc_fqn.pkg_fqn.version.clone(),
-        },
-        ifc_name: ffqn.ifc_fqn.ifc_name.clone(),
+    let pkg_fqn = ffqn.ifc_fqn.pkg_fqn_name();
+    let schedule_pkg_fqn = PkgFqn {
+        package_name: format!("{}{SUFFIX_PKG_SCHEDULE}", pkg_fqn.package_name),
+        ..pkg_fqn
     };
     let schedule_ffqn = FunctionFqn {
-        ifc_fqn: schedule_ifc_fqn,
-        function_name: format!(
-            "{fn_name}{SUFFIX_FN_SCHEDULE}",
-            fn_name = ffqn.function_name,
+        ifc_fqn: IfcFqnName::from_pkg_fqn(&schedule_pkg_fqn, ffqn.ifc_fqn.ifc_name()),
+        function_name: FnName::new_arc(
+            format!("{}{SUFFIX_FN_SCHEDULE}", ffqn.function_name).into(),
         ),
     };
     if app_state.ffqns_to_details.contains_key(&schedule_ffqn) {
@@ -85,21 +75,17 @@ struct FormData {
 
 impl FormData {
     fn validate_param(
-        function_detail: &grpc_client::FunctionDetail,
+        function_detail: &FunctionMetadataLite,
         param_value: &str,
         idx: usize,
     ) -> Result<(), String> {
         match serde_json::from_str::<serde_json::Value>(param_value) {
             Ok(param_value) => {
                 let wit_type_inline = function_detail
-                    .params
+                    .parameter_types
                     .get(idx)
-                    .as_ref()
-                    .expect("FunctionDetail.params cardinality must match FormData.param_refs")
-                    .r#type
-                    .as_ref()
-                    .expect("`FunctionParameter.type` is sent")
-                    .wit_type_inline
+                    .expect("parameter cardinality must match FormData.param_refs")
+                    .wit_type
                     .as_str();
                 let type_and_value_json = json!({
                     "type": wit_type_inline,
@@ -120,7 +106,7 @@ impl FormData {
         }
     }
 
-    fn validate(&mut self, function_detail: &grpc_client::FunctionDetail) -> Result<(), String> {
+    fn validate(&mut self, function_detail: &FunctionMetadataLite) -> Result<(), String> {
         let mut is_err = false;
         for (idx, param_ref) in self.param_refs.iter().enumerate() {
             let param_value = param_ref.cast::<HtmlTextAreaElement>().unwrap().value();
@@ -169,9 +155,9 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
     let request_processing_state = use_state(|| false);
     let form_data_state = use_state(|| FormData {
         param_refs: std::iter::repeat_with(NodeRef::default)
-            .take(function_detail.params.len())
+            .take(function_detail.parameter_types.len())
             .collect(),
-        param_errs: std::iter::repeat_n(None, function_detail.params.len()).collect(),
+        param_errs: std::iter::repeat_n(None, function_detail.parameter_types.len()).collect(),
     });
     let validation_err_state = use_state(|| None::<String>);
     let paused_state = use_state(|| false);
@@ -192,11 +178,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
         let component_id = component_id.clone();
         use_effect_with(ffqn.clone(), move |_ffqn| {
             wasm_bindgen_futures::spawn_local(async move {
-                let digest = &component_id
-                    .digest
-                    .as_ref()
-                    .expect("`digest` is sent")
-                    .digest;
+                let digest = &component_id.component_digest;
                 match rest::get_text(&format!("/v1/components/{digest}/wit"), &[]).await {
                     Ok(response) => wit_state.set(Some(response)),
                     Err(e) => {
@@ -366,14 +348,11 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
 
     // Render parameter fields
     let params_html: Vec<_> = function_detail
-        .params
+        .parameter_types
         .iter()
         .enumerate()
         .map(|(idx, param)| {
-            let ty = param
-                .r#type
-                .as_ref()
-                .expect("`FunctionParameter.type` is sent");
+            let ty = &param.wit_type;
             let id = format!("param_{ffqn}_{idx}");
 
             let on_param_change = {
@@ -404,7 +383,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                     expanded_type_hints.set(set);
                 })
             };
-            let wit_type_formatted = format_wit_type(&ty.wit_type_inline);
+            let wit_type_formatted = format_wit_type(ty);
 
             html! {
                 <div class="form-field">
@@ -415,7 +394,7 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                         <textarea
                             id={id}
                             rows="1"
-                            placeholder={ty.wit_type.clone()}
+                            placeholder={ty.clone()}
                             ref={&form_data_state.param_refs[idx]}
                             oninput={Callback::from(move |_| {
                                 on_param_change()

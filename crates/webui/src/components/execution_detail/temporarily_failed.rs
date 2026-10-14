@@ -1,14 +1,17 @@
-use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    components::execution_detail::{http_trace::attach_http_traces, tree_component::TreeComponent},
-    grpc::{grpc_client, version::VersionType},
+use crate::components::execution_detail::{
+    http_trace::attach_http_traces, tree_component::TreeComponent,
 };
-use chrono::DateTime;
+use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
+use chrono::{DateTime, Utc};
+use concepts::storage::{VersionType, http_client_trace::HttpClientTrace};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct TemporarilyFailedEventProps {
-    pub event: grpc_client::execution_event::TemporarilyFailed,
+    pub backoff_expires_at: DateTime<Utc>,
+    pub reason: String,
+    pub detail: Option<String>,
+    pub http_client_traces: Vec<HttpClientTrace>,
     pub version: VersionType,
     pub is_selected: bool,
 }
@@ -37,7 +40,7 @@ impl TemporarilyFailedEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Error,
-                label: self.event.reason.as_str().into(),
+                label: self.reason.as_str().into(),
                 ..Default::default()
             }),
             InsertBehavior::UnderNode(&failed_node),
@@ -45,7 +48,7 @@ impl TemporarilyFailedEventProps {
         .unwrap();
 
         // Add detail
-        if let Some(detail) = &self.event.detail {
+        if let Some(detail) = &self.detail {
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::List,
@@ -58,11 +61,7 @@ impl TemporarilyFailedEventProps {
         }
 
         // Add backoff expiration
-        let backoff_expires_at = DateTime::from(
-            self.event
-                .backoff_expires_at
-                .expect("`backoff_expires_at` is sent by the server"),
-        );
+        let backoff_expires_at = self.backoff_expires_at;
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Time,
@@ -75,7 +74,7 @@ impl TemporarilyFailedEventProps {
         .unwrap();
 
         // Add HTTP Traces
-        attach_http_traces(&mut tree, &failed_node, &self.event.http_client_traces);
+        attach_http_traces(&mut tree, &failed_node, &self.http_client_traces);
 
         TreeData::from(tree)
     }

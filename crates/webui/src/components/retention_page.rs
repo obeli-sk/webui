@@ -4,12 +4,10 @@ use crate::{
         notification::{Notification, NotificationContext},
         system_nav::SystemNav,
     },
-    rest::{
-        self,
-        admin::{CleanupResponse, RetentionPolicy},
-    },
+    rest::{self, admin::RetentionPolicy},
 };
 use gloo::timers::callback::Timeout;
+use rest_types::admin::CleanupResponse;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;

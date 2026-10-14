@@ -1,33 +1,22 @@
+use crate::components::execution_detail::{
+    finished::attach_result_detail, tree_component::TreeComponent, utils::id_suffix,
+};
 use crate::components::execution_header::ExecutionLink;
 use crate::components::ffqn_with_links::FfqnWithLinks;
-use crate::grpc::grpc_client::join_set_response_event::{ChildExecutionFinished, DelayFinished};
-use crate::grpc::version::VersionType;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{
-    components::execution_detail::{
-        finished::attach_result_detail, tree_component::TreeComponent, utils::id_suffix,
-    },
-    grpc::grpc_client::{
-        self, JoinSetResponseEvent, SupportedFunctionResult, join_set_response_event,
-    },
+use concepts::{
+    ExecutionFailureKind, ExecutionId, FunctionFqn, JoinSetId, SupportedFunctionReturnValue,
+    storage::{JoinSetResponse, JoinSetResponseEventOuter, VersionType},
 };
-use chrono::DateTime;
-use log::error;
+use rest_types::executions::RetVal;
 use yew::prelude::*;
-
-/// A matched child execution whose result is an `ExecutionFailure` of kind `Cancelled`.
-fn child_failure_is_cancelled(result: &SupportedFunctionResult) -> bool {
-    matches!(
-        &result.value,
-        Some(grpc_client::supported_function_result::Value::ExecutionFailure(failure))
-            if failure.kind() == grpc_client::ExecutionFailureKind::Cancelled
-    )
-}
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinNextEventProps {
-    pub event: grpc_client::execution_event::history_event::JoinNext,
-    pub response: Option<JoinSetResponseEvent>,
+    pub join_set_id: JoinSetId,
+    pub requested_ffqn: Option<FunctionFqn>,
+    pub closing: bool,
+    pub response: Option<JoinSetResponseEventOuter>,
     pub version: VersionType,
     pub link: ExecutionLink,
     pub is_selected: bool,
@@ -39,86 +28,34 @@ impl HistoryJoinNextEventProps {
         let root_id = tree
             .insert(Node::new(NodeData::default()), InsertBehavior::AsRoot)
             .unwrap();
+        let join_set_id = &self.join_set_id;
+        let response = self.response.as_ref().map(|outer| &outer.event.event);
 
-        // Add node for JoinSet ID and details
-        let join_set_id = self
-            .event
-            .join_set_id
-            .as_ref()
-            .expect("JoinSetRequest.join_set_id is sent");
-
-        let icon = match &self.response {
-            Some(JoinSetResponseEvent {
-                response:
-                    Some(join_set_response_event::Response::ChildExecutionFinished(
-                        join_set_response_event::ChildExecutionFinished {
-                            value:
-                                Some(SupportedFunctionResult {
-                                    value:
-                                        Some(grpc_client::supported_function_result::Value::Ok(_)),
-                                    ..
-                                }),
-                            ..
-                        },
-                    )),
+        let icon = match response {
+            Some(JoinSetResponse::ChildExecutionFinished {
+                result: SupportedFunctionReturnValue::Ok(_),
                 ..
-            }) => Icon::Tick,
-            Some(JoinSetResponseEvent {
-                response:
-                    Some(join_set_response_event::Response::DelayFinished(DelayFinished {
-                        success: true,
-                        ..
-                    })),
-                ..
-            }) => Icon::Tick,
-
+            })
+            | Some(JoinSetResponse::DelayFinished { result: Ok(()), .. }) => Icon::Tick,
             // Cancelled delay
-            Some(JoinSetResponseEvent {
-                response:
-                    Some(join_set_response_event::Response::DelayFinished(DelayFinished {
-                        success: false,
-                        ..
-                    })),
-                ..
+            Some(JoinSetResponse::DelayFinished {
+                result: Err(()), ..
             }) => Icon::Cross,
-
             // Cancelled child execution
-            Some(JoinSetResponseEvent {
-                response:
-                    Some(join_set_response_event::Response::ChildExecutionFinished(
-                        join_set_response_event::ChildExecutionFinished {
-                            value: Some(result_detail),
-                            ..
-                        },
-                    )),
+            Some(JoinSetResponse::ChildExecutionFinished {
+                result: SupportedFunctionReturnValue::ExecutionFailure(failure),
                 ..
-            }) if child_failure_is_cancelled(result_detail) => Icon::Cross,
-
+            }) if failure.kind == ExecutionFailureKind::Cancelled => Icon::Cross,
             Some(_) => Icon::Error,
-
             None => Icon::Search,
         };
 
-        let id_suffix = match &self.response {
-            Some(JoinSetResponseEvent {
-                response:
-                    Some(join_set_response_event::Response::ChildExecutionFinished(
-                        ChildExecutionFinished {
-                            child_execution_id: Some(child_execution_id),
-                            ..
-                        },
-                    )),
-                ..
-            }) => Some(id_suffix(&child_execution_id.id)),
-            Some(JoinSetResponseEvent {
-                response:
-                    Some(join_set_response_event::Response::DelayFinished(DelayFinished {
-                        delay_id: Some(delay_id),
-                        ..
-                    })),
-                ..
-            }) => Some(id_suffix(&delay_id.id)),
-            _ => None,
+        let id_suffix = match response {
+            Some(JoinSetResponse::ChildExecutionFinished {
+                child_execution_id, ..
+            }) => Some(id_suffix(child_execution_id)),
+            Some(JoinSetResponse::DelayFinished { delay_id, .. }) => Some(id_suffix(delay_id)),
+            None => None,
         };
 
         let join_next_node = tree
@@ -142,23 +79,23 @@ impl HistoryJoinNextEventProps {
             )
             .unwrap();
 
-        match &self.response {
-            Some(JoinSetResponseEvent {
-                created_at: Some(finished_at),
-                join_set_id: _,
-                response:
-                    Some(join_set_response_event::Response::ChildExecutionFinished(
-                        ChildExecutionFinished {
-                            child_execution_id: Some(child_execution_id),
-                            value: Some(result_detail),
-                        },
-                    )),
-            }) => {
-                tree.insert(
+        if let Some(JoinSetResponseEventOuter {
+            created_at: finished_at,
+            event: response,
+        }) = &self.response
+        {
+            match &response.event {
+                JoinSetResponse::ChildExecutionFinished {
+                    child_execution_id,
+                    finished_version: _,
+                    result,
+                } => {
+                    let child_execution_id = ExecutionId::Derived(child_execution_id.clone());
+                    tree.insert(
                     Node::new(NodeData {
                         icon: Icon::IdNumber,
                         label: html! {
-                            { self.link.link(child_execution_id.clone(), &child_execution_id.id) }
+                            { self.link.link(child_execution_id.clone(), &child_execution_id.to_string()) }
                         },
                         ..Default::default()
                     }),
@@ -166,74 +103,64 @@ impl HistoryJoinNextEventProps {
                 )
                 .unwrap();
 
-                attach_result_detail(&mut tree, &join_next_node, result_detail, None, false);
+                    attach_result_detail(
+                        &mut tree,
+                        &join_next_node,
+                        &RetVal::from(result.clone()),
+                        None,
+                        false,
+                    );
 
-                let finished_at = DateTime::from(*finished_at);
-                tree.insert(
-                    Node::new(NodeData {
-                        icon: Icon::Time,
-                        label: format!("Finished At: {finished_at}").into(),
-                        ..Default::default()
-                    }),
-                    InsertBehavior::UnderNode(&join_next_node),
-                )
-                .unwrap();
-            }
-            Some(JoinSetResponseEvent {
-                created_at: Some(finished_at),
-                join_set_id: _,
-                response:
-                    Some(join_set_response_event::Response::DelayFinished(DelayFinished {
-                        delay_id: Some(delay_id),
-                        success,
-                    })),
-            }) => {
-                let success = *success;
-                // A delay that did not succeed was cancelled.
-                let icon = if success { Icon::Time } else { Icon::Cross };
-                let delay_node = tree
-                    .insert(
+                    tree.insert(
                         Node::new(NodeData {
-                            icon: Icon::IdNumber,
-                            label: html! { {&delay_id.id} },
-                            has_caret: true,
+                            icon: Icon::Time,
+                            label: format!("Finished At: {finished_at}").into(),
                             ..Default::default()
                         }),
                         InsertBehavior::UnderNode(&join_next_node),
                     )
                     .unwrap();
-
-                let finished_at = DateTime::from(*finished_at);
-
-                tree.insert(
-                    Node::new(NodeData {
-                        icon,
-                        label: if success {
-                            format!("Finished At: {finished_at}")
-                        } else {
-                            format!("Cancelled At: {finished_at}")
-                        }
-                        .into(),
-                        ..Default::default()
-                    }),
-                    InsertBehavior::UnderNode(&delay_node),
-                )
-                .unwrap();
-            }
-            None => {}
-            other => {
-                error!("Unknown format {other:?}");
+                }
+                JoinSetResponse::DelayFinished { delay_id, result } => {
+                    let success = result.is_ok();
+                    // A delay that did not succeed was cancelled.
+                    let icon = if success { Icon::Time } else { Icon::Cross };
+                    let delay_node = tree
+                        .insert(
+                            Node::new(NodeData {
+                                icon: Icon::IdNumber,
+                                label: html! { {delay_id.to_string()} },
+                                has_caret: true,
+                                ..Default::default()
+                            }),
+                            InsertBehavior::UnderNode(&join_next_node),
+                        )
+                        .unwrap();
+                    tree.insert(
+                        Node::new(NodeData {
+                            icon,
+                            label: if success {
+                                format!("Finished At: {finished_at}")
+                            } else {
+                                format!("Cancelled At: {finished_at}")
+                            }
+                            .into(),
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&delay_node),
+                    )
+                    .unwrap();
+                }
             }
         }
 
         // Function name
-        if let Some(function) = &self.event.function {
-            let ffqn = crate::grpc::ffqn::FunctionFqn::from(function.clone());
+        if let Some(ffqn) = &self.requested_ffqn {
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::Function,
                     label: html! {
-                        <FfqnWithLinks ffqn={ffqn} fully_qualified={true} />
+                        <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} />
                     },
                     ..Default::default()
                 }),
@@ -246,7 +173,7 @@ impl HistoryJoinNextEventProps {
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Lock,
-                label: format!("Closing: {}", self.event.closing).into(),
+                label: format!("Closing: {}", self.closing).into(),
                 ..Default::default()
             }),
             InsertBehavior::UnderNode(&join_next_node),

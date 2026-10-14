@@ -6,17 +6,16 @@ use crate::{
         notification::{Notification, NotificationContext},
         pagination::page_link,
     },
-    grpc::{
-        ffqn::FunctionFqn,
-        grpc_client::{self, ExecutionId, ExecutionSummary},
-    },
+    model::ExecutionIdExt as _,
     rest,
     util::time::{RelativeAgo, TimeGranularity, human_formatted_timedelta},
 };
 use chrono::{DateTime, Utc};
+use concepts::{ExecutionId, FunctionFqn, storage::PendingState};
 use gloo::timers::callback::Timeout;
 use hashbrown::{HashMap, HashSet};
 use log::{debug, error};
+use rest_types::executions::ExecutionWithStateSer;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -206,9 +205,10 @@ impl FromStr for ExecutionsCursor {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.split_once("_") {
-            Some(("E", rest)) => Ok(ExecutionsCursor::ExecutionId(ExecutionId {
-                id: format!("E_{rest}"),
-            })),
+            Some(("E", _)) => s
+                .parse()
+                .map(ExecutionsCursor::ExecutionId)
+                .map_err(|err| format!("{err:?}")),
             Some(("Created", date)) => DateTime::from_str(date)
                 .map(ExecutionsCursor::CreatedAt)
                 .map_err(|err| err.to_string()),
@@ -225,19 +225,12 @@ impl ExecutionsCursor {
         }
     }
 
-    fn from_summary(execution: &ExecutionSummary, cursor_type: CursorType) -> Self {
+    fn from_summary(execution: &ExecutionWithStateSer, cursor_type: CursorType) -> Self {
         match cursor_type {
-            CursorType::CreatedAt => ExecutionsCursor::CreatedAt(DateTime::from(
-                execution
-                    .created_at
-                    .expect("`created_at` is sent by the server"),
-            )),
-            CursorType::ExecutionId => ExecutionsCursor::ExecutionId(
-                execution
-                    .execution_id
-                    .clone()
-                    .expect("`execution_id` is sent by the server"),
-            ),
+            CursorType::CreatedAt => ExecutionsCursor::CreatedAt(execution.created_at),
+            CursorType::ExecutionId => {
+                ExecutionsCursor::ExecutionId(execution.execution_id.clone())
+            }
         }
     }
 }
@@ -276,11 +269,11 @@ fn build_function_prefix_picker_data(app_state: &AppState) -> FunctionPrefixPick
     let mut functions_by_interface: HashMap<String, HashSet<String>> = HashMap::new();
 
     for ffqn in app_state.ffqns_to_details.keys() {
-        if ffqn.ifc_fqn.pkg_fqn.is_extension() {
+        if ffqn.ifc_fqn.is_extension() {
             continue;
         }
 
-        let package = ffqn.ifc_fqn.pkg_fqn.to_string();
+        let package = ffqn.ifc_fqn.pkg_fqn_name().to_string();
         let interface = ffqn.ifc_fqn.to_string();
         let function = ffqn.to_string();
 
@@ -597,7 +590,7 @@ fn function_prefix_input(props: &FunctionPrefixInputProps) -> Html {
                                             let function_value = function.clone();
                                             let draft_value = draft_value.clone();
                                             let function_name = FunctionFqn::from_str(function)
-                                                .map(|ffqn| ffqn.function_name)
+                                                .map(|ffqn| ffqn.function_name.to_string())
                                                 .unwrap_or_else(|_| function.clone());
                                             let is_selected = *draft_value == *function;
                                             let onclick = Callback::from(move |_| {
@@ -719,7 +712,7 @@ pub fn execution_list_page() -> Html {
                     ];
                     if let Some(cursor) = query_params.cursor {
                         let value = match cursor {
-                            ExecutionsCursor::ExecutionId(id) => id.id,
+                            ExecutionsCursor::ExecutionId(id) => id.to_string(),
                             ExecutionsCursor::CreatedAt(date) => date.to_rfc3339(),
                         };
                         rest_query.push(("cursor", value));
@@ -879,16 +872,11 @@ pub fn execution_list_page() -> Html {
     // Render logic
     if let Some(response) = response_state.deref() {
         let rows = response.iter().map(|execution| {
-            let ffqn = FunctionFqn::from(
-                execution.function_name.clone().expect("function_name missing"),
-            );
-            let status = Some(
-                execution.current_status.clone().expect("current_status missing")
-                    .status.expect("status detail missing")
-            );
-            let execution_id = execution.execution_id.clone().expect("execution_id missing");
-            let deployment_id = execution.deployment_id.clone().expect("deployment_id missing").id;
-            let component_digest = execution.component_digest.as_ref().expect("component_digest missing").digest.as_str();
+            let ffqn: FunctionFqn = execution.ffqn.clone();
+            let status = Some(execution.pending_state.clone());
+            let execution_id = execution.execution_id.clone();
+            let deployment_id = execution.deployment_id;
+            let component_digest = &execution.component_digest;
 
             let hide_submit = !app_state.ffqns_to_details.contains_key(&ffqn);
             let is_top_level = execution_id.parent_id().is_none();
@@ -901,9 +889,9 @@ pub fn execution_list_page() -> Html {
                     let input: HtmlInputElement = event.target_unchecked_into();
                     let mut selected = selected_executions.deref().clone();
                     if input.checked() {
-                        selected.insert(execution_id.id.clone());
+                        selected.insert(execution_id.to_string());
                     } else {
-                        selected.remove(&execution_id.id);
+                        selected.remove(&execution_id.to_string());
                     }
                     selected_executions.set(selected);
                     delete_armed.set(false);
@@ -911,20 +899,20 @@ pub fn execution_list_page() -> Html {
                 })
             };
 
-            let created_at: DateTime<Utc> = execution.created_at.expect("`created_at` is sent").into();
+            let created_at: DateTime<Utc> = execution.created_at;
             // Prefer the live status polled by `ExecutionStatus` over the fetched one.
             let current_status = status_cache
                 .statuses
                 .get(&execution_id)
                 .and_then(extract_status)
                 .or_else(|| status.clone());
-            let durated = if let Some(grpc_client::execution_status::Status::Finished(finished)) = &current_status {
-                Some(DateTime::from(finished.finished_at.unwrap()) - DateTime::from(execution.first_scheduled_at.unwrap()))
+            let durated = if let Some(PendingState::Finished(finished)) = &current_status {
+                Some(finished.finished_at - execution.first_scheduled_at)
             } else {
                 None
             };
             html! {
-                <article key={execution_id.id.clone()} class="execution-list-item">
+                <article key={execution_id.to_string()} class="execution-list-item">
                     <div class="execution-summary">
                         <div class="execution-title">
                             if *delete_mode && is_top_level {
@@ -933,7 +921,7 @@ pub fn execution_list_page() -> Html {
                                     class="execution-select"
                                     title="Select execution tree for deletion"
                                     aria-label={format!("Select execution {execution_id}")}
-                                    checked={selected_executions.contains(&execution_id.id)}
+                                    checked={selected_executions.contains(&execution_id.to_string())}
                                     onchange={on_selection_toggle}
                                     disabled={*delete_in_flight}
                                 />

@@ -1,14 +1,13 @@
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::{
-    components::execution_detail::tree_component::TreeComponent,
-    grpc::{grpc_client, version::VersionType},
+    components::execution_detail::tree_component::TreeComponent, model::ComponentTypeExt as _,
 };
-use chrono::DateTime;
+use concepts::storage::{Locked, VersionType};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct LockedEventProps {
-    pub locked: grpc_client::execution_event::Locked,
+    pub locked: Locked,
     pub version: VersionType,
     pub is_selected: bool,
 }
@@ -34,11 +33,7 @@ impl LockedEventProps {
             .unwrap();
 
         // Expires at
-        let expires_at = DateTime::from(
-            locked
-                .lock_expires_at
-                .expect("`lock_expires_at` is sent by the server"),
-        );
+        let expires_at = locked.lock_expires_at;
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Time,
@@ -64,14 +59,11 @@ impl LockedEventProps {
 
         // component id
         {
-            let component_id = locked
-                .component_id
-                .as_ref()
-                .expect("Locked.component_id is sent");
+            let component_id = &locked.component_id;
             let component_id_node = tree
                 .insert(
                     Node::new(NodeData {
-                        icon: component_id.component_type().as_icon(),
+                        icon: component_id.component_type.as_icon(),
                         label: html! {
                             { format!("Component: {}",  component_id.name) }
                         },
@@ -83,10 +75,10 @@ impl LockedEventProps {
                 .unwrap();
             tree.insert(
                 Node::new(NodeData {
-                    icon: component_id.component_type().as_icon(),
+                    icon: component_id.component_type.as_icon(),
                     label: html! {<>
                         {"Component Digest: "}
-                        <input type="text" value={ component_id.digest.as_ref().expect("component_id.digest is sent").digest.clone() } />
+                        <input type="text" value={ component_id.component_digest.to_string() } />
                     </>},
                     has_caret: false,
                     ..Default::default()
@@ -96,9 +88,9 @@ impl LockedEventProps {
             .unwrap();
             tree.insert(
                 Node::new(NodeData {
-                    icon: component_id.component_type().as_icon(),
+                    icon: component_id.component_type.as_icon(),
                     label: html! {
-                        { format!("Component Type: {}",  component_id.component_type()) }
+                        { format!("Component Type: {}",  component_id.component_type) }
                     },
                     has_caret: false,
                     ..Default::default()
@@ -113,7 +105,7 @@ impl LockedEventProps {
             Node::new(NodeData {
                 icon: Icon::Antenna,
                 label: html! {
-                    { format!("Deployment ID: {}", locked.deployment_id.as_ref().expect("Locked.deployment_id is sent").id) }
+                    { format!("Deployment ID: {}", locked.deployment_id) }
                 },
                 has_caret: false,
                 ..Default::default()
@@ -123,7 +115,7 @@ impl LockedEventProps {
         .unwrap();
 
         // executor id
-        if !locked.executor_id.is_empty() {
+        {
             tree.insert(
                 Node::new(NodeData {
                     icon: Icon::IdNumber,
@@ -137,7 +129,8 @@ impl LockedEventProps {
         }
 
         // retry config
-        if let Some(retry_config) = &locked.retry_config {
+        {
+            let retry_config = &locked.retry_config;
             let retry_node = tree
                 .insert(
                     Node::new(NodeData {
@@ -159,10 +152,10 @@ impl LockedEventProps {
                 )
                 .unwrap();
             }
-            if let Some(backoff) = &retry_config.retry_exp_backoff {
+            {
                 tree.insert(
                     Node::new(NodeData {
-                        label: format!("Exp Backoff: {}s", backoff.seconds).into(),
+                        label: format!("Exp Backoff: {:?}", retry_config.retry_exp_backoff).into(),
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(&retry_node),

@@ -4,9 +4,11 @@ use crate::{
         component_detail::ComponentDetail,
         copy_button::CopyButton,
     },
-    grpc::grpc_client,
+    model::{ComponentConfigExt as _, ComponentTypeExt as _},
 };
+use concepts::{ComponentId, prefixed_ulid::DeploymentId};
 use hashbrown::HashMap;
+use rest_types::{components::ComponentConfig, deployment::FileRefSer};
 use serde_json::Value;
 use std::{path::PathBuf, rc::Rc};
 use web_sys::HtmlInputElement;
@@ -148,7 +150,7 @@ fn backtrace_sources(table: &Value) -> Vec<SourceView> {
 fn script_source(
     table: &Value,
     inline_extension: Option<&str>,
-    files: &[grpc_client::FileRef],
+    files: &[FileRefSer],
 ) -> Option<SourceView> {
     if let Some(content) = table.get("content").and_then(Value::as_str) {
         let file_name = table.get("location").and_then(Value::as_str).map_or_else(
@@ -216,10 +218,7 @@ fn deployment_relative_path(location: &str) -> String {
 
 /// Build the per-section view model from a parsed `deployment.toml` manifest and the
 /// deployment-owned `files` it references.
-pub fn build_sections_from_manifest(
-    manifest: &Value,
-    files: &[grpc_client::FileRef],
-) -> Vec<SectionView> {
+pub fn build_sections_from_manifest(manifest: &Value, files: &[FileRefSer]) -> Vec<SectionView> {
     let mut sections = Vec::new();
     for (toml_key, title) in MANIFEST_SECTIONS {
         let Some(tables) = manifest.get(toml_key).and_then(Value::as_array) else {
@@ -349,7 +348,7 @@ pub fn render_config_value(value: &Value) -> Html {
 pub struct CollapsibleSourceProps {
     pub source: SourceView,
     /// Needed for fetching sources via the `GetBacktraceSource` RPC.
-    pub component_id: Option<grpc_client::ComponentId>,
+    pub component_id: Option<ComponentId>,
 }
 
 struct PreparedSource {
@@ -533,9 +532,9 @@ fn source_summary(source: &SourceView) -> Html {
 pub struct DeploymentConfigViewProps {
     pub sections: Vec<SectionView>,
     /// Component name -> component metadata resolved via `ListComponents` for this deployment.
-    pub components_by_name: Rc<HashMap<String, grpc_client::Component>>,
+    pub components_by_name: Rc<HashMap<String, ComponentConfig>>,
     /// The deployment these components belong to.
-    pub deployment_id: grpc_client::DeploymentId,
+    pub deployment_id: DeploymentId,
     /// Name of the component to open and scroll to.
     #[prop_or_default]
     pub focused_component: Option<String>,
@@ -611,7 +610,7 @@ pub fn deployment_config_view(
                                         component={component.clone()}
                                         metadata={components_by_name.get(&component.name).cloned().map(Rc::new)}
                                         deployment_components={components_by_name.clone()}
-                                        deployment_id={deployment_id.clone()}
+                                        deployment_id={*deployment_id}
                                         focused={focused_component.as_ref() == Some(&component.name)}
                                     />
                                 })}
@@ -627,9 +626,9 @@ pub fn deployment_config_view(
 #[derive(Properties, PartialEq)]
 struct DeploymentComponentCardProps {
     component: ComponentView,
-    metadata: Option<Rc<grpc_client::Component>>,
-    deployment_components: Rc<HashMap<String, grpc_client::Component>>,
-    deployment_id: grpc_client::DeploymentId,
+    metadata: Option<Rc<ComponentConfig>>,
+    deployment_components: Rc<HashMap<String, ComponentConfig>>,
+    deployment_id: DeploymentId,
     focused: bool,
 }
 
@@ -667,7 +666,7 @@ fn deployment_component_card(props: &DeploymentComponentCardProps) -> Html {
             <summary>
                 <span class="component-name">{&props.component.name}</span>
                 if let Some(metadata) = &props.metadata {
-                    <span class="deployment-component-type">{metadata.as_type().as_label()}</span>
+                    <span class="deployment-component-type">{metadata.component_type().as_label()}</span>
                 }
             </summary>
             if *open {
@@ -675,7 +674,7 @@ fn deployment_component_card(props: &DeploymentComponentCardProps) -> Html {
                     if let Some(metadata) = &props.metadata {
                         <ComponentDetail
                             component={metadata.clone()}
-                            deployment_id={props.deployment_id.clone()}
+                            deployment_id={props.deployment_id}
                             deployment_components={props.deployment_components.clone()}
                         />
                     } else {

@@ -1,8 +1,9 @@
 use crate::{
     components::ffqn_with_links::FfqnWithLinks,
-    grpc::{ffqn::FunctionFqn, ifc_fqn::IfcFqn, pkg_fqn::PkgFqn},
+    model::{ifc_fqn_from_wit, pkg_fqn_from_wit},
 };
 use anyhow::{Context, bail};
+use concepts::{FunctionFqn, IfcFqnName, PkgFqn};
 use hashbrown::HashSet;
 use std::path::PathBuf;
 use wit_component::{Output, TypeKind, WitPrinter};
@@ -59,14 +60,14 @@ pub fn print_interface_with_single_fn(
 fn print_interface_with_imported_types(
     printer: &mut WitPrinter<OutputToHtml>,
     resolve: &Resolve,
-    ifc_fqn: &IfcFqn,
-    additional_ifc_fqn: &mut HashSet<IfcFqn>,
+    ifc_fqn: &IfcFqnName,
+    additional_ifc_fqn: &mut HashSet<IfcFqnName>,
     is_root_package: bool,
 ) -> Result<(), anyhow::Error> {
     if let Some((_pkg_id, package)) = &resolve
         .packages
         .iter()
-        .find(|(_, package)| PkgFqn::from(&package.name) == ifc_fqn.pkg_fqn)
+        .find(|(_, package)| pkg_fqn_from_wit(&package.name) == ifc_fqn.pkg_fqn_name())
     {
         if !is_root_package {
             printer.output.newline();
@@ -84,7 +85,7 @@ fn print_interface_with_imported_types(
         let (ifc_name, ifc_id) = package
             .interfaces
             .iter()
-            .find(|(name, _id)| ifc_fqn.ifc_name == **name)
+            .find(|(name, _id)| ifc_fqn.ifc_name() == name.as_str())
             .with_context(|| format!("interface not found - {ifc_fqn}"))?;
 
         let ifc_id = *ifc_id;
@@ -130,7 +131,8 @@ fn print_interface_with_imported_types(
                     let iface = &resolve.interfaces[ifc_id];
                     if let Some(imported_pkg_id) = iface.package {
                         let imported_pkg = &resolve.packages[imported_pkg_id];
-                        if let Ok(ifc_fqn) = PkgFqn::from(&imported_pkg.name).ifc_fqn(iface)
+                        if let Ok(ifc_fqn) =
+                            ifc_fqn_from_wit(&pkg_fqn_from_wit(&imported_pkg.name), iface)
                             && additional_ifc_fqn.insert(ifc_fqn.clone())
                         {
                             print_interface_with_imported_types(
@@ -272,7 +274,7 @@ impl Output for OutputToHtml {
             TypeKind::FunctionFreestanding
             | TypeKind::FunctionMethod
             | TypeKind::FunctionStatic => {
-                if matches!(&self.filter, PrintFilter::SubmitPage(ffqn) if ffqn.function_name != src)
+                if matches!(&self.filter, PrintFilter::SubmitPage(ffqn) if &*ffqn.function_name != src)
                 {
                     self.ignore_until_end_of_line = 2; // after the function is printed an empty line is added.
                 }
@@ -301,16 +303,14 @@ impl Output for OutputToHtml {
             &self.current_interface,
             &kind,
         ) {
+            let pkg_fqn = PkgFqn {
+                namespace: namespace.clone(),
+                package_name: package_name.clone(),
+                version: version.clone(),
+            };
             let ffqn = FunctionFqn {
-                ifc_fqn: IfcFqn {
-                    pkg_fqn: PkgFqn {
-                        namespace: namespace.clone(),
-                        package_name: package_name.clone(),
-                        version: version.clone(),
-                    },
-                    ifc_name: ifc.clone(),
-                },
-                function_name: src.to_string(),
+                ifc_fqn: IfcFqnName::from_pkg_fqn(&pkg_fqn, ifc),
+                function_name: src.to_string().into(),
             };
             if self.render_ffqn_with_links.contains(&ffqn) {
                 self.indent_if_needed();

@@ -1,8 +1,8 @@
 use crate::{
     app::{AppState, Route},
     components::deployment_detail_page::DeploymentQuery,
-    grpc::grpc_client::{ComponentId, DeploymentId},
 };
+use concepts::{ComponentId, prefixed_ulid::DeploymentId};
 use log::error;
 use serde::{Deserialize, Serialize};
 use yew::prelude::*;
@@ -11,7 +11,7 @@ use yew_router::hooks::{use_location, use_navigator};
 /// Query of the former component detail page: the deployment the component belongs to.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 struct ComponentQuery {
-    deployment_id: Option<String>,
+    deployment_id: Option<DeploymentId>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -36,14 +36,14 @@ pub fn component_redirect(
         .as_ref()
         .is_some_and(|component_id| app_state.components_by_id.contains_key(component_id));
     let target = match query_deployment_id {
-        Some(id) if !in_active_deployment => Some(DeploymentId { id }),
-        _ => app_state.current_deployment_id.clone(),
+        Some(id) if !in_active_deployment => Some(id),
+        _ => app_state.current_deployment_id,
     };
     let component = component_id
         .as_ref()
-        .map(|component_id| component_id.name.clone());
-    use_effect_with((target.clone(), component), move |(target, component)| {
-        if let Some(deployment_id) = target.clone() {
+        .map(|component_id| component_id.name.to_string());
+    use_effect_with((target, component), move |(target, component)| {
+        if let Some(deployment_id) = *target {
             let query = DeploymentQuery {
                 component: component.clone(),
             };

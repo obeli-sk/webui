@@ -1,11 +1,11 @@
-use crate::grpc::version::VersionType;
+use crate::components::execution_detail::tree_component::TreeComponent;
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use crate::{components::execution_detail::tree_component::TreeComponent, grpc::grpc_client};
+use concepts::{JoinSetId, storage::VersionType};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HistoryJoinNextTooManyEventProps {
-    pub event: grpc_client::execution_event::history_event::JoinNextTooMany,
+    pub join_set_id: JoinSetId,
     pub version: VersionType,
     pub is_selected: bool,
 }
@@ -18,11 +18,7 @@ impl HistoryJoinNextTooManyEventProps {
             .unwrap();
 
         // Add node for JoinSet ID and details
-        let join_set_id = self
-            .event
-            .join_set_id
-            .as_ref()
-            .expect("JoinNextTooMany.join_set_id is sent");
+        let join_set_id = self.join_set_id.to_string();
 
         let icon = Icon::Error;
 

@@ -15,24 +15,19 @@ use crate::{
             },
         },
     },
-    grpc::{
-        execution_id::EXECUTION_ID_INFIX,
-        ffqn::FunctionFqn,
-        grpc_client::{
-            self, ComponentType, ExecutionEvent, ExecutionId, JoinSetId, JoinSetResponseEvent,
-            ResponseWithCursor, SupportedFunctionResult,
-            execution_event::{
-                self, Finished, TemporarilyFailed, TemporarilyTimedOut,
-                history_event::{JoinSetRequest, join_set_request},
-            },
-            http_client_trace, join_set_response_event, supported_function_result,
-        },
-        version::VersionType,
-    },
+    model::{EXECUTION_ID_INFIX, ExecutionIdExt as _, FinishedResultKind},
     tree::Icon,
 };
 use assert_matches::assert_matches;
 use chrono::{DateTime, Utc};
+use concepts::{
+    ComponentType, ExecutionId, JoinSetId, SupportedFunctionReturnValue,
+    prefixed_ulid::{DelayId, RunId},
+    storage::{
+        ExecutionEvent, ExecutionRequest, HistoryEvent, JoinSetRequest, JoinSetResponse,
+        JoinSetResponseEventOuter, PendingState, ResponseWithCursor, VersionType,
+    },
+};
 use gloo::events::EventListener;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
@@ -44,7 +39,7 @@ use yew_router::prelude::Link;
 
 #[derive(Properties, PartialEq)]
 pub struct TraceViewProps {
-    pub execution_id: grpc_client::ExecutionId,
+    pub execution_id: ExecutionId,
 }
 
 pub const PAGE: u32 = 500;
@@ -77,7 +72,7 @@ enum TraceviewStateAction {
         execution_id: ExecutionId,
         new_events: Vec<ExecutionEvent>,
         new_responses: Vec<ResponseWithCursor>,
-        current_status: grpc_client::execution_status::Status,
+        current_status: PendingState,
         is_finished: bool,
     },
     RequestNextPage {
@@ -92,8 +87,8 @@ enum TraceviewStateAction {
 struct TraceViewState {
     execution_ids_to_fetch_state: HashMap<ExecutionId, ExecutionFetchState>,
     events: HashMap<ExecutionId, Vec<ExecutionEvent>>,
-    responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
-    statuses: HashMap<ExecutionId, grpc_client::execution_status::Status>,
+    responses: HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
+    statuses: HashMap<ExecutionId, PendingState>,
     expanded_nodes: HashMap<String, bool>,
     hide_finished: bool,
     show_delays: bool,
@@ -167,13 +162,8 @@ impl Reducible for TraceViewState {
 
                 let join_set_to_resps = this.responses.entry(execution_id.clone()).or_default();
                 for response in new_responses {
-                    let response = response
-                        .event
-                        .expect("`event` is sent in `ResponseWithCursor`");
-                    let join_set_id = response
-                        .join_set_id
-                        .clone()
-                        .expect("`join_set_id` is sent in `JoinSetResponseEvent`");
+                    let response = response.event;
+                    let join_set_id = response.event.join_set_id.clone();
                     let execution_responses = join_set_to_resps.entry(join_set_id).or_default();
                     execution_responses.push(response);
                 }
@@ -298,17 +288,12 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         let responses = responses.get(execution_id).unwrap_or(&dummy_response_map);
         let join_next_version_to_response = compute_join_next_to_response(events, responses);
         // Build map of child execution ID -> Created event from fetched child events
-        let child_created_events: hashbrown::HashMap<
-            grpc_client::ExecutionId,
-            execution_event::Created,
-        > = all_events
+        let child_created_events: HashMap<ExecutionId, concepts::storage::Created> = all_events
             .iter()
             .filter(|(id, _)| *id != execution_id)
             .filter_map(|(id, evts)| {
                 evts.first().and_then(|e| match &e.event {
-                    Some(execution_event::Event::Created(created)) => {
-                        Some((id.clone(), created.clone()))
-                    }
+                    ExecutionRequest::Created(created) => Some((id.clone(), created.clone())),
                     _ => None,
                 })
             })
@@ -316,14 +301,13 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         events
             .iter()
             .filter(|event| {
-                let event_inner = event.event.as_ref().expect("event is sent by the server");
                 !matches!(
-                    event_inner,
-                    execution_event::Event::Locked(..)
-                        | execution_event::Event::Unlocked(..)
-                        | execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
-                            event: Some(execution_event::history_event::Event::JoinSetCreated(_))
-                        })
+                    event.event,
+                    ExecutionRequest::Locked(..)
+                        | ExecutionRequest::Unlocked(..)
+                        | ExecutionRequest::HistoryEvent {
+                            event: HistoryEvent::JoinSetCreate { .. }
+                        }
                 )
             })
             .map(|event| {
@@ -334,8 +318,8 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                     ExecutionLink::Trace,
                     false,
                 );
-                let trace_jump = version_to_group.get(&event.version).map(|group| {
-                    let version = event.version;
+                let version = event.version.0;
+                let trace_jump = version_to_group.get(&version).map(|group| {
                     let on_highlight = {
                         let group = group.clone();
                         Callback::from(move |e: MouseEvent| {
@@ -356,13 +340,13 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
                         </button>
                     }
                 });
-                let backtrace_jump = event.backtrace_id.map(|version| html! {
-                    <BacktraceJump execution_id={execution_id.clone()} {version} />
+                let backtrace_jump = event.backtrace_id.as_ref().map(|backtrace_id| html! {
+                    <BacktraceJump execution_id={execution_id.clone()} version={backtrace_id.0} />
                 });
 
                 if trace_jump.is_some() || backtrace_jump.is_some() {
                     html! {
-                        <div id={format!("trace-event-{}", event.version)} class="trace-detail-event">
+                        <div id={format!("trace-event-{version}")} class="trace-detail-event">
                             <div class="trace-detail-actions">
                                 {trace_jump}
                                 {backtrace_jump}
@@ -502,7 +486,7 @@ fn on_state_change(
         wasm_bindgen_futures::spawn_local(async move {
             trace!("list_execution_events {cursors:?}");
             let response = crate::rest::events::history_page(
-                &execution_id.id,
+                &execution_id,
                 cursors.version_from,
                 cursors.responses_cursor_from,
                 PAGE,
@@ -520,28 +504,24 @@ fn on_state_change(
 
                     let last_event = server_resp.events.last();
                     let is_finished = matches!(
-                        last_event.and_then(|e| e.event.as_ref()),
-                        Some(execution_event::Event::Finished(_))
+                        last_event.map(|e| &e.event),
+                        Some(ExecutionRequest::Finished { .. })
                     );
                     let cursors = Cursors {
                         version_from: last_event
-                            .map(|e| e.version + 1)
+                            .map(|e| e.version.0 + 1)
                             .unwrap_or(cursors.version_from),
                         responses_cursor_from: server_resp
                             .responses
                             .last()
-                            .map(|resp| resp.cursor)
+                            .map(|resp| resp.cursor.0)
                             .unwrap_or(cursors.responses_cursor_from),
                     };
                     trace_view_state.dispatch(TraceviewStateAction::SavePage {
                         execution_id: execution_id.clone(),
                         new_events: server_resp.events,
                         new_responses: server_resp.responses,
-                        current_status: server_resp
-                            .current_status
-                            .expect("`current_status` is sent")
-                            .status
-                            .expect("`status` is sent"),
+                        current_status: server_resp.current_status.pending_state,
                         is_finished,
                     });
                     if !is_finished {
@@ -569,41 +549,33 @@ fn on_state_change(
 /// A submit without an unambiguous join-next maps to a singleton group of just itself.
 pub(crate) fn compute_submit_await_version_groups(
     events: &[ExecutionEvent],
-    responses: &HashMap<JoinSetId, Vec<JoinSetResponseEvent>>,
+    responses: &HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>,
 ) -> HashMap<VersionType, Vec<VersionType>> {
-    let mut submit_of_child: HashMap<&ExecutionId, VersionType> = HashMap::new();
-    let mut submit_of_delay: HashMap<&grpc_client::DelayId, VersionType> = HashMap::new();
+    let mut submit_of_child: HashMap<ExecutionId, VersionType> = HashMap::new();
+    let mut submit_of_delay: HashMap<&DelayId, VersionType> = HashMap::new();
     let mut submits_by_join_set: HashMap<&JoinSetId, Vec<VersionType>> = HashMap::new();
     for event in events {
-        if let Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
+        if let ExecutionRequest::HistoryEvent {
             event:
-                Some(execution_event::history_event::Event::JoinSetRequest(JoinSetRequest {
+                HistoryEvent::JoinSetRequest {
                     join_set_id,
-                    join_set_request: Some(join_set_request),
-                })),
-        })) = &event.event
+                    request,
+                },
+        } = &event.event
         {
-            let submit_version = match join_set_request {
-                join_set_request::JoinSetRequest::ChildExecutionRequest(child_req) => {
-                    if let Some(child_execution_id) = created_child_execution_id(child_req) {
-                        submit_of_child.insert(child_execution_id, event.version);
-                        Some(event.version)
-                    } else {
-                        None
-                    }
-                }
-                join_set_request::JoinSetRequest::DelayRequest(delay_req) => {
-                    if let Some(delay_id) = &delay_req.delay_id {
-                        submit_of_delay.insert(delay_id, event.version);
-                        Some(event.version)
-                    } else {
-                        None
-                    }
+            let version = event.version.0;
+            let submit_version = match request {
+                JoinSetRequest::ChildExecutionRequest { .. } => created_child_execution_id(request)
+                    .map(|child_execution_id| {
+                        submit_of_child.insert(child_execution_id, version);
+                        version
+                    }),
+                JoinSetRequest::DelayRequest { delay_id, .. } => {
+                    submit_of_delay.insert(delay_id, version);
+                    Some(version)
                 }
             };
-            if let (Some(join_set_id), Some(submit_version)) =
-                (join_set_id.as_ref(), submit_version)
-            {
+            if let Some(submit_version) = submit_version {
                 submits_by_join_set
                     .entry(join_set_id)
                     .or_default()
@@ -614,20 +586,15 @@ pub(crate) fn compute_submit_await_version_groups(
 
     let mut groups: HashMap<VersionType, Vec<VersionType>> = HashMap::new();
     for (join_next_version, response) in compute_join_next_to_response(events, responses) {
-        let submit_version = match response.response.as_ref() {
-            Some(join_set_response_event::Response::ChildExecutionFinished(
-                join_set_response_event::ChildExecutionFinished {
-                    child_execution_id: Some(child_execution_id),
-                    ..
-                },
-            )) => submit_of_child.get(child_execution_id).copied(),
-            Some(join_set_response_event::Response::DelayFinished(
-                join_set_response_event::DelayFinished {
-                    delay_id: Some(delay_id),
-                    ..
-                },
-            )) => submit_of_delay.get(delay_id).copied(),
-            _ => None,
+        let submit_version = match &response.event.event {
+            JoinSetResponse::ChildExecutionFinished {
+                child_execution_id, ..
+            } => submit_of_child
+                .get(&ExecutionId::Derived(child_execution_id.clone()))
+                .copied(),
+            JoinSetResponse::DelayFinished { delay_id, .. } => {
+                submit_of_delay.get(delay_id).copied()
+            }
         };
         if let Some(submit_version) = submit_version {
             let group = vec![submit_version, join_next_version];
@@ -637,31 +604,29 @@ pub(crate) fn compute_submit_await_version_groups(
     }
 
     for event in events {
-        let Some(execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
-            event: Some(execution_event::history_event::Event::JoinNext(join_next)),
-        })) = &event.event
+        let ExecutionRequest::HistoryEvent {
+            event: HistoryEvent::JoinNext { join_set_id, .. },
+        } = &event.event
         else {
             continue;
         };
-        if groups.contains_key(&event.version) {
+        let version = event.version.0;
+        if groups.contains_key(&version) {
             continue;
         }
-        let Some(join_set_id) = join_next.join_set_id.as_ref() else {
-            continue;
-        };
         let mut unmatched_submits = submits_by_join_set
             .get(join_set_id)
             .into_iter()
             .flatten()
-            .filter(|submit_version| **submit_version < event.version)
+            .filter(|submit_version| **submit_version < version)
             .filter(|submit_version| !groups.contains_key(*submit_version));
         let Some(submit_version) = unmatched_submits.next().copied() else {
             continue;
         };
         if unmatched_submits.next().is_none() {
-            let group = vec![submit_version, event.version];
+            let group = vec![submit_version, version];
             groups.insert(submit_version, group.clone());
-            groups.insert(event.version, group);
+            groups.insert(version, group);
         }
     }
 
@@ -684,8 +649,8 @@ fn compute_root_trace(
     execution_id: &ExecutionId,
     is_root: bool,
     events_map: &HashMap<ExecutionId, Vec<ExecutionEvent>>,
-    responses_map: &HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
-    statuses_map: &HashMap<ExecutionId, grpc_client::execution_status::Status>,
+    responses_map: &HashMap<ExecutionId, HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
+    statuses_map: &HashMap<ExecutionId, PendingState>,
     trace_view_state: &UseReducerHandle<TraceViewState>,
     missing_ids: &mut Vec<ExecutionId>,
     expandable_missing_children: &mut HashMap<String, Vec<ExecutionId>>,
@@ -711,31 +676,17 @@ fn compute_root_trace(
     };
 
     let last_event = events.last().expect("not found is sent as an error");
-    let is_finished = matches!(last_event.event, Some(execution_event::Event::Finished(_)));
+    let is_finished = matches!(last_event.event, ExecutionRequest::Finished { .. });
     let responses = responses_map.get(execution_id);
     let mut last_event_at = compute_last_event_at(last_event, is_finished, responses);
 
-    let create_event = events
-        .first()
-        .expect("not found is sent as an error")
-        .event
-        .as_ref()
-        .expect("`event` is sent by the server");
+    let create_event = &events.first().expect("not found is sent as an error").event;
     let create_event = assert_matches!(
         create_event,
-        grpc_client::execution_event::Event::Created(created) => created
+        ExecutionRequest::Created(created) => created
     );
-    let execution_scheduled_at = DateTime::from(
-        create_event
-            .scheduled_at
-            .expect("`scheduled_at` is sent by the server"),
-    );
-
-    let component_type = create_event
-        .component_id
-        .as_ref()
-        .map(|component_id| component_id.component_type());
-    let is_stub = component_type == Some(ComponentType::ActivityStub);
+    let execution_scheduled_at = create_event.scheduled_at;
+    let is_stub = create_event.component_id.component_type == ComponentType::ActivityStub;
 
     let node_key = execution_id.to_string();
     let child_ids_to_results = compute_child_execution_id_to_child_execution_finished(responses);
@@ -746,50 +697,50 @@ fn compute_root_trace(
     let children: Vec<TraceData> = events
             .iter()
             .filter_map(|event| {
-                let event_created_at = DateTime::from(event.created_at.expect("event.created_at is sent"));
-                let event_inner = event.event.as_ref().expect("event is sent by the server");
-                match event_inner {
+                let event_created_at = event.created_at;
+                let version = event.version.0;
+                match &event.event {
                     // Add HTTP Client traces
-                    execution_event::Event::TemporarilyFailed(TemporarilyFailed {
-                        http_client_traces,
+                    ExecutionRequest::TemporarilyFailed {
+                        http_client_traces: Some(http_client_traces),
                         ..
-                    })
-                    | execution_event::Event::TemporarilyTimedOut(TemporarilyTimedOut{
-                        http_client_traces,
+                    }
+                    | ExecutionRequest::TemporarilyTimedOut {
+                        http_client_traces: Some(http_client_traces),
                         ..
-                    })
-                    | execution_event::Event::Finished(Finished {
-                        http_client_traces, ..
-                    }) => {
+                    }
+                    | ExecutionRequest::Finished {
+                        http_client_traces: Some(http_client_traces), ..
+                    } => {
                         let children: Vec<_> = http_client_traces
                             .iter()
                             .enumerate()
                             .map(|(idx, trace)| {
                                 let name = format!(
                                     "{method} {uri}",
-                                    method = trace.method,
-                                    uri = trace.uri,
+                                    method = trace.req.method,
+                                    uri = trace.req.uri,
                                 );
-                                let status = match trace.result {
-                                    Some(http_client_trace::Result::Status(status_code)) => BusyIntervalStatus::HttpTraceFinished(status_code),
-                                    Some(http_client_trace::Result::Error(_)) => BusyIntervalStatus::HttpTraceError,
+                                let status = match trace.resp.as_ref().map(|resp| &resp.status) {
+                                    Some(Ok(status_code)) => BusyIntervalStatus::HttpTraceFinished(u32::from(*status_code)),
+                                    Some(Err(_)) => BusyIntervalStatus::HttpTraceError,
                                     None => BusyIntervalStatus::HttpTraceNotResponded,
                                 };
-                                let node_key = format!("{execution_id}:event:{}:http:{idx}", event.version);
+                                let node_key = format!("{execution_id}:event:{version}:http:{idx}");
                                 TraceData::Child(TraceDataChild {
                                     node_key: node_key.clone(),
                                     is_expanded: is_trace_node_expanded(trace_view_state, &node_key, false),
-                                    can_expand: trace.result.is_some(),
+                                    can_expand: trace.resp.is_some(),
                                     name: Html::from(name.clone()),
                                     title: name,
                                     busy: vec![BusyInterval {
-                                        started_at: DateTime::from(trace.sent_at.expect("sent_at is sent")),
-                                        finished_at: Some(trace.finished_at.map(DateTime::from).unwrap_or(event_created_at)),
+                                        started_at: trace.req.sent_at,
+                                        finished_at: Some(trace.resp.as_ref().map_or(event_created_at, |resp| resp.finished_at)),
                                         title: None,
                                         status,
                                     }],
-                                    children: match &trace.result {
-                                        Some(http_client_trace::Result::Status(status_code)) => {
+                                    children: match trace.resp.as_ref().map(|resp| &resp.status) {
+                                        Some(Ok(status_code)) => {
                                             let name = format!("Status code: {status_code}");
                                             vec![
                                                 TraceData::Child(TraceDataChild {
@@ -805,7 +756,7 @@ fn compute_root_trace(
                                                 })
                                             ]
                                         },
-                                        Some(http_client_trace::Result::Error(error)) => {
+                                        Some(Err(error)) => {
                                             let name = format!("Failed: `{error}`");
                                             vec![
                                                 TraceData::Child(TraceDataChild {
@@ -833,21 +784,18 @@ fn compute_root_trace(
                         Some(children)
                     }
                     // Add child executions
-                    execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
-                        event:
-                            Some(execution_event::history_event::Event::JoinSetRequest(
-                                JoinSetRequest {
-                                    join_set_request: Some(join_set_request::JoinSetRequest::ChildExecutionRequest(
-                                        child_request)),
-                                    ..
-                                },
-                            )),
-                    }) => {
-                        let child_execution_id = created_child_execution_id(child_request)?;
-                        let name = if let Some(suffix) =  child_execution_id.id.strip_prefix(&format!("{execution_id}{EXECUTION_ID_INFIX}")) {
+                    ExecutionRequest::HistoryEvent {
+                        event: HistoryEvent::JoinSetRequest {
+                            request: child_request @ JoinSetRequest::ChildExecutionRequest { .. },
+                            ..
+                        },
+                    } => {
+                        let child_execution_id = &created_child_execution_id(child_request)?;
+                        let child_execution_id_str = child_execution_id.to_string();
+                        let name = if let Some(suffix) = child_execution_id_str.strip_prefix(&format!("{execution_id}{EXECUTION_ID_INFIX}")) {
                             suffix.to_string()
                         } else {
-                            child_execution_id.to_string()
+                            child_execution_id_str.clone()
                         };
 
                         // Based on responses to parent execution.
@@ -880,14 +828,14 @@ fn compute_root_trace(
                             version_to_group,
                         ) {
                             last_event_at = last_event_at.max(child_root.last_event_at);
-                            child_root.link = make_link(event.version);
+                            child_root.link = make_link(version);
                             Some(vec![TraceData::Root(child_root)])
                         } else {
                             // Child execution has no events loaded yet.
-                            let started_at = DateTime::from(event.created_at.expect("event.created_at must be sent"));
+                            let started_at = event.created_at;
                             let (interval_title, status, finished_at) =
-                                if let Some((result_detail_value, finished_at)) = child_ids_to_results.get(child_execution_id) {
-                                    let status = BusyIntervalStatus::from(result_detail_value);
+                                if let Some((retval, finished_at)) = child_ids_to_results.get(child_execution_id) {
+                                    let status = BusyIntervalStatus::ExecutionFinished(FinishedResultKind::from(retval));
                                     let duration = (*finished_at - started_at).to_std().expect("started_at must be <= finished_at");
                                     (format!("{status} in {duration:?}"), status, Some(*finished_at))
                                 } else {
@@ -913,26 +861,21 @@ fn compute_root_trace(
                                     }],
                                     children: Vec::new(),
                                     load_button: None,
-                                    link: make_link(event.version),
+                                    link: make_link(version),
                                 })
                             ])
                         }
                     },
                     // Add persistent delays
-                    execution_event::Event::HistoryVariant(execution_event::HistoryEvent {
-                        event:
-                            Some(execution_event::history_event::Event::JoinSetRequest(
-                                JoinSetRequest {
-                                    join_set_request: Some(join_set_request::JoinSetRequest::DelayRequest(delay_req)),
-                                    ..
-                                },
-                            )),
-                    }) => {
+                    ExecutionRequest::HistoryEvent {
+                        event: HistoryEvent::JoinSetRequest {
+                            request: JoinSetRequest::DelayRequest { delay_id, expires_at, paused, .. },
+                            ..
+                        },
+                    } => {
                         if !trace_view_state.show_delays {
                             return None;
                         }
-                        let delay_id = delay_req.delay_id.as_ref().expect("`delay_id` is sent in `DelayRequest`");
-                        let expires_at = DateTime::from(delay_req.expires_at.expect("`expires_at` is sent in `DelayRequest`"));
                         let started_at = event_created_at;
 
                         // "Show finished" governs finished (OK/cancelled) delays too.
@@ -957,7 +900,7 @@ fn compute_root_trace(
                                 (status, Some(finished_at), title)
                             }
                             // Not finished yet: paused, or still counting down to expiry.
-                            None if delay_req.paused => (
+                            None if *paused => (
                                 BusyIntervalStatus::DelayPaused,
                                 None,
                                 BusyIntervalStatus::DelayPaused.to_string(),
@@ -971,12 +914,13 @@ fn compute_root_trace(
 
                         // Shorten the delay id like child executions: keep only the trailing
                         // join-set part after the owning execution prefix.
+                        let delay_id = delay_id.to_string();
                         let short_name = delay_id
-                            .id
                             .rsplit_once(EXECUTION_ID_INFIX)
                             .map(|(_, suffix)| suffix)
-                            .unwrap_or(delay_id.id.as_str());
-                        let node_key = format!("{execution_id}:delay:{}", delay_id.id);
+                            .unwrap_or(delay_id.as_str())
+                            .to_string();
+                        let node_key = format!("{execution_id}:delay:{delay_id}");
                         Some(vec![
                             TraceData::Child(TraceDataChild {
                                 node_key,
@@ -988,7 +932,7 @@ fn compute_root_trace(
                                         {short_name}
                                     </span>
                                 },
-                                title: delay_id.id.clone(),
+                                title: delay_id.clone(),
                                 busy: vec![BusyInterval {
                                     started_at,
                                     finished_at,
@@ -997,7 +941,7 @@ fn compute_root_trace(
                                 }],
                                 children: Vec::new(),
                                 load_button: None,
-                                link: make_link(event.version),
+                                link: make_link(version),
                             })
                         ])
                     },
@@ -1008,7 +952,7 @@ fn compute_root_trace(
             .collect();
     let last_event_at = last_event_at; // drop mut
 
-    let mut current_locked_at: Option<(DateTime<Utc>, DateTime<Utc>, &str)> = None;
+    let mut current_locked_at: Option<(DateTime<Utc>, DateTime<Utc>, RunId)> = None;
     let mut busy = vec![BusyInterval {
         started_at: execution_scheduled_at,
         finished_at: Some(last_event_at),
@@ -1016,16 +960,11 @@ fn compute_root_trace(
         status: BusyIntervalStatus::ExecutionSinceScheduled,
     }];
     for event in events {
-        let event_inner = event.event.as_ref().unwrap();
+        let event_inner = &event.event;
         match event_inner {
-            execution_event::Event::Locked(locked) => {
-                let new_locked_at =
-                    DateTime::from(event.created_at.expect("event.created_at is always sent"));
-                let expires_at = DateTime::from(
-                    locked
-                        .lock_expires_at
-                        .expect("Locked.lock_expires_at is sent"),
-                );
+            ExecutionRequest::Locked(locked) => {
+                let new_locked_at = event.created_at;
+                let expires_at = locked.lock_expires_at;
                 let mut locked_at = new_locked_at;
                 if let Some((prev_locked_at, prev_expires_at, prev_run_id)) =
                     current_locked_at.take()
@@ -1045,37 +984,31 @@ fn compute_root_trace(
                         });
                     }
                 }
-                current_locked_at = Some((locked_at, expires_at, locked.run_id.as_str()));
+                current_locked_at = Some((locked_at, expires_at, locked.run_id));
             }
-            execution_event::Event::TemporarilyFailed(..)
-            | execution_event::Event::Unlocked(..)
-            | execution_event::Event::TemporarilyTimedOut(..)
-            | execution_event::Event::Finished(..) => {
+            ExecutionRequest::TemporarilyFailed { .. }
+            | ExecutionRequest::Unlocked(..)
+            | ExecutionRequest::TemporarilyTimedOut { .. }
+            | ExecutionRequest::Finished { .. } => {
                 let started_at = current_locked_at
                     .take()
                     .map(|(locked_at, _, _)| locked_at)
                     .unwrap_or(execution_scheduled_at); // webhooks have no locks
-                let finished_at =
-                    DateTime::from(event.created_at.expect("event.created_at is always sent"));
+                let finished_at = event.created_at;
                 let duration = (finished_at - started_at)
                     .to_std()
                     .expect("started_at must be <= finished_at");
                 let status = match event_inner {
-                    execution_event::Event::TemporarilyFailed(..) => {
+                    ExecutionRequest::TemporarilyFailed { .. } => {
                         BusyIntervalStatus::ExecutionErrorTemporary
                     }
-                    execution_event::Event::Unlocked(..) => BusyIntervalStatus::ExecutionLocked,
-                    execution_event::Event::TemporarilyTimedOut(..) => {
+                    ExecutionRequest::Unlocked(..) => BusyIntervalStatus::ExecutionLocked,
+                    ExecutionRequest::TemporarilyTimedOut { .. } => {
                         BusyIntervalStatus::ExecutionTimeoutTemporary
                     }
-                    execution_event::Event::Finished(Finished {
-                        value:
-                            Some(SupportedFunctionResult {
-                                value: Some(result_detail_value),
-                                ..
-                            }),
-                        ..
-                    }) => BusyIntervalStatus::from(result_detail_value),
+                    ExecutionRequest::Finished { retval, .. } => {
+                        BusyIntervalStatus::ExecutionFinished(FinishedResultKind::from(retval))
+                    }
                     _ => unreachable!("unexpected {event_inner:?}"),
                 };
                 let title = format!("{status} in {duration:?}");
@@ -1101,17 +1034,7 @@ fn compute_root_trace(
         });
     }
 
-    let ffqn = {
-        let first = events
-            .first()
-            .expect("checked that events is not empty")
-            .event
-            .as_ref()
-            .expect("event.event is sent");
-        let fn_name = assert_matches!(first,
-            execution_event::Event::Created(execution_event::Created{function_name: Some(fn_name), ..}) => fn_name);
-        FunctionFqn::from(fn_name.clone())
-    };
+    let ffqn = create_event.ffqn.clone();
 
     let name = html! {
         <>
@@ -1158,32 +1081,21 @@ fn is_trace_node_expanded(
 }
 
 fn compute_child_execution_id_to_child_execution_finished(
-    responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
-) -> HashMap<ExecutionId, (supported_function_result::Value, DateTime<Utc>)> {
+    responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
+) -> HashMap<ExecutionId, (SupportedFunctionReturnValue, DateTime<Utc>)> {
     responses
         .into_iter()
         .flat_map(|map| {
             map.values().flatten().filter_map(|resp| {
-                if let JoinSetResponseEvent {
-                    response:
-                        Some(join_set_response_event::Response::ChildExecutionFinished(
-                            join_set_response_event::ChildExecutionFinished {
-                                child_execution_id: Some(child_execution_id),
-                                value:
-                                    Some(SupportedFunctionResult {
-                                        value: Some(result_detail_value),
-                                        ..
-                                    }),
-                            },
-                        )),
+                if let JoinSetResponse::ChildExecutionFinished {
+                    child_execution_id,
+                    result,
                     ..
-                } = resp
+                } = &resp.event.event
                 {
-                    let created_at =
-                        DateTime::from(resp.created_at.expect("response.created_at is sent"));
                     Some((
-                        child_execution_id.clone(),
-                        (result_detail_value.clone(), created_at),
+                        ExecutionId::Derived(child_execution_id.clone()),
+                        (result.clone(), resp.created_at),
                     ))
                 } else {
                     None
@@ -1193,38 +1105,27 @@ fn compute_child_execution_id_to_child_execution_finished(
         .collect()
 }
 
-fn created_child_execution_id(
-    request: &join_set_request::ChildExecutionRequest,
-) -> Option<&ExecutionId> {
-    match request.result.as_ref() {
-        Some(join_set_request::child_execution_request::Result::Ok(_)) => {
-            request.child_execution_id.as_ref()
-        }
+/// Id of the child execution if the request actually created it.
+fn created_child_execution_id(request: &JoinSetRequest) -> Option<ExecutionId> {
+    match request {
+        JoinSetRequest::ChildExecutionRequest {
+            child_execution_id,
+            result: Ok(()),
+            ..
+        } => Some(ExecutionId::Derived(child_execution_id.clone())),
         _ => None,
     }
 }
 
 fn compute_delay_id_to_finished(
-    responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
-) -> HashMap<grpc_client::DelayId, (bool, DateTime<Utc>)> {
+    responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
+) -> HashMap<DelayId, (bool, DateTime<Utc>)> {
     responses
         .into_iter()
         .flat_map(|map| {
             map.values().flatten().filter_map(|resp| {
-                if let JoinSetResponseEvent {
-                    response:
-                        Some(join_set_response_event::Response::DelayFinished(
-                            join_set_response_event::DelayFinished {
-                                delay_id: Some(delay_id),
-                                success,
-                            },
-                        )),
-                    ..
-                } = resp
-                {
-                    let created_at =
-                        DateTime::from(resp.created_at.expect("response.created_at is sent"));
-                    Some((delay_id.clone(), (*success, created_at)))
+                if let JoinSetResponse::DelayFinished { delay_id, result } = &resp.event.event {
+                    Some((delay_id.clone(), (result.is_ok(), resp.created_at)))
                 } else {
                     None
                 }
@@ -1236,15 +1137,15 @@ fn compute_delay_id_to_finished(
 fn compute_last_event_at(
     last_event: &ExecutionEvent,
     is_finished: bool,
-    responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEvent>>>,
+    responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
 ) -> DateTime<Utc> {
-    let candidate = DateTime::from(last_event.created_at.expect("event.created_at is sent"));
+    let candidate = last_event.created_at;
 
     match responses {
         Some(responses) if !is_finished => responses
             .values()
             .filter_map(|vec| vec.last())
-            .map(|e| DateTime::from(e.created_at.expect("event.created_at is sent")))
+            .map(|e| e.created_at)
             .chain(std::iter::once(candidate))
             .max()
             .expect("chained with last_event so cannot be empty"),
@@ -1255,67 +1156,66 @@ fn compute_last_event_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grpc_client::execution_event::{Event, HistoryEvent, history_event};
+    use chrono::DateTime;
+    use concepts::{
+        FunctionFqn, Params,
+        storage::{ChildExecutionRequestError, PersistedParams, Version},
+    };
+
+    const PARENT_ID: &str = "E_01KABCDEFGHJKMNPQRSTVWXYZ0";
 
     fn join_set(name: &str) -> JoinSetId {
-        JoinSetId {
-            kind: grpc_client::join_set_id::JoinSetKind::Named as i32,
-            name: name.to_string(),
-        }
+        format!("n:{name}").parse().unwrap()
     }
 
     fn child_submit(
         version: VersionType,
         join_set_id: &JoinSetId,
-        child_id: &str,
+        child_idx: u32,
     ) -> ExecutionEvent {
-        let request = history_event::join_set_request::ChildExecutionRequest {
-            child_execution_id: Some(ExecutionId {
-                id: child_id.to_string(),
-            }),
-            result: Some(
-                history_event::join_set_request::child_execution_request::Result::Ok(
-                    Default::default(),
-                ),
-            ),
-            ..Default::default()
-        };
+        let child_execution_id = format!("{PARENT_ID}.{join_set_id}_{child_idx}")
+            .parse()
+            .unwrap();
         history_event(
             version,
-            history_event::Event::JoinSetRequest(history_event::JoinSetRequest {
-                join_set_id: Some(join_set_id.clone()),
-                join_set_request: Some(
-                    history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(request),
-                ),
-            }),
+            HistoryEvent::JoinSetRequest {
+                join_set_id: join_set_id.clone(),
+                request: JoinSetRequest::ChildExecutionRequest {
+                    child_execution_id,
+                    target_ffqn: FunctionFqn::new_static("ns:pkg/ifc", "fn"),
+                    params_hash: None,
+                    params: PersistedParams::Inline(Params::empty()),
+                    result: Ok(()),
+                },
+            },
         )
     }
 
     fn join_next(version: VersionType, join_set_id: &JoinSetId) -> ExecutionEvent {
         history_event(
             version,
-            history_event::Event::JoinNext(history_event::JoinNext {
-                join_set_id: Some(join_set_id.clone()),
-                ..Default::default()
-            }),
+            HistoryEvent::JoinNext {
+                join_set_id: join_set_id.clone(),
+                run_expires_at: DateTime::UNIX_EPOCH,
+                requested_ffqn: None,
+                closing: false,
+            },
         )
     }
 
-    fn history_event(version: VersionType, event: history_event::Event) -> ExecutionEvent {
+    fn history_event(version: VersionType, event: HistoryEvent) -> ExecutionEvent {
         ExecutionEvent {
-            version,
-            event: Some(Event::HistoryVariant(HistoryEvent { event: Some(event) })),
-            ..Default::default()
+            created_at: DateTime::UNIX_EPOCH,
+            event: ExecutionRequest::HistoryEvent { event },
+            backtrace_id: None,
+            version: Version::new(version),
         }
     }
 
     #[test]
     fn pending_join_next_pairs_with_only_unconsumed_submit() {
         let join_set_id = join_set("pending");
-        let events = vec![
-            child_submit(1, &join_set_id, "child"),
-            join_next(2, &join_set_id),
-        ];
+        let events = vec![child_submit(1, &join_set_id, 1), join_next(2, &join_set_id)];
 
         let groups = compute_submit_await_version_groups(&events, &HashMap::new());
 
@@ -1327,8 +1227,8 @@ mod tests {
     fn pending_join_next_does_not_guess_between_submits() {
         let join_set_id = join_set("ambiguous");
         let events = vec![
-            child_submit(1, &join_set_id, "first"),
-            child_submit(2, &join_set_id, "second"),
+            child_submit(1, &join_set_id, 1),
+            child_submit(2, &join_set_id, 2),
             join_next(3, &join_set_id),
         ];
 
@@ -1342,25 +1242,18 @@ mod tests {
     #[test]
     fn failed_child_submit_is_not_treated_as_an_execution() {
         let join_set_id = join_set("failed");
-        let mut event = child_submit(1, &join_set_id, "missing-child");
-        let Some(Event::HistoryVariant(HistoryEvent {
+        let mut event = child_submit(1, &join_set_id, 1);
+        let ExecutionRequest::HistoryEvent {
             event:
-                Some(history_event::Event::JoinSetRequest(history_event::JoinSetRequest {
-                    join_set_request:
-                        Some(history_event::join_set_request::JoinSetRequest::ChildExecutionRequest(
-                            request,
-                        )),
+                HistoryEvent::JoinSetRequest {
+                    request: JoinSetRequest::ChildExecutionRequest { result, .. },
                     ..
-                })),
-        })) = &mut event.event
+                },
+        } = &mut event.event
         else {
             unreachable!()
         };
-        request.result = Some(
-            history_event::join_set_request::child_execution_request::Result::Error(
-                Default::default(),
-            ),
-        );
+        *result = Err(ChildExecutionRequestError::FunctionNotFound);
 
         let groups = compute_submit_await_version_groups(&[event], &HashMap::new());
 

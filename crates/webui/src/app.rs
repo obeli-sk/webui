@@ -21,17 +21,17 @@ use crate::{
         time_display::TimeDisplayProvider,
         trace::trace_view::TraceView,
     },
-    grpc::{
-        ffqn::FunctionFqn,
-        grpc_client::{self, ComponentId, DeploymentId, ExecutionId},
-        ifc_fqn::IfcFqn,
-        version::VersionType,
-    },
     loader::{LoadedComponents, get_current_deployment_id, load_components},
+    model::ComponentConfigExt as _,
+};
+use concepts::{
+    ComponentId, ExecutionId, FunctionFqn, IfcFqnName, prefixed_ulid::DeploymentId,
+    storage::VersionType,
 };
 use gloo::timers::callback::Interval;
 use hashbrown::HashMap;
 use log::{debug, error, info};
+use rest_types::components::{ComponentConfig, FunctionMetadataLite};
 use std::{fmt::Display, ops::Deref, rc::Rc, str::FromStr};
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
@@ -42,10 +42,9 @@ const DEPLOYMENT_POLL_INTERVAL_MS: u32 = 5000;
 
 #[derive(Clone, PartialEq)]
 pub struct AppState {
-    pub components_by_id: HashMap<ComponentId, Rc<grpc_client::Component>>,
-    pub components_by_exported_ifc: HashMap<IfcFqn, Rc<grpc_client::Component>>,
-    pub ffqns_to_details:
-        hashbrown::HashMap<FunctionFqn, (grpc_client::FunctionDetail, grpc_client::ComponentId)>,
+    pub components_by_id: HashMap<ComponentId, Rc<ComponentConfig>>,
+    pub components_by_exported_ifc: HashMap<IfcFqnName, Rc<ComponentConfig>>,
+    pub ffqns_to_details: hashbrown::HashMap<FunctionFqn, (FunctionMetadataLite, ComponentId)>,
     pub current_deployment_id: Option<DeploymentId>,
 }
 
@@ -54,10 +53,11 @@ impl AppState {
     pub fn from_loaded(loaded: &LoadedComponents, deployment_id: Option<DeploymentId>) -> Self {
         let mut ffqns_to_details = hashbrown::HashMap::new();
         for (component_id, component) in &loaded.components_by_id {
-            for exported_fn_detail in component.exports.iter() {
-                let ffqn = FunctionFqn::from_fn_detail(exported_fn_detail)
-                    .expect("ffqn should be parseable");
-                ffqns_to_details.insert(ffqn, (exported_fn_detail.clone(), component_id.clone()));
+            for exported_fn_detail in component.exported_fns() {
+                ffqns_to_details.insert(
+                    exported_fn_detail.ffqn.clone(),
+                    (exported_fn_detail.clone(), component_id.clone()),
+                );
             }
         }
         Self {
@@ -140,20 +140,16 @@ pub enum Route {
     #[at("/components")]
     ComponentList,
     #[at("/component/:component_id")]
-    Component {
-        component_id: grpc_client::ComponentId,
-    },
+    Component { component_id: ComponentId },
     #[at("/deployments")]
     DeploymentList,
     #[at("/deployments/diff/:from/:to")]
     DeploymentDiff {
-        from: grpc_client::DeploymentId,
-        to: grpc_client::DeploymentId,
+        from: DeploymentId,
+        to: DeploymentId,
     },
     #[at("/deployment/:deployment_id")]
-    DeploymentDetail {
-        deployment_id: grpc_client::DeploymentId,
-    },
+    DeploymentDetail { deployment_id: DeploymentId },
     #[at("/execution/new")]
     ExecutionNew,
     #[at("/execution/submit/:ffqn")]
@@ -166,26 +162,18 @@ pub enum Route {
     #[at("/execution/list")]
     ExecutionList,
     #[at("/execution/:execution_id/log")]
-    ExecutionLog {
-        execution_id: grpc_client::ExecutionId,
-    },
+    ExecutionLog { execution_id: ExecutionId },
     #[at("/execution/:execution_id")]
-    ExecutionTrace {
-        execution_id: grpc_client::ExecutionId,
-    },
+    ExecutionTrace { execution_id: ExecutionId },
     #[at("/execution/:execution_id/debug")]
-    ExecutionDebugger {
-        execution_id: grpc_client::ExecutionId,
-    },
+    ExecutionDebugger { execution_id: ExecutionId },
     #[at("/execution/:execution_id/debug/:versions")]
     ExecutionDebuggerWithVersions {
-        execution_id: grpc_client::ExecutionId,
+        execution_id: ExecutionId,
         versions: BacktraceVersionsPath,
     },
     #[at("/execution/:execution_id/applogs")]
-    Logs {
-        execution_id: grpc_client::ExecutionId,
-    },
+    Logs { execution_id: ExecutionId },
     #[at("/admin/system-events")]
     SystemEvents,
     #[at("/admin/app-config")]
@@ -244,7 +232,7 @@ impl Route {
 #[derive(PartialEq, Properties)]
 pub struct AppProps {
     pub initial_components: LoadedComponents,
-    pub initial_deployment_id: Option<grpc_client::DeploymentId>,
+    pub initial_deployment_id: Option<DeploymentId>,
 }
 
 #[component(App)]
@@ -260,7 +248,7 @@ pub fn app(
                 <TimeDisplayProvider>
                     <AppInner
                         initial_components={initial_components.clone()}
-                        initial_deployment_id={initial_deployment_id.clone()}
+                        initial_deployment_id={*initial_deployment_id}
                     />
                 </TimeDisplayProvider>
             </NotificationProvider>
@@ -279,11 +267,10 @@ fn app_inner(
     let notifications = use_context::<NotificationContext>()
         .expect("NotificationContext should be provided by App");
 
-    let app_state =
-        use_state(|| AppState::from_loaded(initial_components, initial_deployment_id.clone()));
+    let app_state = use_state(|| AppState::from_loaded(initial_components, *initial_deployment_id));
 
     // Track deployment ID separately using a ref so the interval can read current value
-    let deployment_id_ref = use_mut_ref(|| initial_deployment_id.clone());
+    let deployment_id_ref = use_mut_ref(|| *initial_deployment_id);
 
     // Track connection state: true = connected, false = disconnected
     let was_connected_ref = use_mut_ref(|| true);
@@ -329,8 +316,7 @@ fn app_inner(
                             if should_reload {
                                 match load_components().await {
                                     Ok(loaded) => {
-                                        *deployment_id_ref.borrow_mut() =
-                                            Some(new_deployment_id.clone());
+                                        *deployment_id_ref.borrow_mut() = Some(new_deployment_id);
                                         app_state.set(AppState::from_loaded(
                                             &loaded,
                                             Some(new_deployment_id),

@@ -13,6 +13,8 @@ version.workspace = true
 [dependencies]
 base64 = "0.22"
 val-json.workspace = true
+concepts.workspace = true
+rest-types.workspace = true
 
 anyhow.workspace = true
 assert_matches.workspace = true
@@ -20,12 +22,12 @@ chrono.workspace = true
 derive_more.workspace = true
 futures.workspace = true
 getrandom.workspace = true
+getrandom04.workspace = true
 gloo.workspace = true
 js-sys.workspace = true
 hashbrown.workspace = true
 indexmap.workspace = true
 log.workspace = true
-prost.workspace = true
 rand = { workspace = true, features = ["small_rng", "std"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -33,7 +35,6 @@ serde_with.workspace = true
 similar.workspace = true
 syntect = { workspace = true, features = ["html"] }
 toml.workspace = true
-ulid.workspace = true
 wasm-bindgen-futures.workspace = true
 wasm-bindgen.workspace = true
 wasm-logger.workspace = true

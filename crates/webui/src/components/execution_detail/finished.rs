@@ -1,21 +1,23 @@
+use crate::components::{
+    execution_detail::{http_trace::attach_http_traces, tree_component::TreeComponent},
+    json_tree::{JsonValue, insert_json_into_tree},
+};
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, NodeId, TreeBuilder, TreeData};
-use crate::{
-    components::{
-        execution_detail::{http_trace::attach_http_traces, tree_component::TreeComponent},
-        json_tree::{JsonValue, insert_json_into_tree},
-    },
-    grpc::{grpc_client, version::VersionType},
+use concepts::{
+    ExecutionFailureKind,
+    storage::{VersionType, http_client_trace::HttpClientTrace},
 };
 use id_tree::Tree;
+use rest_types::executions::RetVal;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct FinishedEventProps {
-    pub result_detail: grpc_client::SupportedFunctionResult,
+    pub result_detail: RetVal,
     pub version: Option<VersionType>,
     pub is_selected: bool,
     #[prop_or_default]
-    pub http_client_traces: Vec<grpc_client::HttpClientTrace>,
+    pub http_client_traces: Vec<HttpClientTrace>,
 }
 
 fn with_version(version: Option<VersionType>, label: &'static str) -> Html {
@@ -26,39 +28,32 @@ fn with_version(version: Option<VersionType>, label: &'static str) -> Html {
     }
 }
 
-fn execution_failure_presentation(kind: grpc_client::ExecutionFailureKind) -> (&'static str, Icon) {
+fn execution_failure_presentation(kind: ExecutionFailureKind) -> (&'static str, Icon) {
     match kind {
-        grpc_client::ExecutionFailureKind::Unspecified => ("Unspecified", Icon::Error),
-        grpc_client::ExecutionFailureKind::TimedOut => ("Timed out", Icon::Time),
-        grpc_client::ExecutionFailureKind::NondeterminismDetected => {
-            ("Nondeterminism detected", Icon::Exchange)
-        }
-        grpc_client::ExecutionFailureKind::OutOfFuel => ("Out of fuel", Icon::Error),
-        grpc_client::ExecutionFailureKind::Cancelled => ("Cancelled", Icon::Cross),
-        grpc_client::ExecutionFailureKind::Uncategorized => ("Uncategorized", Icon::Error),
-        grpc_client::ExecutionFailureKind::ValueTooLarge => ("Value too large", Icon::Error),
+        ExecutionFailureKind::TimedOut => ("Timed out", Icon::Time),
+        ExecutionFailureKind::NondeterminismDetected => ("Nondeterminism detected", Icon::Exchange),
+        ExecutionFailureKind::OutOfFuel => ("Out of fuel", Icon::Error),
+        ExecutionFailureKind::Cancelled => ("Cancelled", Icon::Cross),
+        ExecutionFailureKind::Uncategorized => ("Uncategorized", Icon::Error),
+        ExecutionFailureKind::ValueTooLarge => ("Value too large", Icon::Error),
     }
 }
 
 pub fn attach_result_detail(
     tree: &mut Tree<NodeData<u32>>,
     root_id: &NodeId,
-    result_detail: &grpc_client::SupportedFunctionResult,
+    result_detail: &RetVal,
     version: Option<VersionType>,
     is_selected: bool,
 ) -> NodeId {
-    match &result_detail
-        .value
-        .as_ref()
-        .expect("`value` is sent in `ResultDetail` message")
-    {
-        grpc_client::supported_function_result::Value::Ok(ok) => {
+    match result_detail {
+        RetVal::Ok(ok) => {
             let ok_node = tree
                 .insert(
                     Node::new(NodeData {
                         icon: Icon::Tick,
                         label: with_version(version, "Succeeded"),
-                        has_caret: ok.return_value.is_some(),
+                        has_caret: ok.is_some(),
                         is_selected,
                         ..Default::default()
                     }),
@@ -66,32 +61,32 @@ pub fn attach_result_detail(
                 )
                 .unwrap();
 
-            if let Some(any) = &ok.return_value {
-                let _ = insert_json_into_tree(tree, &ok_node, JsonValue::Serialized(&any.value));
+            if let Some(value) = ok {
+                let _ = insert_json_into_tree(tree, &ok_node, JsonValue::Parsed(value));
             }
             ok_node
         }
-        grpc_client::supported_function_result::Value::Error(fallible) => {
+        RetVal::Err(fallible) => {
             let error_node = tree
                 .insert(
                     Node::new(NodeData {
                         icon: Icon::Error,
                         label: with_version(version, "Finished with error"),
-                        has_caret: fallible.return_value.is_some(),
+                        has_caret: fallible.is_some(),
                         is_selected,
                         ..Default::default()
                     }),
                     InsertBehavior::UnderNode(root_id),
                 )
                 .unwrap();
-            if let Some(any) = &fallible.return_value {
-                let _ = insert_json_into_tree(tree, &error_node, JsonValue::Serialized(&any.value));
+            if let Some(value) = fallible {
+                let _ = insert_json_into_tree(tree, &error_node, JsonValue::Parsed(value));
             }
             error_node
         }
 
-        grpc_client::supported_function_result::Value::ExecutionFailure(failure) => {
-            let (failure_kind, icon) = execution_failure_presentation(failure.kind());
+        RetVal::ExecutionFailed(failure) => {
+            let (failure_kind, icon) = execution_failure_presentation(failure.kind);
 
             let failure_node = tree
                 .insert(
@@ -176,8 +171,7 @@ mod tests {
 
     #[test]
     fn value_too_large_has_named_failure_presentation() {
-        let (label, icon) =
-            execution_failure_presentation(grpc_client::ExecutionFailureKind::ValueTooLarge);
+        let (label, icon) = execution_failure_presentation(ExecutionFailureKind::ValueTooLarge);
 
         assert_eq!(label, "Value too large");
         assert_eq!(icon, Icon::Error);
