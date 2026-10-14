@@ -1735,7 +1735,7 @@ dependencies = [
 
 [[package]]
 name = "obeli-sk-concepts"
-version = "0.43.0-rc.1"
+version = "0.43.0-rc.2"
 dependencies = [
  "arbitrary",
  "assert_matches",
@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "obeli-sk-rest-types"
-version = "0.43.0-rc.1"
+version = "0.43.0-rc.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
