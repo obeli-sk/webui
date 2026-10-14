@@ -56,23 +56,24 @@ webui/
 │   │   ├── src/
 │   │   │   ├── app.rs      # Routes and main App component
 │   │   │   ├── components/ # UI components (pages, widgets)
-│   │   │   ├── grpc/       # Protobuf view types and helpers
-│   │   │   ├── rest/       # REST response adapters
+│   │   │   ├── model.rs    # UI helper traits on top of the obelisk types
+│   │   │   ├── rest/       # REST request helpers
 │   │   │   └── util/       # Utilities (time formatting, colors)
 │   │   ├── build.rs        # CSS generation
 │   │   └── Trunk.toml      # Trunk bundler configuration
 │   └── webui-proxy/        # Static asset server and same origin API gateway
-├── obelisk/                # Git submodule with obelisk proto definitions - IMPORTANT: no changes to submodule
-│   └── proto/
-│       └── obelisk.proto   # gRPC service definitions
+├── obelisk/                # Git submodule with the obelisk types - IMPORTANT: no changes to submodule
+│   └── crates/
+│       ├── concepts/       # Domain types, used with `default-features = false`
+│       └── rest-types/     # REST request and response types
 └── flake.nix               # Nix development environment
 ```
 
 ### Key Directories
 
 - `crates/webui/src/components/` - Yew components for pages and UI elements
-- `crates/webui/src/rest/` - REST request and response adapters
-- `crates/webui/src/grpc/` - Generated protobuf view types and helpers, with no client transport
+- `crates/webui/src/rest/` - REST request helpers returning obelisk types
+- `crates/webui/src/model.rs` - Extension traits (labels, icons, colors) for obelisk types
 - `crates/webui/src/app.rs` - Route definitions and main App component
 
 ## Building and Running
@@ -117,16 +118,17 @@ This creates:
 
 ## REST API
 
-The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for response adapters. Existing UI view models use message types checked into `crates/webui/src/grpc/generated.rs`; builds generate no gRPC code.
+The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for the request helpers. Responses deserialize directly into the server's own types from `obeli-sk-concepts` and `obeli-sk-rest-types`, so the webui does not define its own serde copies of them.
 
 The `rest` module adds the bearer token and opens the authentication dialog for HTTP 401 responses.
 
 ### Key Types
 
-- `ExecutionId` - Unique identifier for executions (format: `E_<ulid>`)
-- `ContentDigest` - Component hash (format: `sha256:<64 hex chars>`)
-- `ComponentId` - Contains `component_type`, `name`, and `digest`
-- `ComponentType` - Enum: `Workflow`, `Activity`, `WebhookEndpoint`, `ActivityStub`
+- `concepts::ExecutionId` - Unique identifier for executions (format: `E_<ulid>`, derived: `E_<ulid>.<join set>_<index>`)
+- `concepts::ComponentId` - Contains `component_type`, `name`, and `component_digest`
+- `concepts::ComponentType` - Enum: `Workflow`, `Activity`, `WebhookEndpoint`, `ActivityStub`, `Cron`
+- `concepts::storage::{ExecutionEvent, ResponseWithCursor, PendingState}` - Execution history and status
+- `rest_types::*` - Response types such as `ComponentConfig`, `ExecutionWithStateSer`, `DeploymentStateSer`
 
 ## Pagination Pattern
 
@@ -183,7 +185,7 @@ let interval = Interval::new(5000, || {
 
 ## Submodule Management
 
-The `obelisk/` directory is a git submodule containing proto definitions. If you need newer proto definitions:
+The `obelisk/` directory is a git submodule providing the `concepts`, `rest-types` and `val-json` crates. If you need newer types:
 
 ```bash
 git submodule update --remote obelisk
