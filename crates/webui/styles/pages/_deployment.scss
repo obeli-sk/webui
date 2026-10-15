@@ -303,6 +303,13 @@
 
     .component-detail-tabs { margin-top: $spacing-sm; }
     .component-detail-tab-content { min-height: 0; }
+
+    .component-show-extensions {
+        display: inline-flex;
+        align-items: center;
+        gap: $spacing-xs;
+        margin: $spacing-sm 0;
+    }
 }
 
 .deployment-component-search {

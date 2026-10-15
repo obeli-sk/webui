@@ -430,6 +430,7 @@ async fn resolve_source(source: SourceView, component_id: Option<ComponentId>) -
         SourceContent::ExternalPath { path } => ResolvedSource::Note(format!(
             "Source is read at runtime from the external path `{path}`."
         )),
+        SourceContent::Binary => ResolvedSource::Note("Binary file, not shown.".to_string()),
         SourceContent::FetchFile { digest } => rest::deployments::file(&digest)
             .await
             .map(ResolvedSource::Text)

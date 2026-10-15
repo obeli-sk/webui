@@ -78,6 +78,8 @@ pub enum SourceContent {
     Fetch {
         file: String,
     },
+    /// A binary file such as a WASM component, listed but not displayable.
+    Binary,
 }
 
 const SOURCE_MARKER: &str = "(source rendered below)";
@@ -224,7 +226,10 @@ pub fn build_sections_from_manifest(manifest: &Value, files: &[FileRefSer]) -> V
         let Some(tables) = manifest.get(toml_key).and_then(Value::as_array) else {
             continue;
         };
-        let has_backtrace = matches!(*toml_key, "workflow_wasm" | "webhook_endpoint_wasm");
+        let has_backtrace = matches!(
+            *toml_key,
+            "activity_wasm" | "workflow_wasm" | "webhook_endpoint_wasm"
+        );
         let has_script = matches!(
             *toml_key,
             "workflow_js" | "activity_js" | "activity_exec" | "webhook_endpoint_js"
@@ -432,7 +437,9 @@ pub fn collapsible_source(
                     .as_ref()
                     .and_then(|result| result.as_ref().as_ref().ok())
                     .cloned(),
-                SourceContent::Oci { .. } | SourceContent::ExternalPath { .. } => None,
+                SourceContent::Oci { .. }
+                | SourceContent::ExternalPath { .. }
+                | SourceContent::Binary => None,
             }?;
             let language = PathBuf::from(&source.file_name)
                 .extension()
@@ -444,11 +451,20 @@ pub fn collapsible_source(
         },
     );
 
+    if source.content == SourceContent::Binary {
+        return html! {
+            <div class="source-block source-block-binary">
+                <div class="source-summary">{ source_summary_contents(source) }</div>
+            </div>
+        };
+    }
+
     let body = if !*opened {
         html! {}
     } else {
         let source_available = match &source.content {
             SourceContent::Inline(_) => true,
+            SourceContent::Binary => unreachable!("binary sources return early"),
             SourceContent::Oci { image } => {
                 return html! {
                     <details {ontoggle} class="source-block">
@@ -518,14 +534,20 @@ fn source_summary(source: &SourceView) -> Html {
         .is_some_and(|metadata| metadata.entrypoint);
     html! {
         <summary class={classes!(entrypoint.then_some("entrypoint"))}>
-            <span class="source-file-name">{ &source.file_name }</span>
-            if let Some(metadata) = &source.metadata {
-                <span class="source-file-metadata">
-                    <span class="source-file-role">{metadata.role}</span>
-                </span>
-            }
+            { source_summary_contents(source) }
         </summary>
     }
+}
+
+fn source_summary_contents(source: &SourceView) -> Html {
+    html! { <>
+        <span class="source-file-name">{ &source.file_name }</span>
+        if let Some(metadata) = &source.metadata {
+            <span class="source-file-metadata">
+                <span class="source-file-role">{metadata.role}</span>
+            </span>
+        }
+    </> }
 }
 
 #[derive(Properties, PartialEq)]
