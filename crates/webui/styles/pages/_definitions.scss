@@ -96,7 +96,8 @@
   border-radius: $border-radius-lg;
   background: $color-bg-primary;
 
-  > summary {
+  > summary,
+  > .source-summary {
     display: flex;
     align-items: center;
     gap: $spacing-sm;
@@ -127,6 +128,18 @@
     &:focus-visible {
       outline: 2px solid $color-accent-cyan;
       outline-offset: -2px;
+    }
+  }
+
+  > .source-summary {
+    cursor: default;
+
+    &::before {
+      visibility: hidden;
+    }
+
+    &:hover {
+      background: $color-bg-secondary;
     }
   }
 

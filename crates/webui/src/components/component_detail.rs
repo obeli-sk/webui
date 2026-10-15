@@ -184,11 +184,16 @@ fn component_file_sources(files: &[ComponentFileRef]) -> Vec<SourceView> {
                 return None;
             }
             let file = &file_ref.file;
+            let content = if role == ComponentFileRole::WasmComponent {
+                SourceContent::Binary
+            } else {
+                SourceContent::FetchFile {
+                    digest: file.digest.clone(),
+                }
+            };
             Some(SourceView {
                 file_name: file.path.clone(),
-                content: SourceContent::FetchFile {
-                    digest: file.digest.clone(),
-                },
+                content,
                 metadata: Some(SourceMetadata {
                     role: component_file_role_label(role),
                     entrypoint: role == ComponentFileRole::JsEntrypoint,
