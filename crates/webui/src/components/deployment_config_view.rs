@@ -226,7 +226,10 @@ pub fn build_sections_from_manifest(manifest: &Value, files: &[FileRefSer]) -> V
         let Some(tables) = manifest.get(toml_key).and_then(Value::as_array) else {
             continue;
         };
-        let has_backtrace = matches!(*toml_key, "workflow_wasm" | "webhook_endpoint_wasm");
+        let has_backtrace = matches!(
+            *toml_key,
+            "activity_wasm" | "workflow_wasm" | "webhook_endpoint_wasm"
+        );
         let has_script = matches!(
             *toml_key,
             "workflow_js" | "activity_js" | "activity_exec" | "webhook_endpoint_js"
