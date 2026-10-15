@@ -269,6 +269,7 @@ pub fn component_detail(
     let wit_state = use_state(|| None);
     let wit_loaded = use_state(|| false);
     let selected_tab = use_state(|| ComponentDetailTab::Exports);
+    let show_extensions = use_state(|| false);
     let deployment_config = use_state(|| None::<Result<Option<ComponentDeploymentConfig>, String>>);
 
     // Fetch raw WIT only when its tab is selected.
@@ -390,7 +391,18 @@ pub fn component_detail(
         }
     });
 
-    let exports = map_interfaces_to_fn_details(component.exported_fns(), InterfaceFilter::All);
+    let has_extensions = component
+        .exported_fns()
+        .iter()
+        .any(|fn_detail| fn_detail.ffqn.ifc_fqn.is_extension());
+    let exports = map_interfaces_to_fn_details(
+        component.exported_fns(),
+        if *show_extensions {
+            InterfaceFilter::All
+        } else {
+            InterfaceFilter::WithoutExtensions
+        },
+    );
     let render_exported_ifc_with_fns =
         |ifc_fqn: &IfcFqnName, fn_details: &[FunctionMetadataLite]| {
             let exported_fn_details = fn_details
@@ -433,15 +445,32 @@ pub fn component_detail(
         .iter()
         .map(|(ifc_fqn, fn_details)| render_exported_ifc_with_fns(ifc_fqn, fn_details))
         .collect::<Vec<_>>();
-    let exported_functions = if exported_ifcs_fns.is_empty() {
-        html! {
+    let on_show_extensions_change = {
+        let show_extensions = show_extensions.clone();
+        Callback::from(move |e: Event| {
+            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+            show_extensions.set(input.checked());
+        })
+    };
+    let exported_functions = html! { <>
+        if has_extensions {
+            <label class="component-show-extensions">
+                <input
+                    type="checkbox"
+                    checked={*show_extensions}
+                    onchange={on_show_extensions_change}
+                />
+                {" Show extension functions"}
+            </label>
+        }
+        if exported_ifcs_fns.is_empty() {
             <p class="component-empty-state">
                 {"This component does not export any functions."}
             </p>
+        } else {
+            { for exported_ifcs_fns }
         }
-    } else {
-        html! { <>{ for exported_ifcs_fns }</> }
-    };
+    </> };
 
     let dependencies = || {
         let connections = component_connections(component, deployment_components);
