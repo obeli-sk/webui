@@ -34,8 +34,6 @@ pub struct ExecutionQuery {
     #[serde(default)]
     pub show_derived: bool,
     #[serde(default)]
-    pub hide_finished: bool,
-    #[serde(default)]
     pub show_details: bool,
     pub execution_id_prefix: Option<String>,
     pub ffqn_prefix: Option<String>,
@@ -76,6 +74,18 @@ impl StatusFilterList {
             StatusFilter::Locked,
             StatusFilter::Pending,
             StatusFilter::Blocked,
+        ])
+    }
+
+    /// Every state except finished.
+    pub fn unfinished() -> StatusFilterList {
+        StatusFilterList(vec![
+            StatusFilter::Locked,
+            StatusFilter::Pending,
+            StatusFilter::Scheduled,
+            StatusFilter::Blocked,
+            StatusFilter::Paused,
+            StatusFilter::Cancelling,
         ])
     }
 
@@ -698,7 +708,6 @@ pub fn execution_list_page() -> Html {
                     let page_size = 10;
                     let mut rest_query = vec![
                         ("show_derived", query_params.show_derived.to_string()),
-                        ("hide_finished", query_params.hide_finished.to_string()),
                         ("length", page_size.to_string()),
                         ("including_cursor", query_params.include_cursor.to_string()),
                         (
@@ -800,16 +809,6 @@ pub fn execution_list_page() -> Html {
         })
     };
 
-    let on_toggle_hide_finished = {
-        let navigator = navigator.clone();
-        let query = query.clone();
-        Callback::from(move |e: Event| {
-            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
-            let mut new_query = query.clone();
-            new_query.hide_finished = input.checked();
-            let _ = navigator.push_with_query(&Route::ExecutionList, &new_query);
-        })
-    };
     let on_toggle_show_details = {
         let navigator = navigator.clone();
         let query = query.clone();
@@ -969,7 +968,6 @@ pub fn execution_list_page() -> Html {
         }).collect::<Vec<_>>();
 
         let active_filter_count = usize::from(query.show_derived)
-            + usize::from(query.hide_finished)
             + usize::from(query.show_details)
             + usize::from(query.execution_id_prefix.is_some())
             + usize::from(query.ffqn_prefix.is_some())
@@ -1135,14 +1133,6 @@ pub fn execution_list_page() -> Html {
                         <label class="filter-toggle">
                             <input
                                 type="checkbox"
-                                checked={query.hide_finished}
-                                onchange={on_toggle_hide_finished}
-                            />
-                            <span>{"Hide finished"}</span>
-                        </label>
-                        <label class="filter-toggle">
-                            <input
-                                type="checkbox"
                                 checked={query.show_details}
                                 onchange={on_toggle_show_details}
                             />
@@ -1176,6 +1166,7 @@ pub fn execution_list_page() -> Html {
                             {{
                                 let current = query.status.as_ref().map(ToString::to_string).unwrap_or_default();
                                 let in_progress = StatusFilterList::in_progress().to_string();
+                                let unfinished = StatusFilterList::unfinished().to_string();
                                 html! {<>
                                     <option value="" selected={current.is_empty()}>{"Any status"}</option>
                                     <option
@@ -1184,6 +1175,13 @@ pub fn execution_list_page() -> Html {
                                         title="Locked, pending or blocked"
                                     >
                                         {"In progress"}
+                                    </option>
+                                    <option
+                                        value={unfinished.clone()}
+                                        selected={current == unfinished}
+                                        title="Any status except finished"
+                                    >
+                                        {"Unfinished"}
                                     </option>
                                     { for StatusFilter::ALL.into_iter().map(|status| html! {
                                         <option
