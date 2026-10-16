@@ -951,10 +951,16 @@ fn compute_root_trace(
             .flatten()
             .collect();
     let last_event_at = last_event_at; // drop mut
+    // Webhook executions are created lazily on first persist, possibly after HTTP calls were made.
+    let started_at = children
+        .iter()
+        .flat_map(TraceData::busy)
+        .map(|interval| interval.started_at)
+        .fold(execution_scheduled_at, DateTime::min);
 
     let mut current_locked_at: Option<(DateTime<Utc>, DateTime<Utc>, RunId)> = None;
     let mut busy = vec![BusyInterval {
-        started_at: execution_scheduled_at,
+        started_at,
         finished_at: Some(last_event_at),
         title: None,
         status: BusyIntervalStatus::ExecutionSinceScheduled,
@@ -993,7 +999,7 @@ fn compute_root_trace(
                 let started_at = current_locked_at
                     .take()
                     .map(|(locked_at, _, _)| locked_at)
-                    .unwrap_or(execution_scheduled_at); // webhooks have no locks
+                    .unwrap_or(started_at); // webhooks have no locks
                 let finished_at = event.created_at;
                 let duration = (finished_at - started_at)
                     .to_std()
@@ -1058,7 +1064,7 @@ fn compute_root_trace(
         can_expand: !children.is_empty(),
         name,
         title: format!("{execution_id} {ffqn}"),
-        scheduled_at: execution_scheduled_at,
+        scheduled_at: started_at,
         last_event_at,
         busy,
         children,
