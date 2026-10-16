@@ -366,6 +366,7 @@ fn app_inner(
                                 <span class="app-brand-name">{"Obelisk"}</span>
                                 <span class="app-brand-caption">{app_name.as_deref().unwrap_or("WebUI")}</span>
                             </Link<Route>>
+                            <AppNav />
                             <div class="app-bar-actions">
                                 <ThemeToggle />
                                 <Link<Route> classes="nav-submit" to={Route::ExecutionNew }>{"New execution"}</Link<Route>>
@@ -373,7 +374,6 @@ fn app_inner(
                         </div>
                     </header>
                     <div class="app-layout">
-                        <AppNav />
                         <main class="container app-main">
                             <Switch<Route> render={Route::render} />
                         </main>
@@ -413,15 +413,9 @@ fn app_nav() -> Html {
 
     html! {
         <nav class="app-nav" aria-label="Main navigation">
-            <div class="app-nav-group">
-                <span class="app-nav-label">{"Workspace"}</span>
-                <Link<Route> classes={classes!(deployment_active.then_some("active"))} to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
-                <Link<Route> classes={classes!(execution_active.then_some("active"))} to={Route::ExecutionList}>{"Executions"}</Link<Route>>
-            </div>
-            <div class="app-nav-group">
-                <span class="app-nav-label">{"Manage"}</span>
-                <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>
-            </div>
+            <Link<Route> classes={classes!(deployment_active.then_some("active"))} to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
+            <Link<Route> classes={classes!(execution_active.then_some("active"))} to={Route::ExecutionList}>{"Executions"}</Link<Route>>
+            <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>
         </nav>
     }
 }
