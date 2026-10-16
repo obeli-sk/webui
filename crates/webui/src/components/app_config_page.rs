@@ -1,6 +1,7 @@
 use crate::{
     app::Route,
     components::{
+        deployment_config_view::toml_block,
         notification::{Notification, NotificationContext},
         system_nav::SystemNav,
     },
@@ -41,9 +42,7 @@ pub fn app_config_page() -> Html {
             {match response.as_ref() {
                 None => html! { <p>{"Loading app config…"}</p> },
                 Some(Err(err)) => html! { <p class="error">{format!("Cannot load app config: {err}")}</p> },
-                Some(Ok(config)) => html! {
-                    <pre class="app-config-policy">{config}</pre>
-                },
+                Some(Ok(config)) => toml_block(config.clone()),
             }}
         </main>
     }

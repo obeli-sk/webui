@@ -17,6 +17,7 @@ use crate::{
         not_found::NotFound,
         notification::{Notification, NotificationContext, NotificationProvider},
         retention_page::RetentionPage,
+        server_info_page::ServerInfoPage,
         system_events_page::SystemEventsPage,
         time_display::TimeDisplayProvider,
         trace::trace_view::TraceView,
@@ -174,6 +175,8 @@ pub enum Route {
     },
     #[at("/execution/:execution_id/applogs")]
     Logs { execution_id: ExecutionId },
+    #[at("/admin/info")]
+    ServerInfo,
     #[at("/admin/system-events")]
     SystemEvents,
     #[at("/admin/app-config")]
@@ -221,6 +224,7 @@ impl Route {
             Route::Logs { execution_id } => {
                 html! { <LogsPage {execution_id} />}
             }
+            Route::ServerInfo => html! { <ServerInfoPage /> },
             Route::SystemEvents => html! { <SystemEventsPage /> },
             Route::AppConfig => html! { <AppConfigPage /> },
             Route::Retention => html! { <RetentionPage /> },
@@ -359,9 +363,10 @@ fn app_inner(
                         <div class="app-bar-inner">
                             <Link<Route> classes="app-brand" to={Route::Home}>
                                 <img class="app-brand-mark" src="/logo.png" alt="" />
-                                <span>{"Obelisk"}</span>
+                                <span class="app-brand-name">{"Obelisk"}</span>
                                 <span class="app-brand-caption">{app_name.as_deref().unwrap_or("WebUI")}</span>
                             </Link<Route>>
+                            <AppNav />
                             <div class="app-bar-actions">
                                 <ThemeToggle />
                                 <Link<Route> classes="nav-submit" to={Route::ExecutionNew }>{"New execution"}</Link<Route>>
@@ -369,7 +374,6 @@ fn app_inner(
                         </div>
                     </header>
                     <div class="app-layout">
-                        <AppNav />
                         <main class="container app-main">
                             <Switch<Route> render={Route::render} />
                         </main>
@@ -404,20 +408,14 @@ fn app_nav() -> Html {
     );
     let system_active = matches!(
         route.as_ref(),
-        Some(Route::SystemEvents | Route::AppConfig | Route::Retention)
+        Some(Route::ServerInfo | Route::SystemEvents | Route::AppConfig | Route::Retention)
     );
 
     html! {
         <nav class="app-nav" aria-label="Main navigation">
-            <div class="app-nav-group">
-                <span class="app-nav-label">{"Workspace"}</span>
-                <Link<Route> classes={classes!(deployment_active.then_some("active"))} to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
-                <Link<Route> classes={classes!(execution_active.then_some("active"))} to={Route::ExecutionList}>{"Executions"}</Link<Route>>
-            </div>
-            <div class="app-nav-group">
-                <span class="app-nav-label">{"Manage"}</span>
-                <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>
-            </div>
+            <Link<Route> classes={classes!(deployment_active.then_some("active"))} to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
+            <Link<Route> classes={classes!(execution_active.then_some("active"))} to={Route::ExecutionList}>{"Executions"}</Link<Route>>
+            <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>
         </nav>
     }
 }

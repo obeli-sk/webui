@@ -95,6 +95,11 @@
     align-items: center;
     flex-wrap: wrap;
     gap: $spacing-xs;
+
+    > a {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
 }
 
 .deployment-name {
@@ -477,6 +482,18 @@
         &.active {
             color: $color-accent-cyan;
             border-bottom-color: $color-accent-cyan;
+        }
+    }
+}
+
+@media (max-width: 520px) {
+    .view-tabs {
+        overflow-x: auto;
+
+        button, a {
+            padding-inline: 0.4rem;
+            font-size: $font-size-sm;
+            white-space: nowrap;
         }
     }
 }

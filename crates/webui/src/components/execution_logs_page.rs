@@ -8,6 +8,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use concepts::{ExecutionId, prefixed_ulid::RunId};
+use gloo::timers::callback::Timeout;
 use log::debug;
 use rest_types::logs::{LogEntryRowSer, LogEntrySer, LogLevelSer, LogStreamTypeSer};
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,8 @@ const FILTER_LEVELS: [LogLevelSer; 5] = [
 ];
 const DEFAULT_LEVELS: [LogLevelSer; 5] = FILTER_LEVELS;
 const FILTER_STREAMS: [LogStreamTypeSer; 2] = [LogStreamTypeSer::Stdout, LogStreamTypeSer::Stderr];
+const FOLLOW_POLL_INTERVAL_MS: u32 = 2_000;
+const SCROLL_BOTTOM_THRESHOLD_PX: i32 = 40;
 
 #[derive(Clone, PartialEq)]
 struct LogFilters {
@@ -150,6 +153,10 @@ enum LogsAction {
         filters: LogFilters,
     },
     LoadMore,
+    /// Fetch entries newer than the last one, even if the previous page was not full.
+    Poll,
+    SetFollow(bool),
+    ExecutionFinished,
     PageLoaded {
         execution_id: ExecutionId,
         show_derived: bool,
@@ -170,7 +177,15 @@ struct LogsState {
     filters: LogFilters,
     fetch_state: LogsFetchState,
     logs: Vec<LogEntry>,
-    next_page_token: String,
+    /// Cursor of the last loaded entry, empty when nothing was loaded yet.
+    cursor: String,
+    has_more: bool,
+    /// False until the first page after a reset arrives.
+    loaded: bool,
+    follow: bool,
+    execution_finished: bool,
+    /// Set once a page was requested after the execution finished, nothing new can appear after it.
+    complete: bool,
     request_generation: u64,
 }
 
@@ -197,7 +212,8 @@ enum LogKind {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct DecodedLogs {
     logs: Vec<LogEntry>,
-    next_page_token: String,
+    cursor: Option<String>,
+    has_more: bool,
 }
 
 trait LogLevelExt {
@@ -268,13 +284,8 @@ impl LogStreamTypeExt for LogStreamTypeSer {
 }
 
 fn decode_logs(rows: Vec<LogEntryRowSer>, page_size: usize) -> Result<DecodedLogs, String> {
-    let next_page_token = if rows.len() == page_size {
-        rows.last()
-            .map(|row| row.cursor.clone())
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
+    let has_more = rows.len() == page_size;
+    let cursor = rows.last().map(|row| row.cursor.clone());
     let logs = rows
         .into_iter()
         .map(|row| {
@@ -315,7 +326,8 @@ fn decode_logs(rows: Vec<LogEntryRowSer>, page_size: usize) -> Result<DecodedLog
         .collect::<Result<Vec<_>, String>>()?;
     Ok(DecodedLogs {
         logs,
-        next_page_token,
+        cursor,
+        has_more,
     })
 }
 
@@ -327,7 +339,12 @@ impl Default for LogsState {
             filters: LogFilters::default(),
             fetch_state: LogsFetchState::Pending,
             logs: Vec::new(),
-            next_page_token: String::new(),
+            cursor: String::new(),
+            has_more: false,
+            loaded: false,
+            follow: true,
+            execution_finished: false,
+            complete: false,
             request_generation: 0,
         }
     }
@@ -342,22 +359,53 @@ impl Reducible for LogsState {
                 execution_id,
                 show_derived,
                 filters,
-            } => Rc::new(Self {
-                execution_id: Some(execution_id),
-                show_derived,
-                filters,
-                fetch_state: LogsFetchState::Pending,
-                logs: Vec::new(),
-                next_page_token: String::new(),
-                request_generation: self.request_generation.wrapping_add(1),
-            }),
-            LogsAction::LoadMore => {
-                if self.fetch_state == LogsFetchState::Pending || self.next_page_token.is_empty() {
+            } => {
+                let execution_finished =
+                    self.execution_finished && self.execution_id.as_ref() == Some(&execution_id);
+                Rc::new(Self {
+                    execution_id: Some(execution_id),
+                    show_derived,
+                    filters,
+                    fetch_state: LogsFetchState::Pending,
+                    logs: Vec::new(),
+                    cursor: String::new(),
+                    has_more: false,
+                    loaded: false,
+                    follow: self.follow,
+                    execution_finished,
+                    complete: execution_finished,
+                    request_generation: self.request_generation.wrapping_add(1),
+                })
+            }
+            LogsAction::LoadMore | LogsAction::Poll => {
+                if self.fetch_state == LogsFetchState::Pending
+                    || match action {
+                        LogsAction::LoadMore => !self.has_more,
+                        _ => self.complete,
+                    }
+                {
                     return self;
                 }
                 let mut this = self.as_ref().clone();
                 this.fetch_state = LogsFetchState::Pending;
+                this.complete = this.execution_finished;
                 this.request_generation = this.request_generation.wrapping_add(1);
+                Rc::new(this)
+            }
+            LogsAction::ExecutionFinished => {
+                if self.execution_finished {
+                    return self;
+                }
+                let mut this = self.as_ref().clone();
+                this.execution_finished = true;
+                Rc::new(this)
+            }
+            LogsAction::SetFollow(follow) => {
+                if self.follow == follow {
+                    return self;
+                }
+                let mut this = self.as_ref().clone();
+                this.follow = follow;
                 Rc::new(this)
             }
             LogsAction::PageLoaded {
@@ -372,7 +420,11 @@ impl Reducible for LogsState {
                 debug!("Appending {response:?}");
                 let mut this = self.as_ref().clone();
                 this.logs.append(&mut response.logs);
-                this.next_page_token = response.next_page_token;
+                if let Some(cursor) = response.cursor {
+                    this.cursor = cursor;
+                }
+                this.has_more = response.has_more;
+                this.loaded = true;
                 this.fetch_state = LogsFetchState::Idle;
                 Rc::new(this)
             }
@@ -386,6 +438,9 @@ impl Reducible for LogsState {
                 }
                 let mut this = self.as_ref().clone();
                 this.fetch_state = LogsFetchState::Idle;
+                this.loaded = true;
+                // Stop polling so a failing server does not raise a notification every interval.
+                this.follow = false;
                 Rc::new(this)
             }
         }
@@ -427,7 +482,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                 logs_state.fetch_state.clone(),
                 logs_state.show_derived,
                 logs_state.filters.clone(),
-                logs_state.next_page_token.clone(),
+                logs_state.cursor.clone(),
                 logs_state.request_generation,
             ),
             move |(
@@ -455,16 +510,80 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
         );
     }
 
+    // While following, load the remaining pages right away, then poll for new entries until
+    // a page requested after the execution finished arrives.
+    {
+        let logs_state = logs_state.clone();
+        use_effect_with(
+            (
+                logs_state.follow,
+                logs_state.fetch_state.clone(),
+                logs_state.has_more,
+                logs_state.execution_finished,
+                logs_state.complete,
+                logs_state.request_generation,
+            ),
+            move |(follow, fetch_state, has_more, execution_finished, complete, _)| {
+                let timeout = (*follow && *fetch_state == LogsFetchState::Idle).then(|| {
+                    if *has_more {
+                        logs_state.dispatch(LogsAction::LoadMore);
+                        None
+                    } else if *complete {
+                        None
+                    } else if *execution_finished {
+                        logs_state.dispatch(LogsAction::Poll);
+                        None
+                    } else {
+                        Some(Timeout::new(FOLLOW_POLL_INTERVAL_MS, move || {
+                            logs_state.dispatch(LogsAction::Poll);
+                        }))
+                    }
+                });
+                move || drop(timeout)
+            },
+        );
+    }
+
+    let on_finished = {
+        let logs_state = logs_state.clone();
+        Callback::from(move |()| logs_state.dispatch(LogsAction::ExecutionFinished))
+    };
+
+    let list_ref = use_node_ref();
+    {
+        let list_ref = list_ref.clone();
+        use_effect_with(
+            (logs_state.logs.len(), logs_state.follow),
+            move |(_, follow)| {
+                if *follow && let Some(element) = list_ref.cast::<HtmlElement>() {
+                    element.set_scroll_top(element.scroll_height());
+                }
+            },
+        );
+    }
+
     let on_scroll = {
         let logs_state = logs_state.clone();
         Callback::from(move |event: Event| {
             let element: HtmlElement = event.target_unchecked_into();
-            const LOAD_MORE_THRESHOLD_PX: i32 = 40;
             let distance_from_bottom =
                 element.scroll_height() - element.client_height() - element.scroll_top();
-            if distance_from_bottom <= LOAD_MORE_THRESHOLD_PX {
+            let at_bottom = distance_from_bottom <= SCROLL_BOTTOM_THRESHOLD_PX;
+            logs_state.dispatch(LogsAction::SetFollow(at_bottom));
+            if at_bottom {
                 debug!("Dispatching loadmore");
                 logs_state.dispatch(LogsAction::LoadMore);
+            }
+        })
+    };
+
+    let on_toggle_follow = {
+        let logs_state = logs_state.clone();
+        Callback::from(move |_| {
+            let follow = !logs_state.follow;
+            logs_state.dispatch(LogsAction::SetFollow(follow));
+            if follow {
+                logs_state.dispatch(LogsAction::Poll);
             }
         })
     };
@@ -526,11 +645,12 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
         })
     };
 
-    let is_loading = logs_state.fetch_state == LogsFetchState::Pending;
+    // Background polls must not flash the empty state or disable controls.
+    let is_loading = !logs_state.loaded;
 
     html! {
          <>
-            <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Logs} />
+            <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Logs} {on_finished} />
 
             <div class="logs-options">
                 <div class="logs-levels" aria-label="Log levels and streams">
@@ -564,6 +684,14 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                         { "Derived" }
                     </button>
                     <button
+                        class={classes!(logs_state.follow.then_some("selected"))}
+                        aria-pressed={logs_state.follow.to_string()}
+                        title="Load new entries as they arrive and keep the list scrolled to the bottom"
+                        onclick={on_toggle_follow}
+                    >
+                        { "Follow" }
+                    </button>
+                    <button
                         class={classes!((*show_run_id).then_some("selected"))}
                         aria-pressed={show_run_id.to_string()}
                         title="Show Run ID column"
@@ -576,7 +704,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                 <TimeDisplayControl />
             </div>
 
-            <div class="logs-list" onscroll={on_scroll}>
+            <div class="logs-list" ref={list_ref} onscroll={on_scroll}>
                 <table class="logs-table">
                     <thead>
                         <tr>
@@ -831,7 +959,8 @@ mod tests {
                     message: "hello".into(),
                 },
             }],
-            next_page_token: "next".into(),
+            cursor: Some("next".into()),
+            has_more: true,
         };
         let state = state.reduce(LogsAction::PageLoaded {
             execution_id: execution_id.clone(),
@@ -849,7 +978,7 @@ mod tests {
             },
         });
         assert!(state.logs.is_empty());
-        assert!(state.next_page_token.is_empty());
+        assert!(state.cursor.is_empty());
         assert_eq!(state.filters.levels, [LogLevelSer::Error]);
         assert_eq!(state.filters.streams, [LogStreamTypeSer::Stderr]);
         assert!(state.fetch_state == LogsFetchState::Pending);
@@ -863,6 +992,36 @@ mod tests {
     }
 
     #[test]
+    fn polling_stops_after_a_page_requested_after_finish() {
+        let execution_id: ExecutionId = EXECUTION_ID.parse().unwrap();
+        let loaded = |state: Rc<LogsState>| {
+            let request_generation = state.request_generation;
+            state.reduce(LogsAction::PageLoaded {
+                execution_id: execution_id.clone(),
+                show_derived: true,
+                request_generation,
+                response: DecodedLogs::default(),
+            })
+        };
+        let state = loaded(Rc::new(LogsState::default()).reduce(LogsAction::Reset {
+            execution_id: execution_id.clone(),
+            show_derived: true,
+            filters: LogFilters::default(),
+        }));
+        assert!(state.loaded);
+        let state = loaded(state.reduce(LogsAction::Poll));
+        assert!(!state.complete);
+        // The final poll picks up entries written before the execution finished.
+        let state = state.reduce(LogsAction::ExecutionFinished);
+        let state = state.reduce(LogsAction::Poll);
+        assert!(state.fetch_state == LogsFetchState::Pending);
+        let state = loaded(state);
+        assert!(state.complete);
+        let unchanged = state.clone().reduce(LogsAction::Poll);
+        assert!(Rc::ptr_eq(&state, &unchanged));
+    }
+
+    #[test]
     fn rest_log_page_decodes_entries_and_cursor() {
         let rows: Vec<LogEntryRowSer> = serde_json::from_str(
             r#"[
@@ -872,7 +1031,8 @@ mod tests {
         )
         .unwrap();
         let page = decode_logs(rows, 2).unwrap();
-        assert_eq!(page.next_page_token, "second");
+        assert_eq!(page.cursor.as_deref(), Some("second"));
+        assert!(page.has_more);
         assert_eq!(
             page.logs[0].run_id.to_string(),
             "Run_01KABCDEFGHJKMNPQRSTVWXYZ0"

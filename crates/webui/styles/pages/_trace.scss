@@ -10,7 +10,6 @@
 
 .trace-layout-container {
   display: flex;
-  margin-top: $spacing-lg;
   height: 70vh;
   min-height: 20rem;
   overflow: hidden;
@@ -22,7 +21,9 @@
   
   // Sizing
   min-width: 400px;
-  max-width: 900px;
+  // Grows with wide screens, leaving room for .trace-detail's min-width.
+  width: max(60%, min(900px, 100% - 300px));
+  max-width: calc(100% - 300px);
   height: 100%;
   min-height: 0;
   resize: horizontal;
@@ -362,4 +363,42 @@
 
 .indented-children {
   margin-left: 20px;
+}
+
+// Side by side the panels need ~700px, so narrow screens stack them.
+@media (max-width: 760px) {
+  .trace-layout-container {
+    flex-direction: column;
+    gap: $spacing-sm;
+    margin-top: 0;
+    height: auto;
+    overflow: visible;
+  }
+
+  .trace-view,
+  .trace-detail {
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    height: auto;
+    max-height: 60vh;
+    resize: none;
+    padding: $spacing-sm;
+  }
+
+  .step-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .step-status {
+    margin-inline: $spacing-xs;
+    white-space: nowrap;
+  }
+
+  .relative-duration-container {
+    width: 5rem;
+  }
 }

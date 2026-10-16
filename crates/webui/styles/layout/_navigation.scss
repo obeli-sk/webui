@@ -18,13 +18,12 @@ html { scroll-padding-top: $app-bar-clearance; }
 
 .app-bar-inner {
   min-height: 4.25rem;
-  max-width: 1800px;
   margin: auto;
   padding: 0.65rem clamp(1rem, 2.5vw, 2.5rem);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
 }
 
 .app-brand {
@@ -109,36 +108,21 @@ html { scroll-padding-top: $app-bar-clearance; }
 }
 
 .app-layout {
-  max-width: 1800px;
-  margin: auto;
-  padding: clamp(1rem, 2.5vw, 2.5rem);
-  display: grid;
-  grid-template-columns: 12.5rem minmax(0, 1fr);
-  gap: clamp(1rem, 2.5vw, 2.5rem);
-  align-items: start;
+  padding: clamp(0.75rem, 1.5vw, 1.5rem);
 }
 
+// Pages use the whole window width.
+.app-main { max-width: none; }
+
+// Sits in .app-bar between the brand and the actions.
 .app-nav {
-  position: sticky;
-  top: $app-bar-clearance;
-  display: grid;
-  gap: 1.75rem;
-  padding: 0.75rem 0;
-}
-
-.app-nav-group { display: grid; gap: 0.25rem; }
-
-.app-nav-label {
-  padding: 0.25rem 0.8rem;
-  color: $color-text-muted;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  display: flex;
+  gap: 0.25rem;
+  margin-right: auto;
 }
 
 .app-nav a {
-  padding: 0.6rem 0.8rem;
+  padding: 0.45rem 0.8rem;
   border-radius: $border-radius-md;
   color: $color-text-secondary;
   font-weight: 600;
@@ -152,17 +136,26 @@ html { scroll-padding-top: $app-bar-clearance; }
   }
 }
 
-@media (max-width: 850px) {
-  .app-layout { display: block; }
-  .app-nav { position: static; display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0 0 1rem; }
-  .app-nav-group { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-  .app-nav-label { display: none; }
+@media (max-width: 900px) {
+  // Brand and actions share the first row, the nav gets its own.
+  .app-brand { flex: 1 1 0; min-width: 0; }
+  .app-brand-caption { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .app-bar-actions { flex-shrink: 0; }
+  .app-nav { order: 1; flex-basis: 100%; margin-right: 0; }
 }
 
 @media (max-width: 520px) {
-  .app-bar-inner { flex-wrap: wrap; }
-  .app-bar-actions { margin-left: auto; }
+  .app-bar-inner { min-height: 3.25rem; padding-block: 0.4rem; gap: 0.5rem; }
+  .app-brand { gap: 0.4rem; }
+  // The logo identifies Obelisk, so the app name gets the remaining width.
+  .app-brand-name { display: none; }
+  .app-brand-caption { border-left: none; padding-left: 0; }
+  .app-bar-actions { gap: 0.5rem; }
   .app-bar .nav-submit { padding-inline: 0.55rem; }
+  .app-layout { padding: 0.75rem; }
+  .app-nav a { padding: 0.35rem 0.6rem; }
+  // The card frame only costs width here; panels inside keep their own boxes.
+  .container { padding: 0; border: none; border-radius: 0; box-shadow: none; background: none; }
 }
 
 // Dark Reader asks for dark, so the theme is forced (see index.html).

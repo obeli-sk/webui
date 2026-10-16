@@ -5,11 +5,32 @@
   margin-bottom: $spacing-lg;
 }
 
-.app-config-policy {
-  overflow-x: auto;
-  white-space: pre;
-}
-
 .app-config-digest {
   overflow-wrap: anywhere;
+}
+
+.server-info {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: $spacing-sm $spacing-lg;
+  margin: 0;
+
+  dt {
+    color: $color-text-secondary;
+  }
+
+  dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 600px) {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+
+    dd {
+      margin-bottom: $spacing-sm;
+    }
+  }
 }

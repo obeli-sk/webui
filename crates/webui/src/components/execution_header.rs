@@ -81,6 +81,8 @@ pub struct ExecutionHeaderProps {
     pub on_advanced: Option<Callback<VersionType>>,
     #[prop_or_default]
     pub additional_action: Html,
+    #[prop_or_default]
+    pub on_finished: Option<Callback<()>>,
 }
 
 #[component(ExecutionHeader)]
@@ -90,6 +92,7 @@ pub fn execution_header(
         link,
         on_advanced,
         additional_action,
+        on_finished,
     }: &ExecutionHeaderProps,
 ) -> Html {
     let exec_info = use_state(|| None::<ExecutionInfo>);
@@ -144,8 +147,12 @@ pub fn execution_header(
     // Callback when execution finishes - updates is_finished state
     let finished_status = {
         let is_finished = is_finished.clone();
+        let on_finished = on_finished.clone();
         FinishedStatusMode::RequestAndNotify(Callback::from(move |()| {
             is_finished.set(true);
+            if let Some(on_finished) = &on_finished {
+                on_finished.emit(());
+            }
         }))
     };
 
