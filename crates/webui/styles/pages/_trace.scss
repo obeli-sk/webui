@@ -21,8 +21,9 @@
   
   // Sizing
   min-width: 400px;
-  // Leave room for .trace-detail's min-width.
-  max-width: min(900px, calc(100% - 300px));
+  // Grows with wide screens, leaving room for .trace-detail's min-width.
+  width: max(60%, min(900px, 100% - 300px));
+  max-width: calc(100% - 300px);
   height: 100%;
   min-height: 0;
   resize: horizontal;

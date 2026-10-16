@@ -18,7 +18,6 @@ html { scroll-padding-top: $app-bar-clearance; }
 
 .app-bar-inner {
   min-height: 4.25rem;
-  max-width: 1800px;
   margin: auto;
   padding: 0.65rem clamp(1rem, 2.5vw, 2.5rem);
   display: flex;
@@ -109,10 +108,11 @@ html { scroll-padding-top: $app-bar-clearance; }
 }
 
 .app-layout {
-  max-width: 1800px;
-  margin: auto;
   padding: clamp(0.75rem, 1.5vw, 1.5rem);
 }
+
+// Pages use the whole window width.
+.app-main { max-width: none; }
 
 // Sits in .app-bar between the brand and the actions.
 .app-nav {
