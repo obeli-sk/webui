@@ -1,47 +1,74 @@
 use once_cell::sync::Lazy;
 use std::cmp::min;
 use std::rc::Rc;
-use syntect::html::{ClassStyle, ClassedHTMLGenerator};
-use syntect::parsing::SyntaxSet;
+use syntect::html::{ClassStyle, line_tokens_to_classed_spans};
+use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
 use syntect::util::LinesWithEndings;
 use yew::{prelude::*, virtual_dom::VNode};
 
 pub const DEFAULT_CONTEXT_LINES: usize = 3;
 const DEFAULT_THEME: &str = "base16-ocean.dark"; // NB: Sync with build.rs
 
-pub static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
+// bat's curated syntaxes, a superset of the defaults that adds TOML.
+pub static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(two_face::syntax::extra_newlines);
 
 pub fn highlight_code_line_by_line(
     source: &str,
     language_ext: Option<&str>,
 ) -> Vec<(Html, usize /* line number */)> {
-    const DEFAULT_LANGUAGE: &str = "txt";
-    let language_ext = language_ext.unwrap_or(DEFAULT_LANGUAGE);
     let start = web_sys::window().unwrap().performance().unwrap().now();
-    let syntax = SYNTAX_SET
-        .find_syntax_by_extension(language_ext)
-        .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
-
-    let mut output_lines = Vec::new();
-    for (line_num, line) in LinesWithEndings::from(source).enumerate() {
-        let line_num = line_num + 1; // Store with 1-based line number
-        let mut highlighter =
-            ClassedHTMLGenerator::new_with_class_style(syntax, &SYNTAX_SET, ClassStyle::Spaced);
-        if let Err(_err) = highlighter.parse_html_for_line_which_includes_newline(line) {
-            // Display as plain text
-            let line = Html::from(line);
-            output_lines.push((line, line_num));
-        } else {
-            // Note: The generated HTML usually doesn't include the outer <span> or <pre> tags per line.
-            // We wrap each line in a span or div later in the component.
-            let line = highlighter.finalize();
-            let line = VNode::from_html_unchecked(line.into());
-            output_lines.push((line, line_num));
-        }
-    }
+    let output_lines = highlight_lines(source, language_ext)
+        .into_iter()
+        .enumerate()
+        .map(|(idx, line)| {
+            let line = match line {
+                Ok(line) => VNode::from_html_unchecked(line.into()),
+                Err(line) => Html::from(line), // Display as plain text
+            };
+            (line, idx + 1) // Store with 1-based line number
+        })
+        .collect();
     let end = web_sys::window().unwrap().performance().unwrap().now();
     log::trace!("Highlighted in {}ms", end - start);
     output_lines
+}
+
+/// Highlight each line into self-contained HTML, keeping parser state across lines.
+fn highlight_lines<'a>(
+    source: &'a str,
+    language_ext: Option<&str>,
+) -> Vec<Result<String, &'a str>> {
+    const DEFAULT_LANGUAGE: &str = "txt";
+    let language_ext = language_ext.unwrap_or(DEFAULT_LANGUAGE);
+    let syntax = SYNTAX_SET
+        .find_syntax_by_extension(language_ext)
+        .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
+    let mut parse_state = ParseState::new(syntax);
+    let mut scope_stack = ScopeStack::new();
+    LinesWithEndings::from(source)
+        .map(|line| {
+            // Reopen the scopes left open by previous lines.
+            let mut html: String = scope_stack
+                .as_slice()
+                .iter()
+                .map(|scope| {
+                    format!(
+                        "<span class=\"{}\">",
+                        scope.build_string().replace('.', " ")
+                    )
+                })
+                .collect();
+            let ops = parse_state
+                .parse_line(line, &SYNTAX_SET)
+                .map_err(|_| line)?;
+            let (spans, _) =
+                line_tokens_to_classed_spans(line, &ops, ClassStyle::Spaced, &mut scope_stack)
+                    .map_err(|_| line)?;
+            html.push_str(&spans);
+            html.push_str(&"</span>".repeat(scope_stack.len()));
+            Ok(html)
+        })
+        .collect()
 }
 
 #[derive(Properties, PartialEq)]
@@ -150,5 +177,40 @@ pub fn code_block(props: &CodeBlockProps) -> Html {
                  html!{}
             } }
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn highlight_toml(source: &str) -> Vec<String> {
+        highlight_lines(source, Some("toml"))
+            .into_iter()
+            .map(|line| line.unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn toml_is_highlighted() {
+        let lines = highlight_toml(
+            "[[activity_wasm]]\nmax_retries = 5 # retries\nlocation.oci = \"docker.io/x\"\n",
+        );
+        assert!(lines[0].contains("entity name table toml"));
+        assert!(lines[1].contains("entity name tag toml"));
+        assert!(lines[1].contains("constant numeric integer toml"));
+        assert!(lines[1].contains("comment line number-sign toml"));
+        assert!(lines[2].contains("string quoted double basic toml"));
+    }
+
+    #[test]
+    fn multiline_constructs_keep_parser_state() {
+        let lines = highlight_toml("env = [\n  { name = \"A\", optional = true },\n]\n");
+        assert!(
+            lines.iter().all(|line| !line.contains("invalid")),
+            "{lines:#?}"
+        );
+        assert!(lines[1].starts_with("<span class=\"source toml\">"));
+        assert!(lines[1].contains("string quoted double basic toml"));
     }
 }
