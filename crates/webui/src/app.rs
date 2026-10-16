@@ -17,6 +17,7 @@ use crate::{
         not_found::NotFound,
         notification::{Notification, NotificationContext, NotificationProvider},
         retention_page::RetentionPage,
+        server_info_page::ServerInfoPage,
         system_events_page::SystemEventsPage,
         time_display::TimeDisplayProvider,
         trace::trace_view::TraceView,
@@ -174,6 +175,8 @@ pub enum Route {
     },
     #[at("/execution/:execution_id/applogs")]
     Logs { execution_id: ExecutionId },
+    #[at("/admin/info")]
+    ServerInfo,
     #[at("/admin/system-events")]
     SystemEvents,
     #[at("/admin/app-config")]
@@ -221,6 +224,7 @@ impl Route {
             Route::Logs { execution_id } => {
                 html! { <LogsPage {execution_id} />}
             }
+            Route::ServerInfo => html! { <ServerInfoPage /> },
             Route::SystemEvents => html! { <SystemEventsPage /> },
             Route::AppConfig => html! { <AppConfigPage /> },
             Route::Retention => html! { <RetentionPage /> },
@@ -404,7 +408,7 @@ fn app_nav() -> Html {
     );
     let system_active = matches!(
         route.as_ref(),
-        Some(Route::SystemEvents | Route::AppConfig | Route::Retention)
+        Some(Route::ServerInfo | Route::SystemEvents | Route::AppConfig | Route::Retention)
     );
 
     html! {
