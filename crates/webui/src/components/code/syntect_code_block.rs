@@ -2,15 +2,36 @@ use once_cell::sync::Lazy;
 use std::cmp::min;
 use std::rc::Rc;
 use syntect::html::{ClassStyle, line_tokens_to_classed_spans};
-use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
+use syntect::parsing::{
+    ParseState, ScopeStack, SyntaxDefinition, SyntaxReference, SyntaxSet, SyntaxSetBuilder,
+};
 use syntect::util::LinesWithEndings;
 use yew::{prelude::*, virtual_dom::VNode};
 
 pub const DEFAULT_CONTEXT_LINES: usize = 3;
 const DEFAULT_THEME: &str = "base16-ocean.dark"; // NB: Sync with build.rs
 
-// bat's curated syntaxes, a superset of the defaults that adds TOML.
-pub static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(two_face::syntax::extra_newlines);
+pub static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
+
+// The default syntaxes lack TOML; a separate set avoids relinking the defaults.
+static TOML_SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(|| {
+    let mut builder = SyntaxSetBuilder::new();
+    builder.add(
+        SyntaxDefinition::load_from_str(include_str!("toml.sublime-syntax"), true, None)
+            .expect("bundled TOML syntax must be valid"),
+    );
+    builder.build()
+});
+
+fn find_syntax(language_ext: &str) -> (&'static SyntaxSet, &'static SyntaxReference) {
+    if let Some(syntax) = SYNTAX_SET.find_syntax_by_extension(language_ext) {
+        (&SYNTAX_SET, syntax)
+    } else if let Some(syntax) = TOML_SYNTAX_SET.find_syntax_by_extension(language_ext) {
+        (&TOML_SYNTAX_SET, syntax)
+    } else {
+        (&SYNTAX_SET, SYNTAX_SET.find_syntax_plain_text())
+    }
+}
 
 pub fn highlight_code_line_by_line(
     source: &str,
@@ -40,9 +61,7 @@ fn highlight_lines<'a>(
 ) -> Vec<Result<String, &'a str>> {
     const DEFAULT_LANGUAGE: &str = "txt";
     let language_ext = language_ext.unwrap_or(DEFAULT_LANGUAGE);
-    let syntax = SYNTAX_SET
-        .find_syntax_by_extension(language_ext)
-        .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
+    let (syntax_set, syntax) = find_syntax(language_ext);
     let mut parse_state = ParseState::new(syntax);
     let mut scope_stack = ScopeStack::new();
     LinesWithEndings::from(source)
@@ -58,9 +77,7 @@ fn highlight_lines<'a>(
                     )
                 })
                 .collect();
-            let ops = parse_state
-                .parse_line(line, &SYNTAX_SET)
-                .map_err(|_| line)?;
+            let ops = parse_state.parse_line(line, syntax_set).map_err(|_| line)?;
             let (spans, _) =
                 line_tokens_to_classed_spans(line, &ops, ClassStyle::Spaced, &mut scope_stack)
                     .map_err(|_| line)?;
@@ -196,11 +213,11 @@ mod tests {
         let lines = highlight_toml(
             "[[activity_wasm]]\nmax_retries = 5 # retries\nlocation.oci = \"docker.io/x\"\n",
         );
-        assert!(lines[0].contains("entity name table toml"));
-        assert!(lines[1].contains("entity name tag toml"));
-        assert!(lines[1].contains("constant numeric integer toml"));
+        assert!(lines[0].contains("entity name tag table toml"));
+        assert!(lines[1].contains("entity other attribute-name key toml"));
+        assert!(lines[1].contains("constant numeric toml"));
         assert!(lines[1].contains("comment line number-sign toml"));
-        assert!(lines[2].contains("string quoted double basic toml"));
+        assert!(lines[2].contains("string quoted double toml"));
     }
 
     #[test]
@@ -211,6 +228,6 @@ mod tests {
             "{lines:#?}"
         );
         assert!(lines[1].starts_with("<span class=\"source toml\">"));
-        assert!(lines[1].contains("string quoted double basic toml"));
+        assert!(lines[1].contains("string quoted double toml"));
     }
 }

@@ -6,8 +6,7 @@
 //   - src/components/code/syntect_code_block.rs (.code-block-container, .code-scroll-area,
 //                                                .syntect-block, .expand-button — see also _buttons.scss)
 // Note: syntect token classes (e.g. .entity.name.label) come from the generated
-// syntect.css (build.rs) and are intentionally NOT defined here, except for
-// theme-neutral emphasis of scopes the themes do not cover.
+// syntect.css (build.rs) and are intentionally NOT defined here.
 // ============================================
 @use '../base/variables' as *;
 
@@ -107,9 +106,4 @@
     background-color: color-mix(in srgb, $color-status-warning 12%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, $color-status-warning 25%, transparent);
   }
-}
-
-// TOML table headers, uncolored by both themes.
-.syntect-block .entity.name.table {
-  font-weight: bold;
 }
