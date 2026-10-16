@@ -95,6 +95,11 @@
     align-items: center;
     flex-wrap: wrap;
     gap: $spacing-xs;
+
+    > a {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
 }
 
 .deployment-name {

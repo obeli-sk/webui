@@ -363,3 +363,40 @@
 .indented-children {
   margin-left: 20px;
 }
+
+// Side by side the panels need ~700px, so narrow screens stack them.
+@media (max-width: 760px) {
+  .trace-layout-container {
+    flex-direction: column;
+    gap: $spacing-sm;
+    margin-top: 0;
+    height: auto;
+    overflow: visible;
+  }
+
+  .trace-view,
+  .trace-detail {
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    height: 60vh;
+    resize: none;
+    padding: $spacing-sm;
+  }
+
+  .step-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .step-status {
+    margin-inline: $spacing-xs;
+    white-space: nowrap;
+  }
+
+  .relative-duration-container {
+    width: 5rem;
+  }
+}

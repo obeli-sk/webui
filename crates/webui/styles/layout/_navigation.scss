@@ -160,9 +160,17 @@ html { scroll-padding-top: $app-bar-clearance; }
 }
 
 @media (max-width: 520px) {
-  .app-bar-inner { flex-wrap: wrap; }
-  .app-bar-actions { margin-left: auto; }
+  .app-bar-inner { min-height: 3.25rem; padding-block: 0.4rem; gap: 0.5rem; }
+  .app-brand { min-width: 0; gap: 0.4rem; }
+  // The logo identifies Obelisk, so the app name gets the remaining width.
+  .app-brand-name { display: none; }
+  .app-brand-caption { min-width: 0; overflow: hidden; text-overflow: ellipsis; border-left: none; padding-left: 0; }
+  .app-bar-actions { flex-shrink: 0; gap: 0.5rem; }
   .app-bar .nav-submit { padding-inline: 0.55rem; }
+  .app-layout { padding: 0.5rem; }
+  .app-nav { flex-wrap: nowrap; gap: 0.25rem; padding-bottom: 0.5rem; }
+  .app-nav a { padding: 0.4rem 0.6rem; }
+  .container { padding: 0.75rem; border-radius: $border-radius-lg; }
 }
 
 // Dark Reader asks for dark, so the theme is forced (see index.html).

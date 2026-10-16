@@ -363,7 +363,7 @@ fn app_inner(
                         <div class="app-bar-inner">
                             <Link<Route> classes="app-brand" to={Route::Home}>
                                 <img class="app-brand-mark" src="/logo.png" alt="" />
-                                <span>{"Obelisk"}</span>
+                                <span class="app-brand-name">{"Obelisk"}</span>
                                 <span class="app-brand-caption">{app_name.as_deref().unwrap_or("WebUI")}</span>
                             </Link<Route>>
                             <div class="app-bar-actions">
