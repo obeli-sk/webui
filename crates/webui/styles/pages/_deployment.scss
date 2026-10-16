@@ -486,6 +486,18 @@
     }
 }
 
+@media (max-width: 520px) {
+    .view-tabs {
+        overflow-x: auto;
+
+        button, a {
+            padding-inline: 0.4rem;
+            font-size: $font-size-sm;
+            white-space: nowrap;
+        }
+    }
+}
+
 // TOML snippet with a copy button in the top-right corner.
 .toml-block {
     position: relative;

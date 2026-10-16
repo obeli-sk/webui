@@ -167,10 +167,11 @@ html { scroll-padding-top: $app-bar-clearance; }
   .app-brand-caption { min-width: 0; overflow: hidden; text-overflow: ellipsis; border-left: none; padding-left: 0; }
   .app-bar-actions { flex-shrink: 0; gap: 0.5rem; }
   .app-bar .nav-submit { padding-inline: 0.55rem; }
-  .app-layout { padding: 0.5rem; }
+  .app-layout { padding: 0.75rem; }
   .app-nav { flex-wrap: nowrap; gap: 0.25rem; padding-bottom: 0.5rem; }
   .app-nav a { padding: 0.4rem 0.6rem; }
-  .container { padding: 0.75rem; border-radius: $border-radius-lg; }
+  // The card frame only costs width here; panels inside keep their own boxes.
+  .container { padding: 0; border: none; border-radius: 0; box-shadow: none; background: none; }
 }
 
 // Dark Reader asks for dark, so the theme is forced (see index.html).

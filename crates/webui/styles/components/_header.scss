@@ -34,8 +34,7 @@ header {
 
 // Execution Header — execution_header.rs
 .execution-header {
-  margin-bottom: $spacing-lg;
-  padding-bottom: $spacing-md;
+  margin-bottom: $spacing-sm;
 
   .execution-heading {
     display: flex;
@@ -61,10 +60,20 @@ header {
     > p {
       margin: 0;
     }
+
+    // The status reuses a tree node; drop its empty caret slot and indent.
+    .tree-node-content {
+      padding-left: 0;
+    }
+
+    .tree-caret-none {
+      display: none;
+    }
   }
 
   > .execution-detail-tabs {
     margin-top: 0;
+    margin-bottom: $spacing-sm;
   }
 
   h3 {
@@ -81,6 +90,24 @@ header {
         text-decoration: underline;
         color: $color-accent-cyan;
       }
+    }
+  }
+}
+
+@media (max-width: 520px) {
+  .execution-header {
+    .execution-heading {
+      gap: $spacing-xs;
+      margin-bottom: $spacing-sm;
+    }
+
+    // Status and duration share one line under the ID instead of a right-aligned column.
+    .execution-heading-status {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: $spacing-md;
+      margin-left: 0;
     }
   }
 }

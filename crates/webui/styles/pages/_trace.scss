@@ -10,7 +10,6 @@
 
 .trace-layout-container {
   display: flex;
-  margin-top: $spacing-lg;
   height: 70vh;
   min-height: 20rem;
   overflow: hidden;
@@ -380,7 +379,8 @@
     min-width: 0;
     max-width: none;
     width: 100%;
-    height: 60vh;
+    height: auto;
+    max-height: 60vh;
     resize: none;
     padding: $spacing-sm;
   }
