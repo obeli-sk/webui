@@ -156,6 +156,7 @@ enum LogsAction {
     /// Fetch entries newer than the last one, even if the previous page was not full.
     Poll,
     SetFollow(bool),
+    ExecutionFinished,
     PageLoaded {
         execution_id: ExecutionId,
         show_derived: bool,
@@ -179,7 +180,12 @@ struct LogsState {
     /// Cursor of the last loaded entry, empty when nothing was loaded yet.
     cursor: String,
     has_more: bool,
+    /// False until the first page after a reset arrives.
+    loaded: bool,
     follow: bool,
+    execution_finished: bool,
+    /// Set once a page was requested after the execution finished, nothing new can appear after it.
+    complete: bool,
     request_generation: u64,
 }
 
@@ -335,7 +341,10 @@ impl Default for LogsState {
             logs: Vec::new(),
             cursor: String::new(),
             has_more: false,
+            loaded: false,
             follow: true,
+            execution_finished: false,
+            complete: false,
             request_generation: 0,
         }
     }
@@ -350,26 +359,45 @@ impl Reducible for LogsState {
                 execution_id,
                 show_derived,
                 filters,
-            } => Rc::new(Self {
-                execution_id: Some(execution_id),
-                show_derived,
-                filters,
-                fetch_state: LogsFetchState::Pending,
-                logs: Vec::new(),
-                cursor: String::new(),
-                has_more: false,
-                follow: self.follow,
-                request_generation: self.request_generation.wrapping_add(1),
-            }),
+            } => {
+                let execution_finished =
+                    self.execution_finished && self.execution_id.as_ref() == Some(&execution_id);
+                Rc::new(Self {
+                    execution_id: Some(execution_id),
+                    show_derived,
+                    filters,
+                    fetch_state: LogsFetchState::Pending,
+                    logs: Vec::new(),
+                    cursor: String::new(),
+                    has_more: false,
+                    loaded: false,
+                    follow: self.follow,
+                    execution_finished,
+                    complete: execution_finished,
+                    request_generation: self.request_generation.wrapping_add(1),
+                })
+            }
             LogsAction::LoadMore | LogsAction::Poll => {
                 if self.fetch_state == LogsFetchState::Pending
-                    || (matches!(action, LogsAction::LoadMore) && !self.has_more)
+                    || match action {
+                        LogsAction::LoadMore => !self.has_more,
+                        _ => self.complete,
+                    }
                 {
                     return self;
                 }
                 let mut this = self.as_ref().clone();
                 this.fetch_state = LogsFetchState::Pending;
+                this.complete = this.execution_finished;
                 this.request_generation = this.request_generation.wrapping_add(1);
+                Rc::new(this)
+            }
+            LogsAction::ExecutionFinished => {
+                if self.execution_finished {
+                    return self;
+                }
+                let mut this = self.as_ref().clone();
+                this.execution_finished = true;
                 Rc::new(this)
             }
             LogsAction::SetFollow(follow) => {
@@ -396,6 +424,7 @@ impl Reducible for LogsState {
                     this.cursor = cursor;
                 }
                 this.has_more = response.has_more;
+                this.loaded = true;
                 this.fetch_state = LogsFetchState::Idle;
                 Rc::new(this)
             }
@@ -409,6 +438,7 @@ impl Reducible for LogsState {
                 }
                 let mut this = self.as_ref().clone();
                 this.fetch_state = LogsFetchState::Idle;
+                this.loaded = true;
                 // Stop polling so a failing server does not raise a notification every interval.
                 this.follow = false;
                 Rc::new(this)
@@ -480,7 +510,8 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
         );
     }
 
-    // While following, load the remaining pages right away, then poll for new entries.
+    // While following, load the remaining pages right away, then poll for new entries until
+    // a page requested after the execution finished arrives.
     {
         let logs_state = logs_state.clone();
         use_effect_with(
@@ -488,12 +519,19 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                 logs_state.follow,
                 logs_state.fetch_state.clone(),
                 logs_state.has_more,
+                logs_state.execution_finished,
+                logs_state.complete,
                 logs_state.request_generation,
             ),
-            move |(follow, fetch_state, has_more, _)| {
+            move |(follow, fetch_state, has_more, execution_finished, complete, _)| {
                 let timeout = (*follow && *fetch_state == LogsFetchState::Idle).then(|| {
                     if *has_more {
                         logs_state.dispatch(LogsAction::LoadMore);
+                        None
+                    } else if *complete {
+                        None
+                    } else if *execution_finished {
+                        logs_state.dispatch(LogsAction::Poll);
                         None
                     } else {
                         Some(Timeout::new(FOLLOW_POLL_INTERVAL_MS, move || {
@@ -505,6 +543,11 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
             },
         );
     }
+
+    let on_finished = {
+        let logs_state = logs_state.clone();
+        Callback::from(move |()| logs_state.dispatch(LogsAction::ExecutionFinished))
+    };
 
     let list_ref = use_node_ref();
     {
@@ -602,11 +645,12 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
         })
     };
 
-    let is_loading = logs_state.fetch_state == LogsFetchState::Pending;
+    // Background polls must not flash the empty state or disable controls.
+    let is_loading = !logs_state.loaded;
 
     html! {
          <>
-            <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Logs} />
+            <ExecutionHeader execution_id={execution_id.clone()} link={ExecutionLink::Logs} {on_finished} />
 
             <div class="logs-options">
                 <div class="logs-levels" aria-label="Log levels and streams">
@@ -944,6 +988,36 @@ mod tests {
             request_generation: old_generation,
             response,
         });
+        assert!(Rc::ptr_eq(&state, &unchanged));
+    }
+
+    #[test]
+    fn polling_stops_after_a_page_requested_after_finish() {
+        let execution_id: ExecutionId = EXECUTION_ID.parse().unwrap();
+        let loaded = |state: Rc<LogsState>| {
+            let request_generation = state.request_generation;
+            state.reduce(LogsAction::PageLoaded {
+                execution_id: execution_id.clone(),
+                show_derived: true,
+                request_generation,
+                response: DecodedLogs::default(),
+            })
+        };
+        let state = loaded(Rc::new(LogsState::default()).reduce(LogsAction::Reset {
+            execution_id: execution_id.clone(),
+            show_derived: true,
+            filters: LogFilters::default(),
+        }));
+        assert!(state.loaded);
+        let state = loaded(state.reduce(LogsAction::Poll));
+        assert!(!state.complete);
+        // The final poll picks up entries written before the execution finished.
+        let state = state.reduce(LogsAction::ExecutionFinished);
+        let state = state.reduce(LogsAction::Poll);
+        assert!(state.fetch_state == LogsFetchState::Pending);
+        let state = loaded(state);
+        assert!(state.complete);
+        let unchanged = state.clone().reduce(LogsAction::Poll);
         assert!(Rc::ptr_eq(&state, &unchanged));
     }
 
