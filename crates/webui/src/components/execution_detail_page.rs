@@ -3,10 +3,9 @@ use crate::components::execution_header::{ExecutionHeader, ExecutionLink};
 use crate::components::notification::{Notification, NotificationContext};
 use crate::components::time_display::{TimeDisplayControl, Timestamp};
 use crate::components::trace::highlight::{BacktraceJump, TraceHighlightJump};
-use crate::components::trace::trace_view::{
-    PAGE, SLEEP_MILLIS, compute_submit_await_version_groups,
-};
+use crate::components::trace::trace_view::{PAGE, compute_submit_await_version_groups};
 use crate::model::{ColorExt as _, ExecutionIdExt as _};
+use crate::util::poll::{HISTORY_POLL_MS, next_poll_delay};
 use crate::util::time::{
     TimeGranularity, format_date, human_formatted_timedelta, relative_time_if_significant,
 };
@@ -34,6 +33,7 @@ pub struct ExecutionLogPageProps {
 struct Cursors {
     version_from: u32,
     responses_cursor_from: u32,
+    poll_delay_ms: u32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -317,6 +317,8 @@ fn on_state_change(
                         last_event.map(|e| &e.event),
                         Some(ExecutionRequest::Finished { .. })
                     );
+                    let changed =
+                        !server_resp.events.is_empty() || !server_resp.responses.is_empty();
                     let cursors = Cursors {
                         version_from: last_event
                             .map(|e| e.version.0 + 1)
@@ -326,6 +328,11 @@ fn on_state_change(
                             .last()
                             .map(|resp| resp.cursor.0)
                             .unwrap_or(cursors.responses_cursor_from),
+                        poll_delay_ms: next_poll_delay(
+                            cursors.poll_delay_ms,
+                            changed,
+                            HISTORY_POLL_MS,
+                        ),
                     };
                     log_state.dispatch(ExecutionLogAction::SavePage {
                         execution_id: execution_id.clone(),
@@ -334,7 +341,7 @@ fn on_state_change(
                         is_finished,
                     });
                     if !is_finished {
-                        TimeoutFuture::new(SLEEP_MILLIS).await;
+                        TimeoutFuture::new(cursors.poll_delay_ms).await;
                         log_state.dispatch(ExecutionLogAction::RequestNextPage {
                             execution_id,
                             cursors,

@@ -1,4 +1,5 @@
 use super::data::{BusyIntervalStatus, TraceData};
+use crate::util::poll::{HISTORY_POLL_MS, next_poll_delay};
 use crate::{
     app::Route,
     components::{
@@ -43,12 +44,12 @@ pub struct TraceViewProps {
 }
 
 pub const PAGE: u32 = 500;
-pub const SLEEP_MILLIS: u32 = 2500;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Cursors {
     version_from: u32,
     responses_cursor_from: u32,
+    poll_delay_ms: u32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -507,6 +508,8 @@ fn on_state_change(
                         last_event.map(|e| &e.event),
                         Some(ExecutionRequest::Finished { .. })
                     );
+                    let changed =
+                        !server_resp.events.is_empty() || !server_resp.responses.is_empty();
                     let cursors = Cursors {
                         version_from: last_event
                             .map(|e| e.version.0 + 1)
@@ -516,6 +519,11 @@ fn on_state_change(
                             .last()
                             .map(|resp| resp.cursor.0)
                             .unwrap_or(cursors.responses_cursor_from),
+                        poll_delay_ms: next_poll_delay(
+                            cursors.poll_delay_ms,
+                            changed,
+                            HISTORY_POLL_MS,
+                        ),
                     };
                     trace_view_state.dispatch(TraceviewStateAction::SavePage {
                         execution_id: execution_id.clone(),
@@ -525,7 +533,7 @@ fn on_state_change(
                         is_finished,
                     });
                     if !is_finished {
-                        TimeoutFuture::new(SLEEP_MILLIS).await;
+                        TimeoutFuture::new(cursors.poll_delay_ms).await;
                         trace_view_state.dispatch(TraceviewStateAction::RequestNextPage {
                             execution_id,
                             cursors,

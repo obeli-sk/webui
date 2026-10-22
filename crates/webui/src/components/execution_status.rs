@@ -2,6 +2,7 @@ use crate::{
     components::execution_detail::finished::FinishedEvent,
     model::{FinishedResultKind, FinishedStatus, StatusMessage},
     util::{
+        poll::{STATUS_POLL_MS, next_poll_delay},
         time::{TimeGranularity, format_date, relative_time, use_relative_now},
         trace_id,
     },
@@ -126,6 +127,7 @@ async fn run_status_subscription(
     let send_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
     let mut cancel_rx = cancel_rx.fuse();
     let mut last_status = None;
+    let mut poll_delay_ms = 0;
     loop {
         let summary = futures::select! {
             result = crate::rest::executions::get(&execution_id).fuse() => result,
@@ -143,7 +145,9 @@ async fn run_status_subscription(
                         message: StatusMessage::Summary(summary.clone()),
                     });
                 }
-                if current_status != last_status {
+                let changed = current_status != last_status;
+                poll_delay_ms = next_poll_delay(poll_delay_ms, changed, STATUS_POLL_MS);
+                if changed {
                     if let (Some(callback), Some(status)) = (&on_status_change, &current_status) {
                         callback.emit(status.clone());
                     }
@@ -184,10 +188,13 @@ async fn run_status_subscription(
                     }
                 }
             }
-            Err(err) => error!("[{connection_id}] Failed to get status for {execution_id}: {err}"),
+            Err(err) => {
+                error!("[{connection_id}] Failed to get status for {execution_id}: {err}");
+                poll_delay_ms = next_poll_delay(poll_delay_ms, false, STATUS_POLL_MS);
+            }
         }
         futures::select! {
-            _ = TimeoutFuture::new(1_000).fuse() => {},
+            _ = TimeoutFuture::new(poll_delay_ms).fuse() => {},
             _ = &mut cancel_rx => break,
         };
     }
