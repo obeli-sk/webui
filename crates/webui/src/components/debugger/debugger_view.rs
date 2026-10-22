@@ -1,3 +1,4 @@
+use crate::util::poll::{HISTORY_POLL_MS, next_poll_delay};
 use crate::{
     app::{Route, query::BacktraceVersionsPath},
     components::{
@@ -9,7 +10,7 @@ use crate::{
         execution_header::{ExecutionHeader, ExecutionLink},
         notification::{Notification, NotificationContext},
         trace::highlight::{BacktraceJump, TraceHighlightJump},
-        trace::trace_view::{PAGE, SLEEP_MILLIS, compute_submit_await_version_groups},
+        trace::trace_view::{PAGE, compute_submit_await_version_groups},
     },
     model::ExecutionIdExt as _,
     util::trace_id,
@@ -40,6 +41,7 @@ pub struct DebuggerViewProps {
 struct Cursors {
     version_from: u32,
     responses_cursor_from: u32,
+    poll_delay_ms: u32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1021,6 +1023,8 @@ fn on_state_change(
                         last_event.map(|e| &e.event),
                         Some(ExecutionRequest::Finished { .. })
                     );
+                    let changed =
+                        !server_resp.events.is_empty() || !server_resp.responses.is_empty();
                     let cursors = Cursors {
                         version_from: last_event
                             .map(|e| e.version.0 + 1)
@@ -1030,6 +1034,11 @@ fn on_state_change(
                             .last()
                             .map(|resp| resp.cursor.0)
                             .unwrap_or(cursors.responses_cursor_from),
+                        poll_delay_ms: next_poll_delay(
+                            cursors.poll_delay_ms,
+                            changed,
+                            HISTORY_POLL_MS,
+                        ),
                     };
                     debugger_state.dispatch(DebuggerStateAction::SavePage {
                         execution_id: execution_id.clone(),
@@ -1039,7 +1048,7 @@ fn on_state_change(
                         generation,
                     });
                     if !is_finished {
-                        TimeoutFuture::new(SLEEP_MILLIS).await;
+                        TimeoutFuture::new(cursors.poll_delay_ms).await;
                         debugger_state.dispatch(DebuggerStateAction::RequestNextPage {
                             execution_id,
                             cursors,
