@@ -2,7 +2,7 @@ use crate::{
     app::query::BacktraceVersionsPath,
     auth::AuthProvider,
     components::{
-        app_config_page::AppConfigPage,
+        app_policy_page::AppPolicyPage,
         component_redirect::ComponentRedirect,
         debugger::debugger_view::DebuggerView,
         deployment_detail_page::DeploymentDetailPage,
@@ -179,8 +179,11 @@ pub enum Route {
     ServerInfo,
     #[at("/admin/system-events")]
     SystemEvents,
+    #[at("/admin/app-policy")]
+    AppPolicy,
+    // backcompat: webui 2026-10-16, renamed to App policy
     #[at("/admin/app-config")]
-    AppConfig,
+    AppConfigLegacy,
     #[at("/admin/retention")]
     Retention,
     #[not_found]
@@ -226,7 +229,8 @@ impl Route {
             }
             Route::ServerInfo => html! { <ServerInfoPage /> },
             Route::SystemEvents => html! { <SystemEventsPage /> },
-            Route::AppConfig => html! { <AppConfigPage /> },
+            Route::AppPolicy => html! { <AppPolicyPage /> },
+            Route::AppConfigLegacy => html! { <Redirect<Route> to={Route::AppPolicy} /> },
             Route::Retention => html! { <RetentionPage /> },
             Route::NotFound => html! { <NotFound /> },
         }
@@ -408,7 +412,13 @@ fn app_nav() -> Html {
     );
     let system_active = matches!(
         route.as_ref(),
-        Some(Route::ServerInfo | Route::SystemEvents | Route::AppConfig | Route::Retention)
+        Some(
+            Route::ServerInfo
+                | Route::SystemEvents
+                | Route::AppPolicy
+                | Route::AppConfigLegacy
+                | Route::Retention
+        )
     );
 
     html! {
