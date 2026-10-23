@@ -4,7 +4,7 @@ This is a webhook endpoint component that:
 * forwards `/api` requests to the Obelisk REST API at `TARGET_URL` so browser requests stay on the WebUI origin.
 
 ## Running in obelisk
-The component is automatically loaded when `obelisk.toml` contains:
+The component is automatically loaded when `server.toml` contains:
 ```toml
 webui.listening_addr = "127.0.0.1:8080"
 ```
@@ -21,21 +21,34 @@ trunk --log=debug --offline build --config crates/webui/Trunk.toml
 cargo build --package webui-proxy --target=wasm32-wasip2 --release
 ```
 
-Add the `webui-proxy` as a webhook endpoint:
+Add the `webui-proxy` as a webhook endpoint on a named HTTP server in `server.toml`:
 ```toml
 [[http_server]]
 name = "webui2"
 listening_addr = "127.0.0.1:8082"
-
-[[webhook_endpoint]]
+```
+`deployment.toml`:
+```toml
+[[webhook_endpoint_wasm]]
 name = "webui2"
 http_server = "webui2"
-location.path = "target/wasm32-wasip2/release/webui_proxy.wasm"
+location = "target/wasm32-wasip2/release/webui_proxy.wasm"
 routes = [""]
-env_vars = ["TARGET_URL=http://127.0.0.1:5005"]
+env_vars = [{ key = "TARGET_URL", value = "http://127.0.0.1:5005" }]
 forward_stdout = "stderr"
 forward_stderr = "stderr"
+
+[[webhook_endpoint_wasm.allowed_host]]
+url_prefix = "http://127.0.0.1:5005"
+methods = ["GET", "POST", "PUT", "DELETE"]
 ```
+The app policy in `app.toml` must allow the same destination:
+```toml
+[[outbound_http.allowed_host]]
+url_prefix = "http://127.0.0.1:5005"
+methods = ["GET", "POST", "PUT", "DELETE"]
+```
+Check the setup with `obelisk server verify --skip-db --server-config server.toml --app-config app.toml --deployment deployment.toml`.
 
 ## Pushing to docker hub
 See [webui-bump.sh](../../scripts/push-webui.sh).

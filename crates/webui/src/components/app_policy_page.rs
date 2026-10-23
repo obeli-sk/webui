@@ -11,8 +11,8 @@ use log::error;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
-#[component(AppConfigPage)]
-pub fn app_config_page() -> Html {
+#[component(AppPolicyPage)]
+pub fn app_policy_page() -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
     let response = use_state(|| None::<Result<String, String>>);
@@ -21,12 +21,12 @@ pub fn app_config_page() -> Html {
         let response = response.clone();
         use_effect_with((), move |()| {
             spawn_local(async move {
-                match rest::get_text_with_accept("/v1/app-config", &[], "application/toml").await {
-                    Ok(config) => response.set(Some(Ok(config))),
+                match rest::get_text_with_accept("/v1/app-policy", &[], "application/toml").await {
+                    Ok(policy) => response.set(Some(Ok(policy))),
                     Err(err) => {
-                        error!("Failed to get app config: {err}");
+                        error!("Failed to get app policy: {err}");
                         notifications.push(Notification::error(format!(
-                            "Failed to get app config: {err}"
+                            "Failed to get app policy: {err}"
                         )));
                         response.set(Some(Err(err)));
                     }
@@ -37,12 +37,12 @@ pub fn app_config_page() -> Html {
 
     html! {
         <main>
-            <SystemNav active={Route::AppConfig} />
-            <h1>{"App config"}</h1>
+            <SystemNav active={Route::AppPolicy} />
+            <h1>{"App policy"}</h1>
             {match response.as_ref() {
-                None => html! { <p>{"Loading app config…"}</p> },
-                Some(Err(err)) => html! { <p class="error">{format!("Cannot load app config: {err}")}</p> },
-                Some(Ok(config)) => toml_block(config.clone()),
+                None => html! { <p>{"Loading app policy…"}</p> },
+                Some(Err(err)) => html! { <p class="error">{format!("Cannot load app policy: {err}")}</p> },
+                Some(Ok(policy)) => toml_block(policy.clone()),
             }}
         </main>
     }

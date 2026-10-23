@@ -2,8 +2,7 @@ use crate::{
     app::query::BacktraceVersionsPath,
     auth::AuthProvider,
     components::{
-        app_config_page::AppConfigPage,
-        component_redirect::ComponentRedirect,
+        app_policy_page::AppPolicyPage,
         debugger::debugger_view::DebuggerView,
         deployment_detail_page::DeploymentDetailPage,
         deployment_diff_page::DeploymentDiffPage,
@@ -137,11 +136,6 @@ pub mod query {
 pub enum Route {
     #[at("/")]
     Home,
-    // backcompat: 0.28.1 had standalone component pages, both routes redirect to the deployment detail page.
-    #[at("/components")]
-    ComponentList,
-    #[at("/component/:component_id")]
-    Component { component_id: ComponentId },
     #[at("/deployments")]
     DeploymentList,
     #[at("/deployments/diff/:from/:to")]
@@ -179,8 +173,8 @@ pub enum Route {
     ServerInfo,
     #[at("/admin/system-events")]
     SystemEvents,
-    #[at("/admin/app-config")]
-    AppConfig,
+    #[at("/admin/app-policy")]
+    AppPolicy,
     #[at("/admin/retention")]
     Retention,
     #[not_found]
@@ -192,10 +186,6 @@ impl Route {
     pub fn render(route: Route) -> Html {
         match route {
             Route::Home | Route::ExecutionList => html! { <ExecutionListPage /> },
-            Route::ComponentList => html! { <ComponentRedirect /> },
-            Route::Component { component_id } => {
-                html! { <ComponentRedirect component_id={Some(component_id)} /> }
-            }
             Route::DeploymentList => html! { <DeploymentListPage /> },
             Route::DeploymentDetail { deployment_id } => {
                 html! { <DeploymentDetailPage {deployment_id} /> }
@@ -226,7 +216,7 @@ impl Route {
             }
             Route::ServerInfo => html! { <ServerInfoPage /> },
             Route::SystemEvents => html! { <SystemEventsPage /> },
-            Route::AppConfig => html! { <AppConfigPage /> },
+            Route::AppPolicy => html! { <AppPolicyPage /> },
             Route::Retention => html! { <RetentionPage /> },
             Route::NotFound => html! { <NotFound /> },
         }
@@ -408,7 +398,7 @@ fn app_nav() -> Html {
     );
     let system_active = matches!(
         route.as_ref(),
-        Some(Route::ServerInfo | Route::SystemEvents | Route::AppConfig | Route::Retention)
+        Some(Route::ServerInfo | Route::SystemEvents | Route::AppPolicy | Route::Retention)
     );
 
     html! {
