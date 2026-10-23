@@ -3,7 +3,6 @@ pub mod app_policy_page;
 pub mod code;
 pub mod component_detail;
 pub mod component_graph;
-pub mod component_redirect;
 pub mod copy_button;
 pub mod debugger;
 pub mod deployment_actions;
