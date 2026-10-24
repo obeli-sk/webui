@@ -181,6 +181,10 @@ pub fn execution_header(
         )
     });
 
+    let is_cron = exec_info
+        .as_ref()
+        .is_some_and(|exec_info| exec_info.component_type == ComponentType::Cron);
+
     let is_cancellable_workflow = exec_info.as_ref().is_some_and(|exec_info| {
         exec_info.component_type == ComponentType::Workflow && exec_info.ffqn.is_cancellable()
     });
@@ -472,6 +476,19 @@ pub fn execution_header(
                             ffqn={ffqn.clone()}
                         />
                     }
+                </div>
+            }
+
+            if is_cron && !*is_finished {
+                <div class="execution-actions">
+                    <PauseButton
+                        execution_id={execution_id.clone()}
+                        is_paused={*is_paused}
+                    />
+                    <UnpauseButton
+                        execution_id={execution_id.clone()}
+                        is_paused={*is_paused}
+                    />
                 </div>
             }
         </div>
