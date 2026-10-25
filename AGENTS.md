@@ -118,7 +118,7 @@ This creates:
 
 ## REST API
 
-The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for the request helpers. Responses deserialize directly into the server's own types from `obeli-sk-concepts` and `obeli-sk-rest-types`, so the webui does not define its own serde copies of them.
+The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for the request helpers. Server info and deployment switch use the generated package in `vendor/obelisk-api`, imported from a separately pinned authoritative OpenAPI contract. Remaining responses deserialize into `obeli-sk-concepts` and `obeli-sk-rest-types` from the submodule. See `assets/schemas/README-obelisk-api.md` for refreshing the generated client.
 
 The `rest` module adds the bearer token and opens the authentication dialog for HTTP 401 responses.
 

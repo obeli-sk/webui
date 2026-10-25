@@ -2,10 +2,14 @@
 
 use crate::model::{ComponentConfigExt as _, InterfaceFilter, map_interfaces_to_fn_details};
 use crate::rest;
-use concepts::{ComponentId, IfcFqnName, prefixed_ulid::DeploymentId};
+use concepts::{
+    ComponentId, IfcFqnName,
+    prefixed_ulid::{DeploymentId, NodeRunId},
+};
 use hashbrown::HashMap;
 use log::debug;
-use rest_types::{components::ComponentConfig, server::ServerInfoResponse};
+use obelisk_api_types::ServerInfoResponse;
+use rest_types::components::ComponentConfig;
 use std::rc::Rc;
 
 /// Loaded component data from the server.
@@ -46,6 +50,31 @@ pub async fn get_current_deployment_id() -> Result<DeploymentId, String> {
     Ok(get_server_info().await?.deployment_id)
 }
 
-pub async fn get_server_info() -> Result<ServerInfoResponse, String> {
-    rest::get("/v1/info", &[]).await
+pub struct ServerInfo {
+    response: ServerInfoResponse,
+    pub deployment_id: DeploymentId,
+    pub node_run_id: NodeRunId,
+}
+
+impl std::ops::Deref for ServerInfo {
+    type Target = ServerInfoResponse;
+
+    fn deref(&self) -> &Self::Target {
+        &self.response
+    }
+}
+
+pub async fn get_server_info() -> Result<ServerInfo, String> {
+    let response: ServerInfoResponse = rest::get("/v1/info", &[]).await?;
+    Ok(ServerInfo {
+        deployment_id: response
+            .deployment_id
+            .parse::<DeploymentId>()
+            .map_err(|err| err.to_string())?,
+        node_run_id: response
+            .node_run_id
+            .parse::<NodeRunId>()
+            .map_err(|err| err.to_string())?,
+        response,
+    })
 }

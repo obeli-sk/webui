@@ -24,7 +24,7 @@ fn main() {
             .inspect_err(|e| error!("Failed to fetch server info: {e}"))
             .ok();
         let deployment_id = server_info.as_ref().map(|info| info.deployment_id);
-        let app_name = server_info.map(|info| info.app_name);
+        let app_name = server_info.map(|info| info.app_name.clone());
         if let Some(app_name) = &app_name {
             gloo::utils::document().set_title(&format!("{app_name} | Obelisk WebUI"));
         }

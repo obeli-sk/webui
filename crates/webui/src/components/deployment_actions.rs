@@ -5,10 +5,10 @@ use crate::{
 use concepts::prefixed_ulid::DeploymentId;
 use gloo::timers::callback::Timeout;
 use log::error;
-use rest_types::{
-    MessageBody,
-    deployment::{DeploymentStatusSer, DeploymentSwitchPayload},
+use obelisk_api_types::{
+    DeploymentSwitchOutcome, DeploymentSwitchPayload, DeploymentSwitchResponse,
 };
+use rest_types::deployment::DeploymentStatusSer;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
@@ -83,7 +83,7 @@ pub fn deployment_actions(
                 let in_flight = in_flight.clone();
                 in_flight.set(true);
                 spawn_local(async move {
-                    let response = rest::put::<_, MessageBody>(
+                    let response = rest::put::<_, DeploymentSwitchResponse>(
                         &format!("/v1/deployments/{deployment_id}/switch"),
                         &DeploymentSwitchPayload {
                             allow_unavailable_runtime_config: allow_unavailable,
@@ -93,20 +93,22 @@ pub fn deployment_actions(
                     .await;
                     in_flight.set(false);
                     match response {
-                        Ok(MessageBody::Ok { ok }) => {
-                            match ok.as_str() {
-                                "switched" => notifications.push(Notification::success(
-                                    "Apply succeeded, the deployment is now live",
-                                )),
-                                "restart_required" => notifications.push(Notification::info(
-                                    "Deployment enqueued, restart the server to apply it",
-                                )),
-                                _ => notifications
-                                    .push(Notification::info("Deployment switch finished")),
+                        Ok(DeploymentSwitchResponse { ok }) => {
+                            match ok {
+                                DeploymentSwitchOutcome::Switched => {
+                                    notifications.push(Notification::success(
+                                        "Apply succeeded, the deployment is now live",
+                                    ))
+                                }
+                                DeploymentSwitchOutcome::RestartRequired => {
+                                    notifications.push(Notification::info(
+                                        "Deployment enqueued, restart the server to apply it",
+                                    ))
+                                }
                             }
                             on_switched.emit(());
                         }
-                        Ok(MessageBody::Err { err: e }) | Err(e) => {
+                        Err(e) => {
                             error!("Failed to switch deployment: {e:?}");
                             notifications.push(Notification::error(format!(
                                 "Failed to switch deployment: {}",
@@ -168,17 +170,5 @@ pub fn deployment_actions(
                 </button>
             }
         </div>
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn switch_error_body_is_reported_as_failure() {
-        let outcome: MessageBody = serde_json::from_str(r#"{"err":"component not found"}"#)
-            .expect("the API error body must be recognized");
-        assert!(matches!(outcome, MessageBody::Err { err } if err == "component not found"));
     }
 }
