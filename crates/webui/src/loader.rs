@@ -43,10 +43,7 @@ pub async fn load_components() -> Result<LoadedComponents, String> {
 
 /// Fetches the current deployment ID from the server.
 pub async fn get_current_deployment_id() -> Result<DeploymentId, String> {
-    rest::get::<String>("/v1/deployment-id", &[])
-        .await?
-        .parse()
-        .map_err(|err| format!("Invalid deployment ID: {err}"))
+    Ok(get_server_info().await?.deployment_id)
 }
 
 pub async fn get_server_info() -> Result<ServerInfoResponse, String> {
