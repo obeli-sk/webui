@@ -1796,6 +1796,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "obelisk-api-types"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "object"
 version = "0.37.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3556,6 +3565,7 @@ dependencies = [
  "obeli-sk-concepts",
  "obeli-sk-rest-types",
  "obeli-sk-val-json",
+ "obelisk-api-types",
  "once_cell",
  "rand 0.9.5",
  "serde",

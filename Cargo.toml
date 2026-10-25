@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "obelisk/crates/val-json",
     "crates/webui",
+    "vendor/obelisk-api",
     "crates/webui-proxy",
 ]
 # Inherit their dependencies from the obelisk workspace.
@@ -17,6 +18,7 @@ edition = "2024"
 rust-version = "1.98.1"
 
 [workspace.dependencies]
+obelisk-api-types = { path = "vendor/obelisk-api" }
 val-json = { package = "obeli-sk-val-json", path = "obelisk/crates/val-json" }
 concepts = { package = "obeli-sk-concepts", path = "obelisk/crates/concepts", default-features = false }
 rest-types = { package = "obeli-sk-rest-types", path = "obelisk/crates/rest-types" }

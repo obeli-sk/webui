@@ -5,10 +5,9 @@ use crate::{
         system_nav::SystemNav,
         time_display::Timestamp,
     },
-    loader::get_server_info,
+    loader::{ServerInfo, get_server_info},
 };
 use log::error;
-use rest_types::server::ServerInfoResponse;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -17,7 +16,7 @@ use yew_router::prelude::*;
 pub fn server_info_page() -> Html {
     let notifications =
         use_context::<NotificationContext>().expect("NotificationContext should be provided");
-    let response = use_state(|| None::<Result<ServerInfoResponse, String>>);
+    let response = use_state(|| None::<Result<ServerInfo, String>>);
 
     {
         let response = response.clone();
