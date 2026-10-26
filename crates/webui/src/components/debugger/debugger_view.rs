@@ -1,4 +1,4 @@
-use crate::util::poll::{HISTORY_POLL_MS, next_poll_delay};
+use crate::status_hub::StatusHub;
 use crate::{
     app::{Route, query::BacktraceVersionsPath},
     components::{
@@ -23,7 +23,6 @@ use concepts::{
         JoinSetResponseEvent, JoinSetResponseEventOuter, ResponseWithCursor, VersionType,
     },
 };
-use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{debug, error, info, trace};
 use rest_types::backtrace::BacktraceInfoSer;
@@ -41,7 +40,6 @@ pub struct DebuggerViewProps {
 struct Cursors {
     version_from: u32,
     responses_cursor_from: u32,
-    poll_delay_ms: u32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -319,8 +317,9 @@ pub fn debugger_view(
         }
     });
 
+    let status_hub = use_context::<StatusHub>().expect("StatusHub should be provided by App");
     use_effect_with(
-        (debugger_state.clone(), notifications.clone()),
+        (debugger_state.clone(), notifications.clone(), status_hub),
         on_state_change,
     );
 
@@ -978,7 +977,11 @@ pub fn debugger_view(
 }
 
 fn on_state_change(
-    (debugger_state, notifications): &(UseReducerHandle<DebuggerState>, NotificationContext),
+    (debugger_state, notifications, hub): &(
+        UseReducerHandle<DebuggerState>,
+        NotificationContext,
+        StatusHub,
+    ),
 ) {
     trace!("Triggered use_effects");
     for (execution_id, cursors) in debugger_state
@@ -999,8 +1002,11 @@ fn on_state_change(
         let execution_id = execution_id.clone();
         let debugger_state = debugger_state.clone();
         let notifications = notifications.clone();
+        let hub = hub.clone();
         wasm_bindgen_futures::spawn_local(async move {
             trace!("list_execution_events {cursors:?}");
+            let _watch = hub.watch(&execution_id);
+            let seq = hub.seq(&execution_id);
             let response = crate::rest::events::history_page(
                 &execution_id,
                 cursors.version_from,
@@ -1023,8 +1029,8 @@ fn on_state_change(
                         last_event.map(|e| &e.event),
                         Some(ExecutionRequest::Finished { .. })
                     );
-                    let changed =
-                        !server_resp.events.is_empty() || !server_resp.responses.is_empty();
+                    let full = server_resp.events.len() >= PAGE as usize
+                        || server_resp.responses.len() >= PAGE as usize;
                     let cursors = Cursors {
                         version_from: last_event
                             .map(|e| e.version.0 + 1)
@@ -1034,11 +1040,6 @@ fn on_state_change(
                             .last()
                             .map(|resp| resp.cursor.0)
                             .unwrap_or(cursors.responses_cursor_from),
-                        poll_delay_ms: next_poll_delay(
-                            cursors.poll_delay_ms,
-                            changed,
-                            HISTORY_POLL_MS,
-                        ),
                     };
                     debugger_state.dispatch(DebuggerStateAction::SavePage {
                         execution_id: execution_id.clone(),
@@ -1048,7 +1049,10 @@ fn on_state_change(
                         generation,
                     });
                     if !is_finished {
-                        TimeoutFuture::new(cursors.poll_delay_ms).await;
+                        // A full page is followed at once, otherwise wait until the execution changes.
+                        if !full {
+                            hub.changed(&execution_id, seq).await;
+                        }
                         debugger_state.dispatch(DebuggerStateAction::RequestNextPage {
                             execution_id,
                             cursors,

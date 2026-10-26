@@ -345,8 +345,11 @@ fn app_inner(
         });
     }
 
+    let status_hub = use_memo((), |()| crate::status_hub::StatusHub::default());
+
     html! {
         <ContextProvider<AppState> context={app_state.deref().clone()}>
+        <ContextProvider<crate::status_hub::StatusHub> context={(*status_hub).clone()}>
             <BrowserRouter>
                 <div class="app-shell">
                     <header class="app-bar">
@@ -370,6 +373,7 @@ fn app_inner(
                     </div>
                 </div>
             </BrowserRouter>
+        </ContextProvider<crate::status_hub::StatusHub>>
         </ContextProvider<AppState>>
     }
 }
