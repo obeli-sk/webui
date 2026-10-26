@@ -5,7 +5,7 @@ use crate::components::time_display::{TimeDisplayControl, Timestamp};
 use crate::components::trace::highlight::{BacktraceJump, TraceHighlightJump};
 use crate::components::trace::trace_view::{PAGE, compute_submit_await_version_groups};
 use crate::model::{ColorExt as _, ExecutionIdExt as _};
-use crate::util::poll::{HISTORY_POLL_MS, next_poll_delay};
+use crate::status_hub::StatusHub;
 use crate::util::time::{
     TimeGranularity, format_date, human_formatted_timedelta, relative_time_if_significant,
 };
@@ -17,7 +17,6 @@ use concepts::{
         JoinSetResponseEventOuter, ResponseWithCursor,
     },
 };
-use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{error, trace};
 use std::rc::Rc;
@@ -33,7 +32,6 @@ pub struct ExecutionLogPageProps {
 struct Cursors {
     version_from: u32,
     responses_cursor_from: u32,
-    poll_delay_ms: u32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -210,7 +208,11 @@ pub fn execution_log_page(ExecutionLogPageProps { execution_id }: &ExecutionLogP
         },
     );
 
-    use_effect_with((log_state.clone(), notifications.clone()), on_state_change);
+    let status_hub = use_context::<StatusHub>().expect("StatusHub should be provided by App");
+    use_effect_with(
+        (log_state.clone(), notifications.clone(), status_hub),
+        on_state_change,
+    );
 
     let dummy_events = Vec::new();
     let events = log_state.events.get(execution_id).unwrap_or(&dummy_events);
@@ -284,7 +286,11 @@ fn fetch_child_created(
 }
 
 fn on_state_change(
-    (log_state, notifications): &(UseReducerHandle<ExecutionLogState>, NotificationContext),
+    (log_state, notifications, hub): &(
+        UseReducerHandle<ExecutionLogState>,
+        NotificationContext,
+        StatusHub,
+    ),
 ) {
     trace!("Triggered on_state_change");
     for (execution_id, cursors) in
@@ -300,7 +306,10 @@ fn on_state_change(
         let execution_id = execution_id.clone();
         let log_state = log_state.clone();
         let notifications = notifications.clone();
+        let hub = hub.clone();
         wasm_bindgen_futures::spawn_local(async move {
+            let _watch = hub.watch(&execution_id);
+            let seq = hub.seq(&execution_id);
             let response = crate::rest::events::history_page(
                 &execution_id,
                 cursors.version_from,
@@ -317,8 +326,8 @@ fn on_state_change(
                         last_event.map(|e| &e.event),
                         Some(ExecutionRequest::Finished { .. })
                     );
-                    let changed =
-                        !server_resp.events.is_empty() || !server_resp.responses.is_empty();
+                    let full = server_resp.events.len() >= PAGE as usize
+                        || server_resp.responses.len() >= PAGE as usize;
                     let cursors = Cursors {
                         version_from: last_event
                             .map(|e| e.version.0 + 1)
@@ -328,11 +337,6 @@ fn on_state_change(
                             .last()
                             .map(|resp| resp.cursor.0)
                             .unwrap_or(cursors.responses_cursor_from),
-                        poll_delay_ms: next_poll_delay(
-                            cursors.poll_delay_ms,
-                            changed,
-                            HISTORY_POLL_MS,
-                        ),
                     };
                     log_state.dispatch(ExecutionLogAction::SavePage {
                         execution_id: execution_id.clone(),
@@ -341,7 +345,10 @@ fn on_state_change(
                         is_finished,
                     });
                     if !is_finished {
-                        TimeoutFuture::new(cursors.poll_delay_ms).await;
+                        // A full page is followed at once, otherwise wait until the execution changes.
+                        if !full {
+                            hub.changed(&execution_id, seq).await;
+                        }
                         log_state.dispatch(ExecutionLogAction::RequestNextPage {
                             execution_id,
                             cursors,

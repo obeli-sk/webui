@@ -3,12 +3,13 @@ use crate::{
     components::execution_header::{ExecutionHeader, ExecutionLink},
     components::notification::{Notification, NotificationContext},
     components::time_display::{TimeDisplayControl, Timestamp},
-    rest,
+    rest::{self, sse::SseStream},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use concepts::{ExecutionId, prefixed_ulid::RunId};
-use gloo::timers::callback::Timeout;
+use futures::future::{AbortHandle, abortable};
+use gloo::net::http::Request;
 use log::debug;
 use rest_types::logs::{LogEntryRowSer, LogEntrySer, LogLevelSer, LogStreamTypeSer};
 use serde::{Deserialize, Serialize};
@@ -31,7 +32,6 @@ const FILTER_LEVELS: [LogLevelSer; 5] = [
 ];
 const DEFAULT_LEVELS: [LogLevelSer; 5] = FILTER_LEVELS;
 const FILTER_STREAMS: [LogStreamTypeSer; 2] = [LogStreamTypeSer::Stdout, LogStreamTypeSer::Stderr];
-const FOLLOW_POLL_INTERVAL_MS: u32 = 2_000;
 const SCROLL_BOTTOM_THRESHOLD_PX: i32 = 40;
 
 #[derive(Clone, PartialEq)]
@@ -510,10 +510,11 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
         );
     }
 
-    // While following, load the remaining pages right away, then poll for new entries until
+    // While following, load the remaining pages right away, then stream new entries until
     // a page requested after the execution finished arrives.
     {
         let logs_state = logs_state.clone();
+        let notifications = notifications.clone();
         use_effect_with(
             (
                 logs_state.follow,
@@ -524,7 +525,7 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                 logs_state.request_generation,
             ),
             move |(follow, fetch_state, has_more, execution_finished, complete, _)| {
-                let timeout = (*follow && *fetch_state == LogsFetchState::Idle).then(|| {
+                let stream = (*follow && *fetch_state == LogsFetchState::Idle).then(|| {
                     if *has_more {
                         logs_state.dispatch(LogsAction::LoadMore);
                         None
@@ -534,12 +535,14 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                         logs_state.dispatch(LogsAction::Poll);
                         None
                     } else {
-                        Some(Timeout::new(FOLLOW_POLL_INTERVAL_MS, move || {
-                            logs_state.dispatch(LogsAction::Poll);
-                        }))
+                        follow_logs(logs_state, notifications)
                     }
                 });
-                move || drop(timeout)
+                move || {
+                    if let Some(Some(stream)) = stream {
+                        stream.abort();
+                    }
+                }
             },
         );
     }
@@ -822,15 +825,8 @@ fn fetch_logs_page(
     wasm_bindgen_futures::spawn_local(async move {
         const PAGE_SIZE: usize = 200;
         debug!("Requesting logs page `{page_token}`");
-        let mut query = vec![
-            ("length", PAGE_SIZE.to_string()),
-            ("direction", "newer".to_string()),
-            ("show_derived", show_derived.to_string()),
-        ];
-        query.extend(filters.query_params());
-        if !page_token.is_empty() {
-            query.push(("cursor", page_token));
-        }
+        let mut query = logs_query(show_derived, &filters, &page_token);
+        query.push(("length", PAGE_SIZE.to_string()));
         let result = rest::get::<Vec<LogEntryRowSer>>(
             &format!("/v1/executions/{execution_id}/logs"),
             &query,
@@ -861,6 +857,78 @@ fn fetch_logs_page(
             }
         }
     });
+}
+
+fn logs_query(
+    show_derived: bool,
+    filters: &LogFilters,
+    cursor: &str,
+) -> Vec<(&'static str, String)> {
+    let mut query = vec![
+        ("direction", "newer".to_string()),
+        ("show_derived", show_derived.to_string()),
+    ];
+    query.extend(filters.query_params());
+    if !cursor.is_empty() {
+        query.push(("cursor", cursor.to_string()));
+    }
+    query
+}
+
+/// Streams entries after the current cursor until the server ends the stream, which happens
+/// once the execution finished. A final `Poll` then marks the logs complete.
+fn follow_logs(
+    logs_state: UseReducerHandle<LogsState>,
+    notifications: NotificationContext,
+) -> Option<AbortHandle> {
+    let execution_id = logs_state.execution_id.clone()?;
+    let show_derived = logs_state.show_derived;
+    let request_generation = logs_state.request_generation;
+    if logs_state.filters.levels.is_empty() && logs_state.filters.streams.is_empty() {
+        return None;
+    }
+    let mut query = logs_query(show_derived, &logs_state.filters, &logs_state.cursor);
+    query.push(("follow", "true".to_string()));
+    let (task, handle) = abortable(async move {
+        let result = async {
+            let request = Request::get(&format!(
+                "{}/v1/executions/{execution_id}/logs",
+                crate::BASE_URL
+            ))
+            .query(query.iter().map(|(key, value)| (*key, value.as_str())));
+            let mut stream = SseStream::open(request, None::<&()>).await?;
+            while let Some(event) = stream.next().await? {
+                if event.event == "logs" {
+                    let rows: Vec<LogEntryRowSer> =
+                        serde_json::from_str(&event.data).map_err(|err| err.to_string())?;
+                    logs_state.dispatch(LogsAction::PageLoaded {
+                        execution_id: execution_id.clone(),
+                        show_derived,
+                        request_generation,
+                        response: decode_logs(rows, usize::MAX)?,
+                    });
+                }
+            }
+            Ok::<_, String>(())
+        }
+        .await;
+        match result {
+            Ok(()) => logs_state.dispatch(LogsAction::Poll),
+            Err(err) => {
+                log::error!("Failed to follow logs: {err}");
+                notifications.push(Notification::error(format!("Failed to follow logs: {err}")));
+                logs_state.dispatch(LogsAction::FetchError {
+                    execution_id,
+                    show_derived,
+                    request_generation,
+                });
+            }
+        }
+    });
+    wasm_bindgen_futures::spawn_local(async move {
+        let _ = task.await;
+    });
+    Some(handle)
 }
 
 fn request_matches(

@@ -1,5 +1,4 @@
 pub mod color;
-pub mod poll;
 pub mod time;
 pub mod wit_highlighter;
 pub mod wit_type_formatter;

@@ -1,8 +1,8 @@
 use crate::{
     components::execution_detail::finished::FinishedEvent,
     model::{FinishedResultKind, FinishedStatus, StatusMessage},
+    status_hub::StatusHub,
     util::{
-        poll::{STATUS_POLL_MS, next_poll_delay},
         time::{TimeGranularity, format_date, relative_time, use_relative_now},
         trace_id,
     },
@@ -12,13 +12,15 @@ use concepts::{
     ExecutionId,
     storage::{PendingState, PendingStateBlockedByJoinSet, PendingStateFinished},
 };
-use futures::FutureExt as _;
+use futures::StreamExt as _;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use rest_types::executions::ExecutionWithStateSer;
 use std::rc::Rc;
 use yew::prelude::*;
+
+const FINISHED_RETRY_MS: u32 = 5_000;
 
 /// Controls how the ExecutionStatus component handles finished status
 #[derive(Clone, PartialEq, Default)]
@@ -116,87 +118,69 @@ pub fn extract_status(msg: &StatusMessage) -> Option<PendingState> {
 }
 
 async fn run_status_subscription(
+    hub: StatusHub,
     status_state: UseReducerHandle<StatusState>,
     connection_id: Rc<str>,
     execution_id: ExecutionId,
     finished_status: FinishedStatusMode,
-    cancel_rx: futures::channel::oneshot::Receiver<()>,
     on_summary: Option<Callback<ExecutionWithStateSer>>,
     on_status_change: Option<Callback<PendingState>>,
 ) {
     let send_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
-    let mut cancel_rx = cancel_rx.fuse();
+    let (_watch, mut updates) = hub.subscribe(&execution_id);
     let mut last_status = None;
-    let mut poll_delay_ms = 0;
     loop {
-        let summary = futures::select! {
-            result = crate::rest::executions::get(&execution_id).fuse() => result,
-            _ =  &mut cancel_rx => break,
+        let Some(update) = updates.next().await else {
+            error!("[{connection_id}] Status of {execution_id} is not available");
+            break;
         };
-        match summary {
-            Ok(summary) => {
-                let current_status = Some(summary.pending_state.clone());
-                if last_status.is_none() {
-                    if let Some(callback) = &on_summary {
-                        callback.emit(summary.clone());
-                    }
-                    status_state.dispatch(StatusStateAction::Update {
-                        execution_id: execution_id.clone(),
-                        message: StatusMessage::Summary(summary.clone()),
-                    });
-                }
-                let changed = current_status != last_status;
-                poll_delay_ms = next_poll_delay(poll_delay_ms, changed, STATUS_POLL_MS);
-                if changed {
-                    if let (Some(callback), Some(status)) = (&on_status_change, &current_status) {
-                        callback.emit(status.clone());
-                    }
-                    status_state.dispatch(StatusStateAction::Update {
-                        execution_id: execution_id.clone(),
-                        message: StatusMessage::CurrentStatus(summary.pending_state.clone()),
-                    });
-                    last_status = current_status;
-                }
-                let is_finished = matches!(last_status, Some(PendingState::Finished(_)));
-                if is_finished {
-                    if send_finished_status {
-                        match crate::rest::executions::finished_status(&summary).await {
-                            Ok(detail) => {
-                                status_state.dispatch(StatusStateAction::Update {
-                                    execution_id: execution_id.clone(),
-                                    message: StatusMessage::Finished(detail),
-                                });
-                                if let FinishedStatusMode::RequestAndNotify(ref callback) =
-                                    finished_status
-                                {
-                                    callback.emit(());
-                                }
-                                break;
-                            }
-                            Err(err) => {
-                                error!(
-                                    "[{connection_id}] Failed to load finished status for {execution_id}: {err}"
-                                );
-                            }
-                        }
-                    } else {
-                        if let FinishedStatusMode::RequestAndNotify(ref callback) = finished_status
-                        {
-                            callback.emit(());
-                        }
-                        break;
-                    }
-                }
+        let summary = &update.status;
+        let current_status = Some(summary.pending_state.clone());
+        if last_status.is_none() {
+            if let Some(callback) = &on_summary {
+                callback.emit(summary.clone());
             }
-            Err(err) => {
-                error!("[{connection_id}] Failed to get status for {execution_id}: {err}");
-                poll_delay_ms = next_poll_delay(poll_delay_ms, false, STATUS_POLL_MS);
-            }
+            status_state.dispatch(StatusStateAction::Update {
+                execution_id: execution_id.clone(),
+                message: StatusMessage::Summary(summary.clone()),
+            });
         }
-        futures::select! {
-            _ = TimeoutFuture::new(poll_delay_ms).fuse() => {},
-            _ = &mut cancel_rx => break,
-        };
+        if current_status != last_status {
+            if let (Some(callback), Some(status)) = (&on_status_change, &current_status) {
+                callback.emit(status.clone());
+            }
+            status_state.dispatch(StatusStateAction::Update {
+                execution_id: execution_id.clone(),
+                message: StatusMessage::CurrentStatus(summary.pending_state.clone()),
+            });
+            last_status = current_status;
+        }
+        if matches!(last_status, Some(PendingState::Finished(_))) {
+            if send_finished_status {
+                // Retried until loaded, no further status updates come.
+                loop {
+                    match crate::rest::executions::finished_status(summary).await {
+                        Ok(detail) => {
+                            status_state.dispatch(StatusStateAction::Update {
+                                execution_id: execution_id.clone(),
+                                message: StatusMessage::Finished(detail),
+                            });
+                            break;
+                        }
+                        Err(err) => {
+                            error!(
+                                "[{connection_id}] Failed to load finished status for {execution_id}: {err}"
+                            );
+                            TimeoutFuture::new(FINISHED_RETRY_MS).await;
+                        }
+                    }
+                }
+            }
+            if let FinishedStatusMode::RequestAndNotify(ref callback) = finished_status {
+                callback.emit(());
+            }
+            break;
+        }
     }
     debug!("[{connection_id}] <ExecutionStatus /> Ended subscription");
 }
@@ -216,6 +200,7 @@ pub fn execution_status(
     let on_status_change = on_status_change.clone();
     let request_finished_status = !matches!(finished_status, FinishedStatusMode::Skip);
 
+    let hub = use_context::<StatusHub>().expect("StatusHub should be provided by App");
     // Both hooks must be called unconditionally
     let context_state = use_context::<StatusCacheContext>();
     let local_state = use_reducer_eq(StatusState::default);
@@ -252,6 +237,7 @@ pub fn execution_status(
     // Subscription Effect
     {
         let status_state = status_state.clone();
+        let hub = hub.clone();
         let execution_id = execution_id.clone();
         let connection_id = trace_id();
         let on_summary = on_summary.clone();
@@ -269,7 +255,7 @@ pub fn execution_status(
             (execution_id.clone(), is_done),
             move |(execution_id, is_done)| {
                 let execution_id = execution_id.clone();
-                let cancel_tx = if *is_done {
+                let subscription = if *is_done {
                     trace!(
                         "[{connection_id}] Execution {execution_id} status is finished. Skipping subscription."
                     );
@@ -291,27 +277,29 @@ pub fn execution_status(
                     });
                     None
                 } else {
-                    let (cancel_tx, cancel_rx) = futures::channel::oneshot::channel();
                     debug!(
                         "[{connection_id}] <ExecutionStatus /> Subscribing to status of {execution_id}"
                     );
 
-                    wasm_bindgen_futures::spawn_local(run_status_subscription(
+                    let (task, subscription) = futures::future::abortable(run_status_subscription(
+                        hub,
                         status_state,
                         connection_id,
                         execution_id.clone(),
                         finished_status.clone(),
-                        cancel_rx,
                         on_summary.clone(),
                         on_status_change.clone(),
                     ));
-                    Some(cancel_tx)
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let _ = task.await;
+                    });
+                    Some(subscription)
                 };
 
                 move || {
-                    if let Some(cancel_tx) = cancel_tx {
+                    if let Some(subscription) = subscription {
                         trace!("Cleaning up {execution_id}");
-                        let _ = cancel_tx.send(());
+                        subscription.abort();
                     }
                 }
             },

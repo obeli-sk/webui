@@ -7,6 +7,7 @@ pub mod deployments;
 pub mod events;
 pub mod executions;
 pub mod replay;
+pub mod sse;
 
 pub struct ActionResult {
     pub status: u16,

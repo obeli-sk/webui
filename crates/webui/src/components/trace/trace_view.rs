@@ -1,5 +1,5 @@
 use super::data::{BusyIntervalStatus, TraceData};
-use crate::util::poll::{HISTORY_POLL_MS, next_poll_delay};
+use crate::status_hub::StatusHub;
 use crate::{
     app::Route,
     components::{
@@ -30,7 +30,6 @@ use concepts::{
     },
 };
 use gloo::events::EventListener;
-use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
 use log::{debug, error, trace};
 use std::{ops::Deref as _, rc::Rc};
@@ -49,7 +48,6 @@ pub const PAGE: u32 = 500;
 struct Cursors {
     version_from: u32,
     responses_cursor_from: u32,
-    poll_delay_ms: u32,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -215,8 +213,9 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
         }
     });
 
+    let status_hub = use_context::<StatusHub>().expect("StatusHub should be provided by App");
     use_effect_with(
-        (trace_view_state.clone(), notifications.clone()),
+        (trace_view_state.clone(), notifications.clone(), status_hub),
         on_state_change,
     );
 
@@ -469,7 +468,11 @@ pub fn trace_view(TraceViewProps { execution_id }: &TraceViewProps) -> Html {
 }
 
 fn on_state_change(
-    (trace_view_state, notifications): &(UseReducerHandle<TraceViewState>, NotificationContext),
+    (trace_view_state, notifications, hub): &(
+        UseReducerHandle<TraceViewState>,
+        NotificationContext,
+        StatusHub,
+    ),
 ) {
     trace!("Triggered use_effects");
     for (execution_id, cursors) in trace_view_state
@@ -484,8 +487,11 @@ fn on_state_change(
         let execution_id = execution_id.clone();
         let trace_view_state = trace_view_state.clone();
         let notifications = notifications.clone();
+        let hub = hub.clone();
         wasm_bindgen_futures::spawn_local(async move {
             trace!("list_execution_events {cursors:?}");
+            let _watch = hub.watch(&execution_id);
+            let seq = hub.seq(&execution_id);
             let response = crate::rest::events::history_page(
                 &execution_id,
                 cursors.version_from,
@@ -508,8 +514,8 @@ fn on_state_change(
                         last_event.map(|e| &e.event),
                         Some(ExecutionRequest::Finished { .. })
                     );
-                    let changed =
-                        !server_resp.events.is_empty() || !server_resp.responses.is_empty();
+                    let full = server_resp.events.len() >= PAGE as usize
+                        || server_resp.responses.len() >= PAGE as usize;
                     let cursors = Cursors {
                         version_from: last_event
                             .map(|e| e.version.0 + 1)
@@ -519,11 +525,6 @@ fn on_state_change(
                             .last()
                             .map(|resp| resp.cursor.0)
                             .unwrap_or(cursors.responses_cursor_from),
-                        poll_delay_ms: next_poll_delay(
-                            cursors.poll_delay_ms,
-                            changed,
-                            HISTORY_POLL_MS,
-                        ),
                     };
                     trace_view_state.dispatch(TraceviewStateAction::SavePage {
                         execution_id: execution_id.clone(),
@@ -533,7 +534,10 @@ fn on_state_change(
                         is_finished,
                     });
                     if !is_finished {
-                        TimeoutFuture::new(cursors.poll_delay_ms).await;
+                        // A full page is followed at once, otherwise wait until the execution changes.
+                        if !full {
+                            hub.changed(&execution_id, seq).await;
+                        }
                         trace_view_state.dispatch(TraceviewStateAction::RequestNextPage {
                             execution_id,
                             cursors,
