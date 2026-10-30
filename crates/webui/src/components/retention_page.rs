@@ -157,7 +157,9 @@ impl RetentionKind {
             RetentionKind::Deployments => {
                 "Deletes inactive deployments. A deployment still referenced by execution trees blocks deletion unless its trees are deleted as well."
             }
-            RetentionKind::SystemEvents => "Deletes system events older than the given age.",
+            RetentionKind::SystemEvents => {
+                "Deletes system events older than the given age. Events of the current node run are kept."
+            }
         }
     }
 
