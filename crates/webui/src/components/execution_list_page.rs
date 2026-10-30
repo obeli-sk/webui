@@ -6,7 +6,7 @@ use crate::{
         notification::{Notification, NotificationContext},
         pagination::page_link,
     },
-    model::ExecutionIdExt as _,
+    model::{ComponentTypeExt as _, ExecutionIdExt as _},
     rest,
     util::time::{RelativeAgo, TimeGranularity, human_formatted_timedelta},
 };
@@ -870,6 +870,11 @@ pub fn execution_list_page() -> Html {
 
     // Render logic
     if let Some(response) = response_state.deref() {
+        let component_names: HashMap<_, _> = app_state
+            .components_by_id
+            .keys()
+            .map(|id| (&id.component_digest, id.name.to_string()))
+            .collect();
         let rows = response.iter().map(|execution| {
             let ffqn: FunctionFqn = execution.ffqn.clone();
             let status = Some(execution.pending_state.clone());
@@ -931,6 +936,15 @@ pub fn execution_list_page() -> Html {
                         </div>
                         <div class="execution-function">
                             <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} {hide_submit} />
+                        </div>
+                        <div class="execution-component" title={format!("Component digest: {component_digest}")}>
+                            { execution.component_type.as_icon_html() }
+                            <Link<Route, ExecutionQuery>
+                                to={Route::ExecutionList}
+                                query={ExecutionQuery { component_digest: Some(component_digest.to_string()), show_derived: true, ..Default::default() }}
+                            >
+                                { component_names.get(component_digest).cloned().unwrap_or_else(|| component_digest.to_string()) }
+                            </Link<Route, ExecutionQuery>>
                         </div>
                     </div>
                     <div class="execution-aside">

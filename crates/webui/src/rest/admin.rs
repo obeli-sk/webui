@@ -2,26 +2,14 @@ use rest_types::admin::{
     CleanupRequest, CleanupResponse, DeleteResponse, RetainDeploymentsRequest,
     RetainSystemEventsRequest, RetainSystemEventsResponse,
 };
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-#[derive(Serialize)]
-struct CursorRequest<'a, T> {
-    #[serde(flatten)]
-    request: T,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cursor: Option<&'a Value>,
-}
-
-// backcompat: 0.43.0-rc.11 responses and the pinned types have no retention cursors.
-#[derive(Deserialize)]
-pub struct RetentionResponse {
-    #[serde(flatten)]
-    pub cleanup: CleanupResponse,
-    #[serde(default)]
-    pub next_execution_cursor: Option<Value>,
-    #[serde(default)]
-    pub next_deployment_cursor: Option<Value>,
+fn parse_cursor<T: DeserializeOwned>(cursor: Option<&Value>) -> Result<Option<T>, String> {
+    cursor
+        .map(|cursor| serde_json::from_value(cursor.clone()))
+        .transpose()
+        .map_err(|err| format!("invalid retention cursor: {err}"))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,19 +33,17 @@ pub async fn retain_executions(
     force_non_terminal: bool,
     dry_run: bool,
     cursor: Option<&Value>,
-) -> Result<RetentionResponse, String> {
+) -> Result<CleanupResponse, String> {
     let (retain_count, max_age_seconds) = policy.split();
     super::post(
         "/v1/admin/executions/retain",
-        &CursorRequest {
-            request: CleanupRequest {
-                retain_count,
-                max_age_seconds,
-                batch_size,
-                force_non_terminal,
-                dry_run,
-            },
-            cursor,
+        &CleanupRequest {
+            retain_count,
+            max_age_seconds,
+            batch_size,
+            force_non_terminal,
+            dry_run,
+            cursor: parse_cursor(cursor)?,
         },
     )
     .await
@@ -70,20 +56,18 @@ pub async fn retain_deployments(
     force_non_terminal: bool,
     dry_run: bool,
     cursor: Option<&Value>,
-) -> Result<RetentionResponse, String> {
+) -> Result<CleanupResponse, String> {
     let (retain_count, max_age_seconds) = policy.split();
     super::post(
         "/v1/admin/deployments/retain",
-        &CursorRequest {
-            request: RetainDeploymentsRequest {
-                retain_count,
-                max_age_seconds,
-                batch_size,
-                delete_executions,
-                force_non_terminal,
-                dry_run,
-            },
-            cursor,
+        &RetainDeploymentsRequest {
+            retain_count,
+            max_age_seconds,
+            batch_size,
+            delete_executions,
+            force_non_terminal,
+            dry_run,
+            cursor: parse_cursor(cursor)?,
         },
     )
     .await

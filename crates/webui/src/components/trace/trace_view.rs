@@ -22,7 +22,7 @@ use crate::{
 use assert_matches::assert_matches;
 use chrono::{DateTime, Utc};
 use concepts::{
-    ComponentType, ExecutionId, JoinSetId, SupportedFunctionReturnValue,
+    ComponentType, ExecutionId, ExecutionMetadata, JoinSetId, SupportedFunctionReturnValue,
     prefixed_ulid::{DelayId, RunId},
     storage::{
         ExecutionEvent, ExecutionRequest, HistoryEvent, JoinSetRequest, JoinSetResponse,
@@ -1053,6 +1053,11 @@ fn compute_root_trace(
     }
 
     let ffqn = create_event.ffqn.clone();
+    let metadata = &create_event.metadata;
+    let webhook_request = metadata
+        .get(ExecutionMetadata::HTTP_METHOD_KEY)
+        .zip(metadata.get(ExecutionMetadata::HTTP_URI_KEY))
+        .map(|(method, uri)| format!("{method} {uri}"));
 
     let name = html! {
         <>
@@ -1063,7 +1068,11 @@ fn compute_root_trace(
                 {execution_id.render_execution_parts(true, ExecutionLink::Trace)}
             </span>
             <span class="step-ffqn">
-                <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} hide_submit={true} />
+                if let Some(webhook_request) = &webhook_request {
+                    <span title={ffqn.to_string()}>{webhook_request.clone()}</span>
+                } else {
+                    <FfqnWithLinks ffqn={ffqn.clone()} fully_qualified={true} hide_submit={true} />
+                }
                 if is_stub {
                     {" "}<span class="stub-indicator">{"(stub)"}</span>
                 }

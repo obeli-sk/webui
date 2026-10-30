@@ -194,8 +194,11 @@ impl RetentionKind {
             )
             .await
             .map(|response| Batch {
-                totals: Totals::from(response.cleanup),
-                next_cursor: response.next_execution_cursor,
+                next_cursor: response
+                    .next_execution_cursor
+                    .as_ref()
+                    .and_then(|cursor| serde_json::to_value(cursor).ok()),
+                totals: Totals::from(response),
             }),
             RetentionKind::Deployments => rest::admin::retain_deployments(
                 options.policy,
@@ -207,8 +210,11 @@ impl RetentionKind {
             )
             .await
             .map(|response| Batch {
-                totals: Totals::from(response.cleanup),
-                next_cursor: response.next_deployment_cursor,
+                next_cursor: response
+                    .next_deployment_cursor
+                    .as_ref()
+                    .and_then(|cursor| serde_json::to_value(cursor).ok()),
+                totals: Totals::from(response),
             }),
             RetentionKind::SystemEvents => {
                 let RetentionPolicy::MaxAgeSeconds(max_age_seconds) = options.policy else {

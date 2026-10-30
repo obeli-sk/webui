@@ -107,10 +107,12 @@ pub fn event_to_detail(
         ExecutionRequest::Finished {
             retval,
             http_client_traces,
+            http_response,
         } => html! {
             <FinishedEvent
                 result_detail={RetVal::from(retval.clone())}
                 http_client_traces={http_client_traces.clone().unwrap_or_default()}
+                http_response={http_response.clone()}
                 version={Some(version)}
                 {is_selected} />
         },
