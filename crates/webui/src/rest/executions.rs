@@ -2,7 +2,7 @@ use crate::model::FinishedStatus;
 use concepts::{ExecutionId, storage::PendingState};
 use rest_types::{
     backtrace::BacktraceInfoSer,
-    executions::{ExecutionWithStateSer, RetVal},
+    executions::{ExecutionListItemSer, ExecutionWithStateSer, RetVal},
 };
 
 pub async fn backtrace(id: &ExecutionId, version: u32) -> Result<BacktraceInfoSer, String> {
@@ -18,7 +18,7 @@ pub async fn backtrace(id: &ExecutionId, version: u32) -> Result<BacktraceInfoSe
     .await
 }
 
-pub async fn list(query: &[(&str, String)]) -> Result<Vec<ExecutionWithStateSer>, String> {
+pub async fn list(query: &[(&str, String)]) -> Result<Vec<ExecutionListItemSer>, String> {
     super::get("/v1/executions", query).await
 }
 
