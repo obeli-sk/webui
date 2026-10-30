@@ -305,9 +305,9 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "const_format"
-version = "0.2.36"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4481a617ad9a412be3b97c5d403fef8ed023103368908b9c50af598ff467cc1e"
+checksum = "a3decb4d6965448659923544a634a0571ba44cede4e11ef15a5a317126840454"
 dependencies = [
  "const_format_proc_macros",
  "konst",
@@ -315,9 +315,9 @@ dependencies = [
 
 [[package]]
 name = "const_format_proc_macros"
-version = "0.2.34"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d57c2eccfb16dbac1f4e61e206105db5820c9d26c3c472bc17c774259ef7744"
+checksum = "941b570269a642506f08cb5b688c04bfa6cfd41a26f8bcdc49db8fd00c0ab659"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1735,7 +1735,7 @@ dependencies = [
 
 [[package]]
 name = "obeli-sk-concepts"
-version = "0.43.0-rc.8"
+version = "0.43.0-rc.15"
 dependencies = [
  "arbitrary",
  "assert_matches",
@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "obeli-sk-rest-types"
-version = "0.43.0-rc.8"
+version = "0.43.0-rc.15"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1770,6 +1770,7 @@ dependencies = [
  "itertools 0.15.0",
  "obeli-sk-concepts",
  "obeli-sk-val-json",
+ "obelisk-api-types",
  "serde",
  "serde_json",
  "utoipa",

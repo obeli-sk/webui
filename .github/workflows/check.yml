@@ -113,8 +113,5 @@ jobs:
         run: |
           nix develop --command echo
 
-      - name: Check API client
-        run: nix develop --command scripts/update-obelisk-api.sh --check
-
       - name: cargo test
         run: nix develop --command scripts/test.sh

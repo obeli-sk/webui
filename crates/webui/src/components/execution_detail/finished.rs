@@ -5,7 +5,10 @@ use crate::components::{
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, NodeId, TreeBuilder, TreeData};
 use concepts::{
     ExecutionFailureKind,
-    storage::{VersionType, http_client_trace::HttpClientTrace},
+    storage::{
+        VersionType,
+        http_client_trace::{HttpClientTrace, ResponseTrace},
+    },
 };
 use id_tree::Tree;
 use rest_types::executions::RetVal;
@@ -18,6 +21,8 @@ pub struct FinishedEventProps {
     pub is_selected: bool,
     #[prop_or_default]
     pub http_client_traces: Vec<HttpClientTrace>,
+    #[prop_or_default]
+    pub http_response: Option<ResponseTrace>,
 }
 
 fn with_version(version: Option<VersionType>, label: &'static str) -> Html {
@@ -152,6 +157,21 @@ impl FinishedEventProps {
             self.version,
             self.is_selected,
         );
+        if let Some(http_response) = &self.http_response {
+            let (icon, label) = match &http_response.status {
+                Ok(status) => (Icon::Exchange, format!("HTTP Response: {status}")),
+                Err(err) => (Icon::Error, format!("HTTP Response error: {err}")),
+            };
+            tree.insert(
+                Node::new(NodeData {
+                    icon,
+                    label: label.into(),
+                    ..Default::default()
+                }),
+                InsertBehavior::UnderNode(&node_id),
+            )
+            .unwrap();
+        }
         attach_http_traces(&mut tree, &node_id, &self.http_client_traces);
         TreeData::from(tree)
     }

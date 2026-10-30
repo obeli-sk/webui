@@ -10,7 +10,9 @@ use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use chrono::{DateTime, Utc};
 use concepts::prefixed_ulid::DeploymentId;
 use concepts::storage::{Created, VersionType};
-use concepts::{ComponentId, ExecutionId, FunctionFqn, JoinSetId};
+use concepts::{
+    ComponentId, ComponentType, ExecutionId, ExecutionMetadata, FunctionFqn, JoinSetId,
+};
 use serde_json::Value;
 use yew::Html;
 use yew::prelude::*;
@@ -42,15 +44,25 @@ impl CreatedEventProps {
                 .collect(),
         };
 
+        let http_request = created
+            .metadata
+            .get(ExecutionMetadata::HTTP_METHOD_KEY)
+            .zip(created.metadata.get(ExecutionMetadata::HTTP_URI_KEY))
+            .map(|(method, uri)| format!("{method} {uri}"));
         let props = ProcessedProps {
             params,
             scheduled_at: created.scheduled_at,
             ffqn,
+            http_request,
             scheduled_by: created.scheduled_by.clone(),
             parent: created.parent.clone(),
             metadata: created
                 .metadata
                 .iter()
+                .filter(|(k, _)| {
+                    *k != ExecutionMetadata::HTTP_METHOD_KEY
+                        && *k != ExecutionMetadata::HTTP_URI_KEY
+                })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             max_persisted_value_size_bytes: created.max_persisted_value_size_bytes,
@@ -68,6 +80,7 @@ struct ProcessedProps {
     params: Vec<(String, Value)>,
     scheduled_at: DateTime<Utc>,
     ffqn: FunctionFqn,
+    http_request: Option<String>,
     scheduled_by: Option<ExecutionId>,
     parent: Option<(ExecutionId, JoinSetId)>,
     metadata: Vec<(String, String)>,
@@ -94,22 +107,25 @@ impl ProcessedProps {
             .insert(
                 Node::new(NodeData {
                     icon: Icon::NewObject,
-                    label: Html::from(format!(
-                        "{}. Submitted `{}`",
-                        self.version,
-                        self.ffqn.short()
-                    )),
+                    label: Html::from(if let Some(http_request) = &self.http_request {
+                        format!("{}. Received `{http_request}`", self.version)
+                    } else {
+                        format!("{}. Submitted `{}`", self.version, self.ffqn.short())
+                    }),
                     has_caret: true,
                     ..Default::default()
                 }),
                 InsertBehavior::UnderNode(&root_id),
             )
             .unwrap();
-        // Scheduled at
+        let is_webhook = self.component_id.component_type == ComponentType::WebhookEndpoint;
         tree.insert(
             Node::new(NodeData {
                 icon: Icon::Time,
-                label: html! { <>{"Scheduled at "}<Timestamp target={self.scheduled_at} /></> },
+                label: html! { <>
+                    {if is_webhook { "Received at " } else { "Scheduled at " }}
+                    <Timestamp target={self.scheduled_at} />
+                </> },
                 has_caret: false,
                 is_selected: self.is_selected,
                 ..Default::default()
@@ -128,32 +144,37 @@ impl ProcessedProps {
             InsertBehavior::UnderNode(&event_type),
         )
         .unwrap();
-        // params
-        let params_node_id = tree
-            .insert(
-                Node::new(NodeData {
-                    icon: Icon::FolderClose,
-                    label: "Parameters".into(),
-                    has_caret: true,
-                    ..Default::default()
-                }),
-                InsertBehavior::UnderNode(&event_type),
-            )
-            .unwrap();
-        for (param_name, param_value) in self.params {
-            let param_name_node = tree
+        // Webhook params are the opaque request and response resources.
+        if !is_webhook {
+            let params_node_id = tree
                 .insert(
                     Node::new(NodeData {
-                        icon: Icon::Function,
-                        label: format!("{param_name}: {param_value}").into(),
+                        icon: Icon::FolderClose,
+                        label: "Parameters".into(),
                         has_caret: true,
                         ..Default::default()
                     }),
-                    InsertBehavior::UnderNode(&params_node_id),
+                    InsertBehavior::UnderNode(&event_type),
                 )
                 .unwrap();
-            let _ =
-                insert_json_into_tree(&mut tree, &param_name_node, JsonValue::Parsed(&param_value));
+            for (param_name, param_value) in self.params {
+                let param_name_node = tree
+                    .insert(
+                        Node::new(NodeData {
+                            icon: Icon::Function,
+                            label: format!("{param_name}: {param_value}").into(),
+                            has_caret: true,
+                            ..Default::default()
+                        }),
+                        InsertBehavior::UnderNode(&params_node_id),
+                    )
+                    .unwrap();
+                let _ = insert_json_into_tree(
+                    &mut tree,
+                    &param_name_node,
+                    JsonValue::Parsed(&param_value),
+                );
+            }
         }
         // component id
         {

@@ -64,6 +64,7 @@ webui/
 │   └── webui-proxy/        # Static asset server and same origin API gateway
 ├── obelisk/                # Git submodule with the obelisk types - IMPORTANT: no changes to submodule
 │   └── crates/
+│       ├── api-types/      # Generated types for server info, app policy, deployment switch
 │       ├── concepts/       # Domain types, used with `default-features = false`
 │       └── rest-types/     # REST request and response types
 └── flake.nix               # Nix development environment
@@ -118,7 +119,7 @@ This creates:
 
 ## REST API
 
-The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for the request helpers. Server info and deployment switch use the generated package in `vendor/obelisk-api`, imported from a separately pinned authoritative OpenAPI contract. Remaining responses deserialize into `obeli-sk-concepts` and `obeli-sk-rest-types` from the submodule. See `assets/schemas/README-obelisk-api.md` for refreshing the generated client.
+The browser uses the Obelisk REST routes under `/v1`. See `obelisk/assets/schemas/openapi.json` for the API schema and `crates/webui/src/rest/` for the request helpers. Server info and deployment switch use the generated `obelisk-api-types` package from the submodule. Remaining responses deserialize into `obeli-sk-concepts` and `obeli-sk-rest-types`, also from the submodule.
 
 The `rest` module adds the bearer token and opens the authentication dialog for HTTP 401 responses.
 
