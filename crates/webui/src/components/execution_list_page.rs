@@ -11,11 +11,10 @@ use crate::{
     util::time::{RelativeAgo, TimeGranularity, human_formatted_timedelta},
 };
 use chrono::{DateTime, Utc};
-use concepts::{ExecutionId, FunctionFqn, storage::PendingState};
+use concepts::{FunctionFqn, storage::PendingState};
 use gloo::timers::callback::Timeout;
 use hashbrown::{HashMap, HashSet};
 use log::{debug, error};
-use rest_types::executions::ExecutionWithStateSer;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -41,7 +40,8 @@ pub struct ExecutionQuery {
     pub deployment_id: Option<String>,
     #[serde(default)]
     pub status: Option<StatusFilterList>,
-    pub cursor: Option<ExecutionsCursor>,
+    /// Opaque cursor returned by the server.
+    pub cursor: Option<String>,
     pub direction: Option<Direction>,
     #[serde(default)]
     pub include_cursor: bool,
@@ -193,63 +193,6 @@ impl Direction {
             Direction::Newer => Direction::Older,
         }
     }
-}
-
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    derive_more::Display,
-    serde_with::SerializeDisplay,
-    serde_with::DeserializeFromStr,
-)]
-pub enum ExecutionsCursor {
-    #[display("{_0}")]
-    ExecutionId(ExecutionId),
-    #[display("Created_{_0:?}")]
-    CreatedAt(DateTime<Utc>),
-}
-
-impl FromStr for ExecutionsCursor {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.split_once("_") {
-            Some(("E", _)) => s
-                .parse()
-                .map(ExecutionsCursor::ExecutionId)
-                .map_err(|err| format!("{err:?}")),
-            Some(("Created", date)) => DateTime::from_str(date)
-                .map(ExecutionsCursor::CreatedAt)
-                .map_err(|err| err.to_string()),
-            _ => Err("wrong prefix".to_string()),
-        }
-    }
-}
-
-impl ExecutionsCursor {
-    fn as_type(&self) -> CursorType {
-        match self {
-            ExecutionsCursor::ExecutionId(_) => CursorType::ExecutionId,
-            ExecutionsCursor::CreatedAt(_) => CursorType::CreatedAt,
-        }
-    }
-
-    fn from_summary(execution: &ExecutionWithStateSer, cursor_type: CursorType) -> Self {
-        match cursor_type {
-            CursorType::CreatedAt => ExecutionsCursor::CreatedAt(execution.created_at),
-            CursorType::ExecutionId => {
-                ExecutionsCursor::ExecutionId(execution.execution_id.clone())
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy, Default)]
-pub enum CursorType {
-    #[default]
-    CreatedAt,
-    ExecutionId,
 }
 
 fn execution_function_filter(value: String) -> (&'static str, String) {
@@ -720,11 +663,7 @@ pub fn execution_list_page() -> Html {
                         ),
                     ];
                     if let Some(cursor) = query_params.cursor {
-                        let value = match cursor {
-                            ExecutionsCursor::ExecutionId(id) => id.to_string(),
-                            ExecutionsCursor::CreatedAt(date) => date.to_rfc3339(),
-                        };
-                        rest_query.push(("cursor", value));
+                        rest_query.push(("cursor", cursor));
                     }
                     if let Some(value) = query_params.ffqn_prefix {
                         rest_query.push(execution_function_filter(value));
@@ -875,7 +814,8 @@ pub fn execution_list_page() -> Html {
             .keys()
             .map(|id| (&id.component_digest, id.name.to_string()))
             .collect();
-        let rows = response.iter().map(|execution| {
+        let rows = response.iter().map(|item| {
+            let execution = &item.execution;
             let ffqn: FunctionFqn = execution.ffqn.clone();
             let status = Some(execution.pending_state.clone());
             let execution_id = execution.execution_id.clone();
@@ -989,16 +929,9 @@ pub fn execution_list_page() -> Html {
             + usize::from(query.deployment_id.is_some())
             + usize::from(query.status.is_some());
 
-        // Calculate cursors for pagination
-        let cursor_type = query
-            .cursor
-            .as_ref()
-            .map(|cursor| cursor.as_type())
-            .unwrap_or_default();
-
         let newer_page_query = if let Some(exe) = response.first() {
             let mut query = query.clone();
-            query.cursor = Some(ExecutionsCursor::from_summary(exe, cursor_type));
+            query.cursor = Some(exe.cursor.clone());
             query.direction = Some(Direction::Newer);
             query.include_cursor = false;
             Some(query)
@@ -1013,7 +946,7 @@ pub fn execution_list_page() -> Html {
         };
         let older_page_query = if let Some(exe) = response.last() {
             let mut query = query.clone();
-            query.cursor = Some(ExecutionsCursor::from_summary(exe, cursor_type));
+            query.cursor = Some(exe.cursor.clone());
             query.direction = Some(Direction::Older);
             query.include_cursor = false;
             Some(query)
