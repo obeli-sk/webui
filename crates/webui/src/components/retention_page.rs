@@ -581,22 +581,24 @@ fn retention_form(RetentionFormProps { kind }: &RetentionFormProps) -> Html {
                         </select>
                     </label>
                 }
-                if kind == RetentionKind::Deployments {
-                    <label class="retention-checkbox">
-                        <input type="checkbox" checked={*delete_executions}
-                            onchange={on_checkbox(delete_executions.clone())} disabled={busy} />
-                        {"Also delete execution trees"}
-                    </label>
-                }
-                if kind != RetentionKind::SystemEvents {
+            </div>
+            if kind != RetentionKind::SystemEvents {
+                <div class="retention-form retention-options">
+                    if kind == RetentionKind::Deployments {
+                        <label class="retention-checkbox">
+                            <input type="checkbox" checked={*delete_executions}
+                                onchange={on_checkbox(delete_executions.clone())} disabled={busy} />
+                            {"Also delete execution trees"}
+                        </label>
+                    }
                     <label class="retention-checkbox" title="Non-terminal trees belonging to the active deployment are never deleted">
                         <input type="checkbox" checked={*force_non_terminal && force_enabled}
                             onchange={on_checkbox(force_non_terminal.clone())}
                             disabled={busy || !force_enabled} />
                         {"Include non-terminal executions"}
                     </label>
-                }
-            </div>
+                </div>
+            }
             if let Some(invalid) = invalid.clone() {
                 <p class="error">{invalid}</p>
             }

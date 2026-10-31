@@ -22,6 +22,10 @@
   gap: $spacing-sm $spacing-md;
 }
 
+.retention-options {
+  margin-top: $spacing-sm;
+}
+
 .retention-mode button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
