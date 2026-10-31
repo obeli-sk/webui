@@ -365,6 +365,7 @@ pub fn system_events_page() -> Html {
 
     let apply_more_filters = {
         let navigator = navigator.clone();
+        let id_ref = id_ref.clone();
         let code_ref = code_ref.clone();
         let run_ref = run_ref.clone();
         let deployment_ref = deployment_ref.clone();
@@ -373,34 +374,28 @@ pub fn system_events_page() -> Html {
         let query = query.clone();
         Callback::from(move |event: SubmitEvent| {
             event.prevent_default();
-            let mut query = query.clone();
-            query.code = input_value(&code_ref);
-            query.node_run_id = input_value(&run_ref);
-            query.deployment_id = input_value(&deployment_ref);
-            query.from = input_value(&from_ref);
-            query.to = input_value(&to_ref);
-            if query.node_run_id.is_some() {
-                query.all_runs = false;
-            }
-            if query.deployment_id.is_some() {
-                query.all_deployments = false;
-            }
-            query.before = None;
-            query.id = None;
-            let _ = navigator.push_with_query(&Route::SystemEvents, &query);
-        })
-    };
-
-    let find_by_id = {
-        let navigator = navigator.clone();
-        let id_ref = id_ref.clone();
-        let query = query.clone();
-        Callback::from(move |event: SubmitEvent| {
-            event.prevent_default();
-            let query = SystemEventQuery {
-                id: input_value(&id_ref),
-                absolute_time: query.absolute_time,
-                ..SystemEventQuery::default()
+            let query = if let Some(id) = input_value(&id_ref) {
+                SystemEventQuery {
+                    id: Some(id),
+                    absolute_time: query.absolute_time,
+                    ..SystemEventQuery::default()
+                }
+            } else {
+                let mut query = query.clone();
+                query.code = input_value(&code_ref);
+                query.node_run_id = input_value(&run_ref);
+                query.deployment_id = input_value(&deployment_ref);
+                query.from = input_value(&from_ref);
+                query.to = input_value(&to_ref);
+                if query.node_run_id.is_some() {
+                    query.all_runs = false;
+                }
+                if query.deployment_id.is_some() {
+                    query.all_deployments = false;
+                }
+                query.before = None;
+                query.id = None;
+                query
             };
             let _ = navigator.push_with_query(&Route::SystemEvents, &query);
         })
@@ -499,7 +494,7 @@ pub fn system_events_page() -> Html {
             <details class="system-event-more-filters" open={has_more_filters}>
                 <summary>{"More filters"}</summary>
                 <form onsubmit={apply_more_filters}>
-                    <input ref={code_ref} placeholder="Code, e.g. deployment.switch.completed" value={query.code.clone().unwrap_or_default()} />
+                    <input ref={code_ref} placeholder="Code prefix, e.g. maintenance.gc" value={query.code.clone().unwrap_or_default()} />
                     <input ref={run_ref} class="system-event-ulid-input" placeholder="Node run, e.g. NodeRun_…" value={query.node_run_id.clone().unwrap_or_default()} />
                     <input ref={deployment_ref} class="system-event-ulid-input" placeholder="Deployment, e.g. Dep_…" value={query.deployment_id.clone().unwrap_or_default()} />
                     <div class="system-event-time-range">
@@ -512,11 +507,8 @@ pub fn system_events_page() -> Html {
                             <input ref={to_ref} type="datetime-local" step="1" value={query.to.clone().unwrap_or_default()} />
                         </label>
                     </div>
+                    <input ref={id_ref} class="system-event-ulid-input" placeholder="Event ID, e.g. Sysevt_…" title="Overrides the other filters" value={query.id.clone().unwrap_or_default()} />
                     <button type="submit">{"Apply"}</button>
-                </form>
-                <form onsubmit={find_by_id}>
-                    <input ref={id_ref} class="system-event-ulid-input" placeholder="Event ID, e.g. Sysevt_…" value={query.id.clone().unwrap_or_default()} />
-                    <button type="submit">{"Find"}</button>
                 </form>
             </details>
             <p class="system-event-scope-summary">
