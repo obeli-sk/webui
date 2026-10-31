@@ -171,6 +171,15 @@ impl RetentionKind {
         }
     }
 
+    /// Mirrors the server's periodic GC `max_count` default.
+    fn default_count(self) -> Option<u32> {
+        match self {
+            RetentionKind::Executions => Some(1000),
+            RetentionKind::Deployments => Some(100),
+            RetentionKind::SystemEvents => None,
+        }
+    }
+
     fn age_label(self) -> &'static str {
         match self {
             RetentionKind::Executions => "Delete trees last updated more than",
@@ -306,7 +315,7 @@ fn retention_form(RetentionFormProps { kind }: &RetentionFormProps) -> Html {
             Mode::MaxAge
         }
     });
-    let count = use_state(|| "1000".to_string());
+    let count = use_state(|| kind.default_count().unwrap_or_default().to_string());
     let age = use_state(|| "30".to_string());
     let age_unit = use_state(|| AgeUnit::Days);
     let delete_executions = use_state(|| false);
