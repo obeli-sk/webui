@@ -171,6 +171,15 @@ impl RetentionKind {
         }
     }
 
+    /// Mirrors the server's periodic GC `max_count` default.
+    fn default_count(self) -> Option<u32> {
+        match self {
+            RetentionKind::Executions => Some(1000),
+            RetentionKind::Deployments => Some(100),
+            RetentionKind::SystemEvents => None,
+        }
+    }
+
     fn age_label(self) -> &'static str {
         match self {
             RetentionKind::Executions => "Delete trees last updated more than",
@@ -306,8 +315,8 @@ fn retention_form(RetentionFormProps { kind }: &RetentionFormProps) -> Html {
             Mode::MaxAge
         }
     });
-    let count = use_state(|| "1000".to_string());
-    let age = use_state(|| "30".to_string());
+    let count = use_state(|| kind.default_count().unwrap_or_default().to_string());
+    let age = use_state(|| "31".to_string());
     let age_unit = use_state(|| AgeUnit::Days);
     let delete_executions = use_state(|| false);
     let force_non_terminal = use_state(|| false);
@@ -542,14 +551,16 @@ fn retention_form(RetentionFormProps { kind }: &RetentionFormProps) -> Html {
         <section class="retention-section">
             <h2>{kind.title()}</h2>
             <p class="retention-description">{kind.description()}</p>
+            if kind.count_label().is_some() {
+                <div class="view-tabs retention-mode">
+                    <button class={classes!((*mode == Mode::Count).then_some("active"))}
+                        onclick={set_mode(Mode::Count)} disabled={busy}>{"By count"}</button>
+                    <button class={classes!((*mode == Mode::MaxAge).then_some("active"))}
+                        onclick={set_mode(Mode::MaxAge)} disabled={busy}>{"By age"}</button>
+                </div>
+            }
             <div class="retention-form">
                 if let Some(count_label) = kind.count_label() {
-                    <div class="retention-mode">
-                        <button class={classes!((*mode == Mode::Count).then_some("selected"))}
-                            onclick={set_mode(Mode::Count)} disabled={busy}>{"By count"}</button>
-                        <button class={classes!((*mode == Mode::MaxAge).then_some("selected"))}
-                            onclick={set_mode(Mode::MaxAge)} disabled={busy}>{"By age"}</button>
-                    </div>
                     if *mode == Mode::Count {
                         <label class="retention-field">
                             {count_label}
@@ -570,22 +581,24 @@ fn retention_form(RetentionFormProps { kind }: &RetentionFormProps) -> Html {
                         </select>
                     </label>
                 }
-                if kind == RetentionKind::Deployments {
-                    <label class="retention-checkbox">
-                        <input type="checkbox" checked={*delete_executions}
-                            onchange={on_checkbox(delete_executions.clone())} disabled={busy} />
-                        {"Also delete execution trees"}
-                    </label>
-                }
-                if kind != RetentionKind::SystemEvents {
+            </div>
+            if kind != RetentionKind::SystemEvents {
+                <div class="retention-form retention-options">
+                    if kind == RetentionKind::Deployments {
+                        <label class="retention-checkbox">
+                            <input type="checkbox" checked={*delete_executions}
+                                onchange={on_checkbox(delete_executions.clone())} disabled={busy} />
+                            {"Also delete execution trees"}
+                        </label>
+                    }
                     <label class="retention-checkbox" title="Non-terminal trees belonging to the active deployment are never deleted">
                         <input type="checkbox" checked={*force_non_terminal && force_enabled}
                             onchange={on_checkbox(force_non_terminal.clone())}
                             disabled={busy || !force_enabled} />
                         {"Include non-terminal executions"}
                     </label>
-                }
-            </div>
+                </div>
+            }
             if let Some(invalid) = invalid.clone() {
                 <p class="error">{invalid}</p>
             }
