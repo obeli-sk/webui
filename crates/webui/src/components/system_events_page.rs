@@ -508,7 +508,9 @@ pub fn system_events_page() -> Html {
                         </label>
                     </div>
                     <input ref={id_ref} class="system-event-ulid-input" placeholder="Event ID, e.g. Sysevt_…" title="Overrides the other filters" value={query.id.clone().unwrap_or_default()} />
-                    <button type="submit">{"Apply"}</button>
+                    <div class="system-event-form-actions">
+                        <button type="submit">{"Apply"}</button>
+                    </div>
                 </form>
             </details>
             <p class="system-event-scope-summary">

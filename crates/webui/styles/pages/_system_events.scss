@@ -96,6 +96,10 @@
     flex: 0 1 36ch;
   }
 
+  .system-event-form-actions {
+    flex-basis: 100%;
+  }
+
   .system-event-time-range {
     display: flex;
     flex-wrap: wrap;
