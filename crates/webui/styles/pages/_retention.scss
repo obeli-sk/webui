@@ -22,30 +22,9 @@
   gap: $spacing-sm $spacing-md;
 }
 
-.retention-mode {
-  display: flex;
-  gap: $spacing-xs;
-
-  button {
-    padding: 0.35rem 0.7rem;
-    background: $color-bg-primary;
-    border: 1px solid $color-border-primary;
-    border-radius: $border-radius-md;
-    color: $color-text-primary;
-    cursor: pointer;
-    font-size: $font-size-sm;
-
-    &.selected {
-      background: color-mix(in srgb, $color-accent-cyan 15%, transparent);
-      border-color: $color-accent-cyan;
-      color: $color-accent-cyan;
-    }
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  }
+.retention-mode button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .retention-field {

@@ -316,7 +316,7 @@ fn retention_form(RetentionFormProps { kind }: &RetentionFormProps) -> Html {
         }
     });
     let count = use_state(|| kind.default_count().unwrap_or_default().to_string());
-    let age = use_state(|| "30".to_string());
+    let age = use_state(|| "31".to_string());
     let age_unit = use_state(|| AgeUnit::Days);
     let delete_executions = use_state(|| false);
     let force_non_terminal = use_state(|| false);
@@ -551,14 +551,16 @@ fn retention_form(RetentionFormProps { kind }: &RetentionFormProps) -> Html {
         <section class="retention-section">
             <h2>{kind.title()}</h2>
             <p class="retention-description">{kind.description()}</p>
+            if kind.count_label().is_some() {
+                <div class="view-tabs retention-mode">
+                    <button class={classes!((*mode == Mode::Count).then_some("active"))}
+                        onclick={set_mode(Mode::Count)} disabled={busy}>{"By count"}</button>
+                    <button class={classes!((*mode == Mode::MaxAge).then_some("active"))}
+                        onclick={set_mode(Mode::MaxAge)} disabled={busy}>{"By age"}</button>
+                </div>
+            }
             <div class="retention-form">
                 if let Some(count_label) = kind.count_label() {
-                    <div class="retention-mode">
-                        <button class={classes!((*mode == Mode::Count).then_some("selected"))}
-                            onclick={set_mode(Mode::Count)} disabled={busy}>{"By count"}</button>
-                        <button class={classes!((*mode == Mode::MaxAge).then_some("selected"))}
-                            onclick={set_mode(Mode::MaxAge)} disabled={busy}>{"By age"}</button>
-                    </div>
                     if *mode == Mode::Count {
                         <label class="retention-field">
                             {count_label}
