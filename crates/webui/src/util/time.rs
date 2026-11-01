@@ -56,18 +56,8 @@ pub fn human_formatted_timedelta(duration: TimeDelta, granularity: TimeGranulari
             format!("{hours} hour{plural}")
         }
         _ => {
-            if days < 30 {
-                let plural = if days == 1 { "" } else { "s" };
-                format!("{days} day{plural}")
-            } else if days < 365 {
-                let months = days / 30;
-                let plural = if months == 1 { "" } else { "s" };
-                format!("{months} month{plural}")
-            } else {
-                let years = days / 365;
-                let plural = if years == 1 { "" } else { "s" };
-                format!("{years} year{plural}")
-            }
+            let plural = if days == 1 { "" } else { "s" };
+            format!("{days} day{plural}")
         }
     }
 }
