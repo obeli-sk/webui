@@ -5,10 +5,11 @@ use crate::{
         ffqn_with_links::FfqnWithLinks,
         notification::{Notification, NotificationContext},
         pagination::page_link,
+        time_display::{TimeDisplayControl, TimeMode, Timestamp},
     },
     model::{ComponentTypeExt as _, ExecutionIdExt as _},
     rest,
-    util::time::{RelativeAgo, TimeGranularity, human_formatted_timedelta},
+    util::time::{TimeGranularity, human_formatted_timedelta},
 };
 use chrono::{DateTime, Utc};
 use concepts::{FunctionFqn, storage::PendingState};
@@ -892,12 +893,8 @@ pub fn execution_list_page() -> Html {
                             <ExecutionStatus status={status} execution_id={execution_id.clone()} />
                         </div>
                         <div class="execution-timing">
-                            <span title={created_at.to_string()}>
-                                if query.show_details {
-                                    { format!("Created {created_at}") }
-                                } else {
-                                    {"Created "}<RelativeAgo target={created_at} />
-                                }
+                            <span>
+                                {"Created "}<Timestamp target={created_at} default_mode={TimeMode::Relative} />
                             </span>
                             if let Some(durated) = durated {
                                 <span class="execution-duration" title={durated.to_string()}>
@@ -1057,6 +1054,7 @@ pub fn execution_list_page() -> Html {
             <ContextProvider<StatusCacheContext> context={status_cache}>
                 <div class="execution-list-header">
                     <h3>{"Executions"}</h3>
+                    <TimeDisplayControl default_mode={TimeMode::Relative} />
                 </div>
 
                 <details class="executions-filter" open={active_filter_count > 0}>

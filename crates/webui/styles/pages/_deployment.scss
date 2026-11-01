@@ -1,6 +1,16 @@
 // Deployment pages
 @use '../base/variables' as *;
 
+.deployment-list-header {
+  display: flex;
+  align-items: baseline;
+  gap: $spacing-sm;
+
+  h3 {
+    margin-bottom: $spacing-sm;
+  }
+}
+
 .deployment-list {
     display: flex;
     flex-direction: column;

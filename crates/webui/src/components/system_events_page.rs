@@ -86,11 +86,11 @@ pub struct SystemEventQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     levels: Option<LevelFilter>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    all_runs: bool,
+    current_run: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     node_run_id: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    all_deployments: bool,
+    current_deployment: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deployment_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -282,22 +282,19 @@ pub fn system_events_page() -> Html {
                         return;
                     }
                 };
-                if !query.all_runs && query.node_run_id.is_none() && current_run_id.is_none() {
+                if query.current_run && query.node_run_id.is_none() && current_run_id.is_none() {
                     return;
                 }
-                let node_run_id = if query.all_runs {
-                    None
-                } else {
-                    query.node_run_id.clone().or_else(|| current_run_id.clone())
-                };
-                let deployment_id = if query.all_deployments {
-                    None
-                } else {
-                    query
-                        .deployment_id
-                        .clone()
-                        .or_else(|| current_deployment_id.as_ref().map(ToString::to_string))
-                };
+                let node_run_id = query
+                    .node_run_id
+                    .clone()
+                    .or_else(|| current_run_id.clone().filter(|_| query.current_run));
+                let deployment_id = query.deployment_id.clone().or_else(|| {
+                    current_deployment_id
+                        .as_ref()
+                        .filter(|_| query.current_deployment)
+                        .map(ToString::to_string)
+                });
                 let levels = selected_levels(query);
                 // Selecting every level is the same as not filtering, so ask for all of them at once.
                 let requested_levels = if levels.len() == FILTER_LEVELS.len() {
@@ -388,10 +385,10 @@ pub fn system_events_page() -> Html {
                 query.from = input_value(&from_ref);
                 query.to = input_value(&to_ref);
                 if query.node_run_id.is_some() {
-                    query.all_runs = false;
+                    query.current_run = false;
                 }
                 if query.deployment_id.is_some() {
-                    query.all_deployments = false;
+                    query.current_deployment = false;
                 }
                 query.before = None;
                 query.id = None;
@@ -401,12 +398,13 @@ pub fn system_events_page() -> Html {
         })
     };
 
-    let set_run_scope = |all_runs: bool| {
+    let current_run_selected = query.current_run && query.node_run_id.is_none();
+    let toggle_current_run = {
         let navigator = navigator.clone();
         let query = query.clone();
         Callback::from(move |_| {
             let mut query = query.clone();
-            query.all_runs = all_runs;
+            query.current_run = !current_run_selected;
             query.node_run_id = None;
             query.before = None;
             query.id = None;
@@ -414,12 +412,15 @@ pub fn system_events_page() -> Html {
         })
     };
 
-    let set_deployment_scope = |all_deployments: bool| {
+    let current_deployment_selected = query.current_deployment
+        && query.deployment_id.is_none()
+        && current_deployment_id.is_some();
+    let toggle_current_deployment = {
         let navigator = navigator.clone();
         let query = query.clone();
         Callback::from(move |_| {
             let mut query = query.clone();
-            query.all_deployments = all_deployments;
+            query.current_deployment = !current_deployment_selected;
             query.deployment_id = None;
             query.before = None;
             query.id = None;
@@ -450,8 +451,6 @@ pub fn system_events_page() -> Html {
     };
 
     let selected_levels = selected_levels(&query);
-    let showing_all_deployments =
-        query.all_deployments || (query.deployment_id.is_none() && current_deployment_id.is_none());
     let has_more_filters = query.code.is_some()
         || query.node_run_id.is_some()
         || query.deployment_id.is_some()
@@ -482,12 +481,8 @@ pub fn system_events_page() -> Html {
                     })}
                 </div>
                 <div class="system-event-filter-group">
-                    <button class={classes!((!query.all_runs && query.node_run_id.is_none()).then_some("selected"))} onclick={set_run_scope(false)}>{"Current run"}</button>
-                    <button class={classes!(query.all_runs.then_some("selected"))} onclick={set_run_scope(true)}>{"All runs"}</button>
-                </div>
-                <div class="system-event-filter-group">
-                    <button class={classes!((!showing_all_deployments && query.deployment_id.is_none()).then_some("selected"))} onclick={set_deployment_scope(false)} disabled={current_deployment_id.is_none()}>{"Current deployment"}</button>
-                    <button class={classes!(query.all_deployments.then_some("selected"))} onclick={set_deployment_scope(true)}>{"All deployments"}</button>
+                    <button class={classes!(current_run_selected.then_some("selected"))} onclick={toggle_current_run}>{"Current run"}</button>
+                    <button class={classes!(current_deployment_selected.then_some("selected"))} onclick={toggle_current_deployment} disabled={current_deployment_id.is_none()}>{"Current deployment"}</button>
                 </div>
                 <TimeDisplayControl default_mode={if query.absolute_time { TimeMode::Utc } else { TimeMode::Relative }} />
             </div>
@@ -518,9 +513,9 @@ pub fn system_events_page() -> Html {
                     {format!("Event {id} · ")}
                     <Link<Route> to={Route::SystemEvents}>{"Show all events"}</Link<Route>>
                 } else {
-                    {if query.all_runs { "All node runs" } else if query.node_run_id.is_some() { "One node run" } else { "Current node run" }}
+                    {if query.node_run_id.is_some() { "One node run" } else if current_run_selected { "Current node run" } else { "All node runs" }}
                     {" · "}
-                    {if query.all_deployments { "All deployments" } else if query.deployment_id.is_some() { "One deployment" } else if showing_all_deployments { "All deployments" } else { "Current deployment" }}
+                    {if query.deployment_id.is_some() { "One deployment" } else if current_deployment_selected { "Current deployment" } else { "Any deployment" }}
                     if let Some(time_range) = time_range {
                         {" · "}{time_range}
                     }

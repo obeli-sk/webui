@@ -4,9 +4,9 @@ use crate::{
         execution_list_page::{ExecutionQuery, StatusFilterList},
         notification::{Notification, NotificationContext},
         pagination::page_link,
+        time_display::{TimeDisplayControl, TimeMode, Timestamp},
     },
     rest,
-    util::time::{RelativeAgo, format_date},
 };
 use concepts::prefixed_ulid::DeploymentId;
 use gloo::timers::callback::Timeout;
@@ -208,13 +208,13 @@ pub fn deployment_list_page() -> Html {
                 let deployed_at = deployment.last_active_at;
                 let deployment_age = match (deployment.status, deployed_at) {
                     (DeploymentStatusSer::Active, Some(deployed_at)) => html! {
-                        <span title={format!("Deployed: {} UTC", format_date(deployed_at))}>
-                            {"Deployed "}<RelativeAgo target={deployed_at} />
+                        <span>
+                            {"Deployed "}<Timestamp target={deployed_at} default_mode={TimeMode::Relative} />
                         </span>
                     },
                     (_, Some(deployed_at)) => html! {
-                        <span title={format!("Last deployed: {} UTC", format_date(deployed_at))}>
-                            {"Last deployed "}<RelativeAgo target={deployed_at} />
+                        <span>
+                            {"Last deployed "}<Timestamp target={deployed_at} default_mode={TimeMode::Relative} />
                         </span>
                     },
                     _ => html! { <span class="not-deployed">{"Not deployed yet"}</span> },
@@ -472,7 +472,10 @@ pub fn deployment_list_page() -> Html {
 
         html! {
             <>
-                <h3>{"Deployments"}</h3>
+                <div class="deployment-list-header">
+                    <h3>{"Deployments"}</h3>
+                    <TimeDisplayControl default_mode={TimeMode::Relative} />
+                </div>
 
                 <div class="deployment-list">{ rows }</div>
 
