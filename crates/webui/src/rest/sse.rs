@@ -61,13 +61,15 @@ impl SseParser {
 /// An open event stream, the request is aborted on drop.
 pub struct SseStream {
     reader: ReadableStreamDefaultReader,
-    abort: AbortController,
+    _abort: AbortOnDrop,
     parser: SseParser,
 }
 
-impl Drop for SseStream {
+struct AbortOnDrop(AbortController);
+
+impl Drop for AbortOnDrop {
     fn drop(&mut self) {
-        self.abort.abort();
+        self.0.abort();
     }
 }
 
@@ -76,10 +78,11 @@ impl SseStream {
         request: RequestBuilder,
         body: Option<&impl Serialize>,
     ) -> Result<Self, String> {
-        let abort = AbortController::new().map_err(|error| format!("{error:?}"))?;
+        crate::visibility::wait_until_visible().await;
+        let abort = AbortOnDrop(AbortController::new().map_err(|error| format!("{error:?}"))?);
         let mut request = request
             .header("Accept", "text/event-stream")
-            .abort_signal(Some(&abort.signal()));
+            .abort_signal(Some(&abort.0.signal()));
         if let Some(token) = crate::auth::token() {
             request = request.header("Authorization", &format!("Bearer {token}"));
         }
@@ -104,7 +107,7 @@ impl SseStream {
             .unchecked_into::<ReadableStreamDefaultReader>();
         Ok(Self {
             reader,
-            abort,
+            _abort: abort,
             parser: SseParser::default(),
         })
     }

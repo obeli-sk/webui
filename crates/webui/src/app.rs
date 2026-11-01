@@ -285,60 +285,63 @@ fn app_inner(
                 let deployment_id_ref = deployment_id_ref.clone();
                 let was_connected_ref = was_connected_ref.clone();
                 let notifications = notifications.clone();
-                spawn_local(async move {
-                    match get_current_deployment_id().await {
-                        Ok(new_deployment_id) => {
-                            // Check if we're reconnecting after a disconnect
-                            {
-                                let mut was_connected = was_connected_ref.borrow_mut();
-                                if !*was_connected {
-                                    info!("Connection to server re-established");
-                                    notifications.push(Notification::success(
-                                        "Connection to server established",
-                                    ));
-                                    *was_connected = true;
-                                }
-                            }
-
-                            let should_reload = {
-                                let current_id = deployment_id_ref.borrow();
-                                let changed = current_id.as_ref() != Some(&new_deployment_id);
-                                if changed {
-                                    debug!(
-                                        "Deployment changed from {:?} to {:?}, reloading components",
-                                        *current_id, new_deployment_id
-                                    );
-                                }
-                                changed
-                            };
-                            if should_reload {
-                                match load_components().await {
-                                    Ok(loaded) => {
-                                        *deployment_id_ref.borrow_mut() = Some(new_deployment_id);
-                                        app_state.set(AppState::from_loaded(
-                                            &loaded,
-                                            Some(new_deployment_id),
+                if crate::visibility::document_visible() {
+                    spawn_local(async move {
+                        match get_current_deployment_id().await {
+                            Ok(new_deployment_id) => {
+                                // Check if we're reconnecting after a disconnect
+                                {
+                                    let mut was_connected = was_connected_ref.borrow_mut();
+                                    if !*was_connected {
+                                        info!("Connection to server re-established");
+                                        notifications.push(Notification::success(
+                                            "Connection to server established",
                                         ));
+                                        *was_connected = true;
                                     }
-                                    Err(e) => {
-                                        error!("Failed to reload components: {e}");
+                                }
+
+                                let should_reload = {
+                                    let current_id = deployment_id_ref.borrow();
+                                    let changed = current_id.as_ref() != Some(&new_deployment_id);
+                                    if changed {
+                                        debug!(
+                                            "Deployment changed from {:?} to {:?}, reloading components",
+                                            *current_id, new_deployment_id
+                                        );
+                                    }
+                                    changed
+                                };
+                                if should_reload {
+                                    match load_components().await {
+                                        Ok(loaded) => {
+                                            *deployment_id_ref.borrow_mut() =
+                                                Some(new_deployment_id);
+                                            app_state.set(AppState::from_loaded(
+                                                &loaded,
+                                                Some(new_deployment_id),
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to reload components: {e}");
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            // Check if this is a new disconnect
-                            let mut was_connected = was_connected_ref.borrow_mut();
-                            if *was_connected {
-                                error!("Connection to server lost: {:?}", e);
-                                notifications.push(Notification::error(
-                                    "Connection to server lost. Retrying...",
-                                ));
-                                *was_connected = false;
+                            Err(e) => {
+                                // Check if this is a new disconnect
+                                let mut was_connected = was_connected_ref.borrow_mut();
+                                if *was_connected {
+                                    error!("Connection to server lost: {:?}", e);
+                                    notifications.push(Notification::error(
+                                        "Connection to server lost. Retrying...",
+                                    ));
+                                    *was_connected = false;
+                                }
                             }
                         }
-                    }
-                });
+                    });
+                }
             });
             // Return cleanup closure that drops the interval
             move || drop(interval)
@@ -346,6 +349,11 @@ fn app_inner(
     }
 
     let status_hub = use_memo((), |()| crate::status_hub::StatusHub::default());
+    let visible = crate::visibility::use_document_visible();
+    {
+        let status_hub = status_hub.clone();
+        use_effect_with(visible, move |visible| status_hub.set_visible(*visible));
+    }
 
     html! {
         <ContextProvider<AppState> context={app_state.deref().clone()}>

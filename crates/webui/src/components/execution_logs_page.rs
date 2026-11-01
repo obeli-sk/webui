@@ -449,6 +449,7 @@ impl Reducible for LogsState {
 
 #[component(LogsPage)]
 pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Html {
+    let visible = crate::visibility::use_document_visible();
     let navigator = use_navigator().unwrap();
     let location = use_location().unwrap();
     let query = location.query::<LogsQuery>().unwrap_or_default();
@@ -523,21 +524,23 @@ pub fn execution_log_page(LogsPageProps { execution_id }: &LogsPageProps) -> Htm
                 logs_state.execution_finished,
                 logs_state.complete,
                 logs_state.request_generation,
+                visible,
             ),
-            move |(follow, fetch_state, has_more, execution_finished, complete, _)| {
-                let stream = (*follow && *fetch_state == LogsFetchState::Idle).then(|| {
-                    if *has_more {
-                        logs_state.dispatch(LogsAction::LoadMore);
-                        None
-                    } else if *complete {
-                        None
-                    } else if *execution_finished {
-                        logs_state.dispatch(LogsAction::Poll);
-                        None
-                    } else {
-                        follow_logs(logs_state, notifications)
-                    }
-                });
+            move |(follow, fetch_state, has_more, execution_finished, complete, _, visible)| {
+                let stream =
+                    (*visible && *follow && *fetch_state == LogsFetchState::Idle).then(|| {
+                        if *has_more {
+                            logs_state.dispatch(LogsAction::LoadMore);
+                            None
+                        } else if *complete {
+                            None
+                        } else if *execution_finished {
+                            logs_state.dispatch(LogsAction::Poll);
+                            None
+                        } else {
+                            follow_logs(logs_state, notifications)
+                        }
+                    });
                 move || {
                     if let Some(Some(stream)) = stream {
                         stream.abort();
@@ -823,6 +826,7 @@ fn fetch_logs_page(
         return;
     }
     wasm_bindgen_futures::spawn_local(async move {
+        crate::visibility::wait_until_visible().await;
         const PAGE_SIZE: usize = 200;
         debug!("Requesting logs page `{page_token}`");
         let mut query = logs_query(show_derived, &filters, &page_token);
@@ -875,8 +879,7 @@ fn logs_query(
     query
 }
 
-/// Streams entries after the current cursor until the server ends the stream, which happens
-/// once the execution finished. A final `Poll` then marks the logs complete.
+/// Streams after the current cursor; EOF triggers a cursor-based poll and resubscription.
 fn follow_logs(
     logs_state: UseReducerHandle<LogsState>,
     notifications: NotificationContext,

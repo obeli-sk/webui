@@ -7,5 +7,6 @@ pub mod rest;
 pub mod status_hub;
 pub mod tree;
 pub mod util;
+pub mod visibility;
 
 pub const BASE_URL: &str = "/api";
