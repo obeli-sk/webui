@@ -45,6 +45,7 @@ type Listener = (u64, mpsc::UnboundedSender<Rc<StatusUpdate>>);
 
 #[derive(Default)]
 struct Inner {
+    visible: bool,
     interest: HashMap<ExecutionId, usize>,
     listeners: HashMap<ExecutionId, Vec<Listener>>,
     waiters: HashMap<ExecutionId, Vec<oneshot::Sender<()>>>,
@@ -105,6 +106,10 @@ impl Drop for StatusWatch {
 }
 
 impl StatusHub {
+    pub fn set_visible(&self, visible: bool) {
+        self.0.borrow_mut().visible = visible;
+        self.reconcile();
+    }
     pub fn watch(&self, execution_id: &ExecutionId) -> StatusWatch {
         *self
             .0
@@ -163,6 +168,7 @@ impl StatusHub {
     /// Resolves once the execution changed after `since`, or is finished or missing.
     /// The execution must be watched to see changes.
     pub async fn changed(&self, execution_id: &ExecutionId, since: u64) {
+        crate::visibility::wait_until_visible().await;
         let receiver = {
             let mut inner = self.0.borrow_mut();
             if inner.seq.get(execution_id).copied().unwrap_or_default() > since
@@ -182,6 +188,7 @@ impl StatusHub {
             _ = receiver.fuse() => {},
             () = TimeoutFuture::new(CHANGED_TIMEOUT_MS).fuse() => {},
         }
+        crate::visibility::wait_until_visible().await;
     }
 
     /// Reconciles after `delay_ms` unless an earlier reconcile is already scheduled.
@@ -222,7 +229,7 @@ impl StatusHub {
             .filter(|execution_id| !inner.done.contains(*execution_id))
             .cloned()
             .collect();
-        if desired.is_empty() {
+        if !inner.visible || desired.is_empty() {
             for stream in inner.streams.drain(..) {
                 stream.abort();
             }
@@ -302,7 +309,6 @@ async fn run_stream(hub: Weak<RefCell<Inner>>, execution_ids: Vec<ExecutionId>) 
             inner.streaming.remove(execution_id);
         }
         match result {
-            // Everything finished or missing.
             Ok(()) => ADDED_DELAY_MS,
             Err(err) => {
                 let delay_ms = inner.reconnect_ms.clamp(RECONNECT_MS.0, RECONNECT_MS.1);
@@ -338,6 +344,21 @@ async fn follow(hub: &Weak<RefCell<Inner>>, execution_ids: &[ExecutionId]) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hiding_aborts_streams_and_clears_coverage() {
+        let hub = StatusHub::default();
+        let (task, handle) = abortable(std::future::pending::<()>());
+        hub.0.borrow_mut().streams.push(handle);
+        hub.0
+            .borrow_mut()
+            .streaming
+            .insert("E_01KABCDEFGHJKMNPQRSTVWXYZ0".parse().unwrap());
+        hub.set_visible(false);
+        assert!(task.now_or_never().unwrap().is_err());
+        assert!(hub.0.borrow().streaming.is_empty());
+        assert!(hub.0.borrow().streams.is_empty());
+    }
 
     #[test]
     fn parses_batch_item() {
