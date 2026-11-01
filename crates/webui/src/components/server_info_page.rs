@@ -67,7 +67,7 @@ pub fn server_info_page() -> Html {
                         <dd><code>{info.node_run_id.to_string()}</code></dd>
                         <dt>{"App config digest"}</dt>
                         <dd>
-                            <Link<Route> to={Route::AppPolicy}>
+                            <Link<Route> to={Route::AppConfig}>
                                 <code>{&info.app_config_digest}</code>
                             </Link<Route>>
                         </dd>
