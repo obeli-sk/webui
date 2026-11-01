@@ -6,8 +6,10 @@ use crate::{
         time_display::Timestamp,
     },
     loader::{ServerInfo, get_server_info},
+    util::time::format_exact_millis,
 };
 use log::error;
+use obelisk_api_types::{ServerInfoGc, ServerInfoGcCountedRetention};
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -74,6 +76,55 @@ pub fn server_info_page() -> Html {
                     </dl>
                 },
             }}
+            if let Some(Ok(info)) = response.as_ref() {
+                <h2>{"Garbage collection"}</h2>
+                {match &info.gc {
+                    None => html! { <p>{"Not reported by this server."}</p> },
+                    Some(gc) => gc_config(gc),
+                }}
+            }
         </main>
+    }
+}
+
+fn gc_config(gc: &ServerInfoGc) -> Html {
+    let retention = &gc.retention;
+    html! {
+        <dl class="server-info">
+            <dt>{"Status"}</dt>
+            <dd>{if gc.enabled { "Enabled" } else { "Disabled" }}</dd>
+            <dt>{"Interval"}</dt>
+            <dd>{format_exact_millis(gc.interval_ms)}</dd>
+            <dt>{"Batch size"}</dt>
+            <dd>{gc.batch_size}</dd>
+            <dt>{"Batch delay"}</dt>
+            <dd>{format_exact_millis(gc.batch_delay_ms)}</dd>
+            <dt>{"Upload grace period"}</dt>
+            <dd>{format_exact_millis(gc.upload_grace_period_ms)}</dd>
+            <dt>{"Execution retention"}</dt>
+            <dd>{counted_retention(&retention.executions)}</dd>
+            <dt>{"Deployment retention"}</dt>
+            <dd>{counted_retention(&retention.deployments)}</dd>
+            <dt>{"System event retention"}</dt>
+            <dd>{
+                if retention.system_events.enabled {
+                    format!("max age {}", format_exact_millis(retention.system_events.max_age_ms))
+                } else {
+                    "Disabled".to_string()
+                }
+            }</dd>
+        </dl>
+    }
+}
+
+fn counted_retention(retention: &ServerInfoGcCountedRetention) -> String {
+    if !retention.enabled {
+        return "Disabled".to_string();
+    }
+    let max_age = format_exact_millis(retention.max_age_ms);
+    if retention.max_count == 0 {
+        format!("max age {max_age}, no count limit")
+    } else {
+        format!("max age {max_age}, max count {}", retention.max_count)
     }
 }

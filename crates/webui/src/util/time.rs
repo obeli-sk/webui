@@ -56,20 +56,27 @@ pub fn human_formatted_timedelta(duration: TimeDelta, granularity: TimeGranulari
             format!("{hours} hour{plural}")
         }
         _ => {
-            if days < 30 {
-                let plural = if days == 1 { "" } else { "s" };
-                format!("{days} day{plural}")
-            } else if days < 365 {
-                let months = days / 30;
-                let plural = if months == 1 { "" } else { "s" };
-                format!("{months} month{plural}")
-            } else {
-                let years = days / 365;
-                let plural = if years == 1 { "" } else { "s" };
-                format!("{years} year{plural}")
-            }
+            let plural = if days == 1 { "" } else { "s" };
+            format!("{days} day{plural}")
         }
     }
+}
+
+/// Formats in the largest unit that divides the value exactly, for configured values that must not be rounded.
+pub fn format_exact_millis(millis: u64) -> String {
+    const UNITS: [(u64, &str, &str); 5] = [
+        (24 * 60 * 60 * 1000, "day", "days"),
+        (60 * 60 * 1000, "hour", "hours"),
+        (60 * 1000, "min", "mins"),
+        (1000, "sec", "secs"),
+        (1, "ms", "ms"),
+    ];
+    let (factor, singular, plural) = UNITS
+        .into_iter()
+        .find(|(factor, ..)| millis != 0 && millis.is_multiple_of(*factor))
+        .unwrap_or((1, "ms", "ms"));
+    let value = millis / factor;
+    format!("{value} {}", if value == 1 { singular } else { plural })
 }
 
 pub fn format_date(date: DateTime<Utc>) -> String {
