@@ -131,9 +131,15 @@
 }
 
 .deployment-activity {
+    display: flex;
+    flex-direction: column;
     color: $color-text-secondary;
     font-size: $font-size-sm;
     white-space: nowrap;
+}
+
+.deployment-updated {
+    color: $color-text-muted;
 }
 
 .not-deployed,
