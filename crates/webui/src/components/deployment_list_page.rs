@@ -219,6 +219,8 @@ pub fn deployment_list_page() -> Html {
                     },
                     _ => html! { <span class="not-deployed">{"Not deployed yet"}</span> },
                 };
+                // The list is ordered by `updated_at`; rc.15 servers do not report it.
+                let updated_at = deployment.updated_at.unwrap_or(deployment.created_at);
 
                 let DeploymentStateSer {
                     locked,
@@ -303,7 +305,12 @@ pub fn deployment_list_page() -> Html {
                                 <div class="deployment-id">{ deployment_id.to_string() }</div>
                             }
                         </div>
-                        <div class="deployment-activity">{ deployment_age }</div>
+                        <div class="deployment-activity">
+                            { deployment_age }
+                            <span class="deployment-updated">
+                                {"Updated "}<Timestamp target={updated_at} default_mode={TimeMode::Relative} />
+                            </span>
+                        </div>
                         <div class="deployment-execution-counts">
                             if total > 0 {
                                 <Link<Route, ExecutionQuery>
