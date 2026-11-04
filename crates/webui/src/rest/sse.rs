@@ -93,7 +93,7 @@ impl SseStream {
         .map_err(|error| error.to_string())?;
         let response = request.send().await.map_err(|error| error.to_string())?;
         if response.status() == 401 {
-            crate::auth::auth_required();
+            crate::auth::auth_required(&response);
         }
         if !response.ok() {
             let status = response.status();

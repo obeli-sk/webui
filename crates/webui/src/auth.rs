@@ -17,13 +17,26 @@ pub(crate) fn token() -> Option<String> {
         .ok()?
 }
 
-pub(crate) fn auth_required() {
-    AUTH_REQUIRED_PENDING.with(|pending| *pending.borrow_mut() = true);
-    ON_AUTH_REQUIRED.with(|callback| {
-        if let Some(callback) = callback.borrow().as_ref() {
-            callback.emit(());
+/// Inspect `/api` response.
+/// app-proxy's `Session` challenge means this is a cloud deployment,
+/// signing in again by navigation, not with a token.
+pub(crate) fn auth_required(response: &gloo::net::http::Response) {
+    let session = response
+        .headers()
+        .get("www-authenticate")
+        .is_some_and(|challenge| challenge.eq_ignore_ascii_case("session"));
+    if session {
+        if let Some(window) = web_sys::window() {
+            let _ = window.location().reload();
         }
-    });
+    } else {
+        AUTH_REQUIRED_PENDING.with(|pending| *pending.borrow_mut() = true);
+        ON_AUTH_REQUIRED.with(|callback| {
+            if let Some(callback) = callback.borrow().as_ref() {
+                callback.emit(());
+            }
+        });
+    }
 }
 
 #[derive(Properties, PartialEq)]
