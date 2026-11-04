@@ -56,7 +56,7 @@ pub async fn get_text_with_accept(
     }
     let response = request.send().await.map_err(|error| error.to_string())?;
     if response.status() == 401 {
-        crate::auth::auth_required();
+        crate::auth::auth_required(&response);
     }
     let status = response.status();
     let body = response.text().await.map_err(|error| error.to_string())?;
@@ -74,7 +74,7 @@ pub async fn get_bytes(path: &str) -> Result<Vec<u8>, String> {
     }
     let response = request.send().await.map_err(|error| error.to_string())?;
     if response.status() == 401 {
-        crate::auth::auth_required();
+        crate::auth::auth_required(&response);
     }
     if !response.ok() {
         let status = response.status();
@@ -128,7 +128,7 @@ pub async fn put_action(path: &str) -> Result<ActionResult, String> {
     }
     let response = request.send().await.map_err(|error| error.to_string())?;
     if response.status() == 401 {
-        crate::auth::auth_required();
+        crate::auth::auth_required(&response);
     }
     let status = response.status();
     let body = response.text().await.map_err(|error| error.to_string())?;
@@ -164,7 +164,7 @@ pub async fn put_empty_allow_conflict<T: DeserializeOwned>(path: &str) -> Result
     }
     let response = request.send().await.map_err(|error| error.to_string())?;
     if response.status() == 401 {
-        crate::auth::auth_required();
+        crate::auth::auth_required(&response);
     }
     let status = response.status();
     if status >= 400 && status != 409 {
@@ -191,7 +191,7 @@ pub async fn put_allow_unprocessable<B: Serialize + ?Sized, T: DeserializeOwned>
         .await
         .map_err(|error| error.to_string())?;
     if response.status() == 401 {
-        crate::auth::auth_required();
+        crate::auth::auth_required(&response);
     }
     let status = response.status();
     if status >= 400 && status != 422 {
@@ -204,7 +204,7 @@ pub async fn put_allow_unprocessable<B: Serialize + ?Sized, T: DeserializeOwned>
 
 async fn decode<T: DeserializeOwned>(response: gloo::net::http::Response) -> Result<T, String> {
     if response.status() == 401 {
-        crate::auth::auth_required();
+        crate::auth::auth_required(&response);
     }
     if !response.ok() {
         let status = response.status();
