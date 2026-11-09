@@ -55,8 +55,6 @@ pub fn server_info_page() -> Html {
                         }
                         <dt>{"Obelisk version"}</dt>
                         <dd><code>{&info.obelisk_version}</code></dd>
-                        <dt>{"WebUI version"}</dt>
-                        <dd><code>{env!("CARGO_PKG_VERSION")}</code></dd>
                         <dt>{"Started"}</dt>
                         <dd><Timestamp target={info.started_at} /></dd>
                         <dt>{"Active deployment"}</dt>
