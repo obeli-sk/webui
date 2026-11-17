@@ -27,7 +27,8 @@ enum ArmedAction {
     Enqueue,
 }
 
-/// Buttons to apply a deployment immediately or enqueue it for the next server restart.
+/// Buttons to apply a deployment immediately or enqueue it for later activation:
+/// a standalone server activates it on restart, a cloud app on its next apply.
 #[component(DeploymentActions)]
 pub fn deployment_actions(
     DeploymentActionsProps {
@@ -102,7 +103,7 @@ pub fn deployment_actions(
                                 }
                                 DeploymentSwitchOutcome::RestartRequired => {
                                     notifications.push(Notification::info(
-                                        "Deployment enqueued, restart the server to apply it",
+                                        "Deployment enqueued, it activates on the next server restart, or on the next apply of a cloud app",
                                     ))
                                 }
                             }
@@ -139,6 +140,7 @@ pub fn deployment_actions(
                     }
                 }
                 disabled={*in_flight}
+                title="Activates the deployment now; a cloud app also applies its other staged changes"
             >
                 { if apply_armed { "Confirm apply" } else { "Apply" } }
             </button>
@@ -147,7 +149,7 @@ pub fn deployment_actions(
                     class="action-button confirm"
                     onclick={switch(false, false)}
                     disabled={enqueue_disabled}
-                    title="Enqueues the deployment for the next server restart, failing if any runtime requirement is unavailable"
+                    title="Enqueues the deployment for the next server restart or cloud app apply, failing if any runtime requirement is unavailable"
                 >
                     {"Confirm enqueue"}
                 </button>
@@ -155,7 +157,7 @@ pub fn deployment_actions(
                     class="action-button warning"
                     onclick={switch(false, true)}
                     disabled={enqueue_disabled}
-                    title="Enqueues the deployment even if environment variables, secrets, or server capabilities are unavailable; activation may still fail at the next server restart"
+                    title="Enqueues the deployment even if environment variables, secrets, or server capabilities are unavailable; activation may still fail later"
                 >
                     {"Allow unavailable requirements"}
                 </button>
@@ -164,9 +166,9 @@ pub fn deployment_actions(
                     class="action-button"
                     onclick={arm(ArmedAction::Enqueue)}
                     disabled={enqueue_disabled}
-                    title="Enqueues the deployment for the next server restart"
+                    title="Enqueues the deployment for the next server restart, or stages it for the next cloud app apply"
                 >
-                    {"Enqueue for next restart"}
+                    {"Enqueue"}
                 </button>
             }
         </div>
