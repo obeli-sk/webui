@@ -7,7 +7,6 @@ use crate::{
         trace_id,
     },
 };
-use chrono::{DateTime, Utc};
 use concepts::{
     ExecutionId,
     storage::{PendingState, PendingStateBlockedByJoinSet, PendingStateFinished},
@@ -15,6 +14,7 @@ use concepts::{
 use futures::StreamExt as _;
 use gloo::timers::future::TimeoutFuture;
 use hashbrown::HashMap;
+use jiff::Timestamp;
 use log::{debug, error, trace};
 use rest_types::executions::ExecutionWithStateSer;
 use std::rc::Rc;
@@ -358,7 +358,7 @@ enum RelativeStatusKind {
     Locked,
 }
 impl RelativeStatusKind {
-    fn label(self, target: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    fn label(self, target: Timestamp, now: Timestamp) -> String {
         match (self, target > now) {
             (RelativeStatusKind::Pending, true) => format!(
                 "Scheduled in {}",
@@ -382,7 +382,7 @@ impl RelativeStatusKind {
 
 #[derive(Properties, PartialEq)]
 struct RelativeStatusProps {
-    target: DateTime<Utc>,
+    target: Timestamp,
     kind: RelativeStatusKind,
 }
 

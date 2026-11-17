@@ -432,7 +432,7 @@ fn render_execution_details(
             let event_created_at = event.created_at;
             let version = event.version.0;
             let since_created = human_formatted_timedelta(
-                event_created_at - execution_created_at,
+                event_created_at.duration_since(execution_created_at),
                 TimeGranularity::Fine,
             );
 

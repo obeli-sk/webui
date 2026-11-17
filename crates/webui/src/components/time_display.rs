@@ -1,5 +1,5 @@
 use crate::util::time::{RelativeAgo, format_date};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp as JiffTimestamp;
 use wasm_bindgen::JsValue;
 use yew::prelude::*;
 
@@ -98,17 +98,17 @@ pub fn time_display_control(props: &TimeDisplayControlProps) -> Html {
 
 #[derive(Properties, PartialEq)]
 pub struct TimestampProps {
-    pub target: DateTime<Utc>,
+    pub target: JiffTimestamp,
     #[prop_or_default]
     pub default_mode: TimeMode,
 }
 
-fn format_local(target: DateTime<Utc>) -> String {
+fn format_local(target: JiffTimestamp) -> String {
     format_browser_time(target, None)
 }
 
-fn format_browser_time(target: DateTime<Utc>, time_zone: Option<&str>) -> String {
-    let date = js_sys::Date::new(&JsValue::from_str(&target.to_rfc3339()));
+fn format_browser_time(target: JiffTimestamp, time_zone: Option<&str>) -> String {
+    let date = js_sys::Date::new(&JsValue::from_str(&target.to_string()));
     let options = js_sys::JSON::parse(
         r#"{"year":"numeric","month":"2-digit","day":"2-digit","hour":"2-digit","minute":"2-digit","second":"2-digit","fractionalSecondDigits":3,"hour12":false,"timeZoneName":"shortOffset"}"#,
     ).expect("valid date formatting options");
@@ -130,12 +130,8 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn local_timestamps_apply_offsets_and_daylight_saving() {
-        let winter = DateTime::parse_from_rfc3339("2026-01-02T23:30:08.123Z")
-            .unwrap()
-            .to_utc();
-        let summer = DateTime::parse_from_rfc3339("2026-07-02T23:30:08.123Z")
-            .unwrap()
-            .to_utc();
+        let winter = "2026-01-02T23:30:08.123Z".parse::<JiffTimestamp>().unwrap();
+        let summer = "2026-07-02T23:30:08.123Z".parse::<JiffTimestamp>().unwrap();
         let winter = format_browser_time(winter, Some("Europe/Prague"));
         let summer = format_browser_time(summer, Some("Europe/Prague"));
         assert!(winter.contains("2026-01-03"), "{winter}");
@@ -157,7 +153,7 @@ pub fn timestamp(props: &TimestampProps) -> Html {
     let local = format_local(props.target);
     let title = format!("UTC: {utc}\nLocal: {local}");
     html! {
-        <time class="timestamp" datetime={props.target.to_rfc3339()} {title}>
+        <time class="timestamp" datetime={props.target.to_string()} {title}>
             {match mode {
                 TimeMode::Relative => html! { <RelativeAgo target={props.target} /> },
                 TimeMode::Local => html! { {local} },

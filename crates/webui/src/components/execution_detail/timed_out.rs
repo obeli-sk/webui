@@ -2,13 +2,13 @@ use crate::components::execution_detail::{
     http_trace::attach_http_traces, tree_component::TreeComponent,
 };
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use chrono::{DateTime, Utc};
 use concepts::storage::{VersionType, http_client_trace::HttpClientTrace};
+use jiff::Timestamp;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct TemporarilyTimedOutEventProps {
-    pub backoff_expires_at: DateTime<Utc>,
+    pub backoff_expires_at: Timestamp,
     pub http_client_traces: Vec<HttpClientTrace>,
     pub version: VersionType,
     pub is_selected: bool,

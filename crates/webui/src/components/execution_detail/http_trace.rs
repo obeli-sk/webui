@@ -31,8 +31,8 @@ pub fn attach_http_traces(
             trace.req.method,
             trace.req.uri,
             if let Some(finished_at) = finished_at {
-                let duration = (finished_at - sent_at)
-                    .to_std()
+                let duration: std::time::Duration = (finished_at - sent_at)
+                    .try_into()
                     .expect("duration should never be negative");
                 format!("{duration:?}")
             } else {

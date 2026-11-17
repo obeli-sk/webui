@@ -3,7 +3,6 @@
 use crate::{
     components::execution_header::ExecutionLink, tree::Icon, util::color::generate_color_from_hash,
 };
-use chrono::{DateTime, Utc};
 use concepts::{
     ComponentType, ExecutionId, FunctionFqn, IfcFqnName, JoinSetId, PkgFqn,
     SupportedFunctionReturnValue,
@@ -11,6 +10,7 @@ use concepts::{
     storage::{PendingState, PendingStateFinishedResultKind},
 };
 use indexmap::IndexMap;
+use jiff::Timestamp;
 use rest_types::{
     components::{ComponentConfig, FunctionMetadataLite},
     executions::{ExecutionWithStateSer, RetVal},
@@ -258,8 +258,8 @@ pub enum StatusMessage {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FinishedStatus {
-    pub scheduled_at: DateTime<Utc>,
-    pub finished_at: DateTime<Utc>,
+    pub scheduled_at: Timestamp,
+    pub finished_at: Timestamp,
     pub retval: RetVal,
 }
 

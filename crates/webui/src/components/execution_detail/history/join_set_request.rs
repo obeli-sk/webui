@@ -9,11 +9,11 @@ use crate::components::ffqn_with_links::FfqnWithLinks;
 use crate::components::json_tree::{JsonValue, insert_json_into_tree};
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
 use crate::util::time::{TimeGranularity, format_date, relative_time, use_relative_now};
-use chrono::{DateTime, Utc};
 use concepts::{
     ExecutionId,
     storage::{Created, HistoryEventScheduleAt, JoinSetRequest, PersistedParams, VersionType},
 };
+use jiff::Timestamp;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
@@ -299,7 +299,7 @@ impl HistoryJoinSetRequestEventProps {
 
 #[derive(Properties, PartialEq)]
 struct RelativeScheduledInProps {
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 }
 
 #[function_component(RelativeScheduledIn)]

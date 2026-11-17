@@ -1152,7 +1152,7 @@ mod tests {
                 generation: 0,
             });
         let event = ExecutionEvent {
-            created_at: chrono::DateTime::UNIX_EPOCH,
+            created_at: jiff::Timestamp::UNIX_EPOCH,
             event: ExecutionRequest::Paused,
             backtrace_id: None,
             version: concepts::storage::Version::new(2),

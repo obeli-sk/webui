@@ -1,6 +1,6 @@
 use crate::{components::execution_status::status_to_string, model::FinishedResultKind};
-use chrono::{DateTime, TimeDelta, Utc};
 use concepts::storage::{PendingState, VersionType};
+use jiff::{SignedDuration, Timestamp};
 use std::time::Duration;
 use yew::Html;
 
@@ -34,7 +34,7 @@ impl TraceData {
         }
     }
 
-    pub fn busy_duration(&self, root_last_event_at: DateTime<Utc>) -> Duration {
+    pub fn busy_duration(&self, root_last_event_at: Timestamp) -> Duration {
         self.busy()
             .iter()
             .filter(|interval| interval.status != BusyIntervalStatus::ExecutionSinceScheduled)
@@ -140,42 +140,42 @@ pub enum BusyIntervalStatus {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BusyInterval {
-    pub started_at: DateTime<Utc>,
-    pub finished_at: Option<DateTime<Utc>>,
+    pub started_at: Timestamp,
+    pub finished_at: Option<Timestamp>,
     pub title: Option<String>,
     pub status: BusyIntervalStatus,
 }
 impl BusyInterval {
     pub fn as_percentage(
         &self,
-        root_scheduled_at: DateTime<Utc>,
-        root_last_event_at: DateTime<Utc>,
+        root_scheduled_at: Timestamp,
+        root_last_event_at: Timestamp,
     ) -> (f64, f64) {
         let total_duration_micros =
-            root_last_event_at.timestamp_micros() - root_scheduled_at.timestamp_micros();
+            root_last_event_at.as_microsecond() - root_scheduled_at.as_microsecond();
         let start_percentage = 100.0
-            * (self.started_at.timestamp_micros() - root_scheduled_at.timestamp_micros()) as f64
+            * (self.started_at.as_microsecond() - root_scheduled_at.as_microsecond()) as f64
             / total_duration_micros as f64;
 
         let end_percentage = 100.0
             * (self
                 .finished_at
                 .unwrap_or(root_last_event_at)
-                .timestamp_micros()
-                - self.started_at.timestamp_micros()) as f64
+                .as_microsecond()
+                - self.started_at.as_microsecond()) as f64
             / total_duration_micros as f64;
 
         (start_percentage, end_percentage)
     }
 
-    fn duration(&self, root_last_event_at: DateTime<Utc>) -> Duration {
-        TimeDelta::microseconds(
+    fn duration(&self, root_last_event_at: Timestamp) -> Duration {
+        SignedDuration::from_micros(
             self.finished_at
                 .unwrap_or(root_last_event_at)
-                .timestamp_micros()
-                - self.started_at.timestamp_micros(),
+                .as_microsecond()
+                - self.started_at.as_microsecond(),
         )
-        .to_std()
+        .try_into()
         .expect("started_at must be <= finished_at")
     }
 }
@@ -187,8 +187,8 @@ pub struct TraceDataRoot {
     pub can_expand: bool,
     pub name: Html,
     pub title: String,
-    pub scheduled_at: DateTime<Utc>,
-    pub last_event_at: DateTime<Utc>,
+    pub scheduled_at: Timestamp,
+    pub last_event_at: Timestamp,
     pub busy: Vec<BusyInterval>,
     pub children: Vec<TraceData>,
     pub load_button: Option<Html>,
@@ -197,10 +197,10 @@ pub struct TraceDataRoot {
 }
 impl TraceDataRoot {
     pub fn total_duration(&self) -> Duration {
-        TimeDelta::microseconds(
-            self.last_event_at.timestamp_micros() - self.scheduled_at.timestamp_micros(),
+        SignedDuration::from_micros(
+            self.last_event_at.as_microsecond() - self.scheduled_at.as_microsecond(),
         )
-        .to_std()
+        .try_into()
         .unwrap_or_default() // If scheduled to the future, current duration is 0
     }
 }
