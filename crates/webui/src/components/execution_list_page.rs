@@ -11,10 +11,10 @@ use crate::{
     rest,
     util::time::{TimeGranularity, human_formatted_timedelta},
 };
-use chrono::{DateTime, Utc};
 use concepts::{FunctionFqn, storage::PendingState};
 use gloo::timers::callback::Timeout;
 use hashbrown::{HashMap, HashSet};
+use jiff::Timestamp as JiffTimestamp;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -844,7 +844,7 @@ pub fn execution_list_page() -> Html {
                 })
             };
 
-            let created_at: DateTime<Utc> = execution.created_at;
+            let created_at: JiffTimestamp = execution.created_at;
             // Prefer the live status polled by `ExecutionStatus` over the fetched one.
             let current_status = status_cache
                 .statuses
@@ -852,7 +852,7 @@ pub fn execution_list_page() -> Html {
                 .and_then(extract_status)
                 .or_else(|| status.clone());
             let durated = if let Some(PendingState::Finished(finished)) = &current_status {
-                Some(finished.finished_at - execution.first_scheduled_at)
+                Some(finished.finished_at.duration_since(execution.first_scheduled_at))
             } else {
                 None
             };

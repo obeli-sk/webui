@@ -19,7 +19,7 @@ rest-types.workspace = true
 
 anyhow.workspace = true
 assert_matches.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 derive_more.workspace = true
 futures.workspace = true
 getrandom.workspace = true

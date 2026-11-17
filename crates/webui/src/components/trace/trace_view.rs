@@ -20,7 +20,6 @@ use crate::{
     tree::Icon,
 };
 use assert_matches::assert_matches;
-use chrono::{DateTime, Utc};
 use concepts::{
     ComponentType, ExecutionId, ExecutionMetadata, JoinSetId, SupportedFunctionReturnValue,
     prefixed_ulid::{DelayId, RunId},
@@ -31,6 +30,7 @@ use concepts::{
 };
 use gloo::events::EventListener;
 use hashbrown::HashMap;
+use jiff::Timestamp;
 use log::{debug, error, trace};
 use std::{ops::Deref as _, rc::Rc};
 use web_sys::HtmlInputElement;
@@ -848,7 +848,7 @@ fn compute_root_trace(
                             let (interval_title, status, finished_at) =
                                 if let Some((retval, finished_at)) = child_ids_to_results.get(child_execution_id) {
                                     let status = BusyIntervalStatus::ExecutionFinished(FinishedResultKind::from(retval));
-                                    let duration = (*finished_at - started_at).to_std().expect("started_at must be <= finished_at");
+                                    let duration: std::time::Duration = (*finished_at - started_at).try_into().expect("started_at must be <= finished_at");
                                     (format!("{status} in {duration:?}"), status, Some(*finished_at))
                                 } else {
                                     let status = BusyIntervalStatus::ExecutionUnfinishedWithoutPendingState; // We don't know the pending state yet.
@@ -907,7 +907,7 @@ fn compute_root_trace(
                                 // request event's persisted timestamp for zero/near-zero
                                 // delays; clamp to keep the interval non-negative.
                                 let finished_at = (*finished_at).max(started_at);
-                                let duration = (finished_at - started_at).to_std().expect("clamped to be >= started_at");
+                                let duration: std::time::Duration = (finished_at - started_at).try_into().expect("clamped to be >= started_at");
                                 let title = format!("{status} in {duration:?}");
                                 (status, Some(finished_at), title)
                             }
@@ -968,9 +968,9 @@ fn compute_root_trace(
         .iter()
         .flat_map(TraceData::busy)
         .map(|interval| interval.started_at)
-        .fold(execution_scheduled_at, DateTime::min);
+        .fold(execution_scheduled_at, Timestamp::min);
 
-    let mut current_locked_at: Option<(DateTime<Utc>, DateTime<Utc>, RunId)> = None;
+    let mut current_locked_at: Option<(Timestamp, Timestamp, RunId)> = None;
     let mut busy = vec![BusyInterval {
         started_at,
         finished_at: Some(last_event_at),
@@ -993,7 +993,9 @@ fn compute_root_trace(
                     } else {
                         // The previous lock expired before (or was superseded by) this one.
                         let finished_at = prev_expires_at.min(new_locked_at);
-                        let duration = (finished_at - prev_locked_at).to_std().unwrap_or_default();
+                        let duration: std::time::Duration = (finished_at - prev_locked_at)
+                            .try_into()
+                            .unwrap_or_default();
                         busy.push(BusyInterval {
                             started_at: prev_locked_at,
                             finished_at: Some(finished_at),
@@ -1013,8 +1015,8 @@ fn compute_root_trace(
                     .map(|(locked_at, _, _)| locked_at)
                     .unwrap_or(started_at); // webhooks have no locks
                 let finished_at = event.created_at;
-                let duration = (finished_at - started_at)
-                    .to_std()
+                let duration: std::time::Duration = (finished_at - started_at)
+                    .try_into()
                     .expect("started_at must be <= finished_at");
                 let status = match event_inner {
                     ExecutionRequest::TemporarilyFailed { .. } => {
@@ -1109,7 +1111,7 @@ fn is_trace_node_expanded(
 
 fn compute_child_execution_id_to_child_execution_finished(
     responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
-) -> HashMap<ExecutionId, (SupportedFunctionReturnValue, DateTime<Utc>)> {
+) -> HashMap<ExecutionId, (SupportedFunctionReturnValue, Timestamp)> {
     responses
         .into_iter()
         .flat_map(|map| {
@@ -1146,7 +1148,7 @@ fn created_child_execution_id(request: &JoinSetRequest) -> Option<ExecutionId> {
 
 fn compute_delay_id_to_finished(
     responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
-) -> HashMap<DelayId, (bool, DateTime<Utc>)> {
+) -> HashMap<DelayId, (bool, Timestamp)> {
     responses
         .into_iter()
         .flat_map(|map| {
@@ -1165,7 +1167,7 @@ fn compute_last_event_at(
     last_event: &ExecutionEvent,
     is_finished: bool,
     responses: Option<&HashMap<JoinSetId, Vec<JoinSetResponseEventOuter>>>,
-) -> DateTime<Utc> {
+) -> Timestamp {
     let candidate = last_event.created_at;
 
     match responses {
@@ -1183,11 +1185,11 @@ fn compute_last_event_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::DateTime;
     use concepts::{
         FunctionFqn, Params,
         storage::{ChildExecutionRequestError, PersistedParams, Version},
     };
+    use jiff::Timestamp;
 
     const PARENT_ID: &str = "E_01KABCDEFGHJKMNPQRSTVWXYZ0";
 
@@ -1223,7 +1225,7 @@ mod tests {
             version,
             HistoryEvent::JoinNext {
                 join_set_id: join_set_id.clone(),
-                run_expires_at: DateTime::UNIX_EPOCH,
+                run_expires_at: Timestamp::UNIX_EPOCH,
                 requested_ffqn: None,
                 closing: false,
             },
@@ -1232,7 +1234,7 @@ mod tests {
 
     fn history_event(version: VersionType, event: HistoryEvent) -> ExecutionEvent {
         ExecutionEvent {
-            created_at: DateTime::UNIX_EPOCH,
+            created_at: Timestamp::UNIX_EPOCH,
             event: ExecutionRequest::HistoryEvent { event },
             backtrace_id: None,
             version: Version::new(version),

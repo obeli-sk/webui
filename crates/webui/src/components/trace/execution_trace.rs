@@ -1,7 +1,7 @@
 use super::data::TraceData;
 use super::highlight::{highlighted_version_from_hash, set_highlight_hash};
-use chrono::{DateTime, Utc};
 use concepts::storage::VersionType;
+use jiff::Timestamp;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
@@ -67,8 +67,8 @@ pub fn scroll_linked_item(pane_id: &str, item_id: &str) {
 #[derive(Properties, PartialEq)]
 pub struct ExecutionStepProps {
     pub data: TraceData,
-    pub root_scheduled_at: DateTime<Utc>,
-    pub root_last_event_at: DateTime<Utc>,
+    pub root_scheduled_at: Timestamp,
+    pub root_last_event_at: Timestamp,
     pub on_toggle: Callback<String>,
 }
 

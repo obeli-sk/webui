@@ -220,26 +220,28 @@ pub fn execution_submit_page(ExecutionSubmitPageProps { ffqn }: &ExecutionSubmit
                     if datetime_str.is_empty() {
                         return Err("Please enter a date and time".to_string());
                     }
-                    let naive =
-                        chrono::NaiveDateTime::parse_from_str(&datetime_str, "%Y-%m-%d %H:%M:%S")
-                            .map_err(|e| {
+                    let naive = jiff::civil::DateTime::strptime("%Y-%m-%d %H:%M:%S", &datetime_str)
+                        .map_err(|e| {
                             format!("Invalid datetime (expected yyyy-mm-dd HH:MM:SS): {e}")
                         })?;
                     let seconds = if *schedule_at_tz == "utc" {
                         // Treat input as UTC directly
-                        naive.and_utc().timestamp() as u64
+                        naive
+                            .to_zoned(jiff::tz::TimeZone::UTC)
+                            .map_err(|e| e.to_string())?
+                            .timestamp()
+                            .as_second() as u64
                     } else {
                         // Convert local time to UTC using the browser's timezone offset
                         let offset_minutes = tz_offset_minutes();
-                        let local_offset = chrono::FixedOffset::west_opt(offset_minutes * 60)
-                            .ok_or_else(|| {
+                        let local_offset = jiff::tz::Offset::from_seconds(-offset_minutes * 60)
+                            .map_err(|_| {
                                 format!("Invalid timezone offset: {offset_minutes} minutes")
                             })?;
-                        let local_datetime = naive
-                            .and_local_timezone(local_offset)
-                            .single()
-                            .ok_or("Ambiguous local time")?;
-                        local_datetime.to_utc().timestamp() as u64
+                        let local_datetime = local_offset
+                            .to_timestamp(naive)
+                            .map_err(|e| e.to_string())?;
+                        local_datetime.as_second() as u64
                     };
                     Ok(json!({"at": {"seconds": seconds, "nanoseconds": 0}}))
                 }

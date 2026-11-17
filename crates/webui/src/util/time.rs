@@ -1,21 +1,17 @@
-use chrono::{DateTime, TimeDelta, Utc};
 use gloo::timers::callback::Interval;
+use jiff::{SignedDuration, Timestamp};
 use yew::prelude::*;
 
-pub fn relative_time(
-    old: DateTime<Utc>,
-    new: DateTime<Utc>,
-    granularity: TimeGranularity,
-) -> String {
-    let duration = new.signed_duration_since(old);
+pub fn relative_time(old: Timestamp, new: Timestamp, granularity: TimeGranularity) -> String {
+    let duration = new.duration_since(old);
     human_formatted_timedelta(duration, granularity)
 }
 
-pub fn relative_time_if_significant(old: DateTime<Utc>, new: DateTime<Utc>) -> Option<String> {
-    let duration = new.signed_duration_since(old);
-    if duration >= TimeDelta::seconds(1) {
+pub fn relative_time_if_significant(old: Timestamp, new: Timestamp) -> Option<String> {
+    let duration = new.duration_since(old);
+    if duration >= SignedDuration::from_secs(1) {
         Some(human_formatted_timedelta(
-            new.signed_duration_since(old),
+            new.duration_since(old),
             TimeGranularity::Coarse,
         ))
     } else {
@@ -29,15 +25,15 @@ pub enum TimeGranularity {
     Coarse,
 }
 
-pub fn human_formatted_timedelta(duration: TimeDelta, granularity: TimeGranularity) -> String {
-    if duration.num_seconds() < 0 {
+pub fn human_formatted_timedelta(duration: SignedDuration, granularity: TimeGranularity) -> String {
+    if duration.as_secs() < 0 {
         return "in the future".to_string();
     }
-    let millisecods = duration.num_milliseconds();
-    let seconds = duration.num_seconds();
-    let minutes = duration.num_minutes();
-    let hours = duration.num_hours();
-    let days = duration.num_days();
+    let millisecods = duration.as_millis();
+    let seconds = duration.as_secs();
+    let minutes = duration.as_mins();
+    let hours = duration.as_hours();
+    let days = duration.as_hours() / 24;
 
     match seconds {
         0 if granularity == TimeGranularity::Fine => {
@@ -79,8 +75,8 @@ pub fn format_exact_millis(millis: u64) -> String {
     format!("{value} {}", if value == 1 { singular } else { plural })
 }
 
-pub fn format_date(date: DateTime<Utc>) -> String {
-    date.format("%Y-%m-%d %H:%M:%S%.3f").to_string()
+pub fn format_date(date: Timestamp) -> String {
+    date.strftime("%Y-%m-%d %H:%M:%S%.3f").to_string()
 }
 
 /// Returns the current time and re-renders the calling component periodically so
@@ -90,10 +86,10 @@ pub fn format_date(date: DateTime<Utc>) -> String {
 /// labels are stable within a minute (then an hour), so there's no need to tick
 /// every second for a timestamp that's hours away.
 #[hook]
-pub fn use_relative_now(target: DateTime<Utc>) -> DateTime<Utc> {
+pub fn use_relative_now(target: Timestamp) -> Timestamp {
     let trigger = use_force_update();
-    let now = Utc::now();
-    let secs = (target - now).num_seconds().unsigned_abs();
+    let now = Timestamp::now();
+    let secs = target.duration_since(now).as_secs().unsigned_abs();
     let period_ms: u32 = if secs < 60 {
         1_000
     } else if secs < 3_600 {
@@ -110,7 +106,7 @@ pub fn use_relative_now(target: DateTime<Utc>) -> DateTime<Utc> {
 
 #[derive(Properties, PartialEq)]
 pub struct RelativeAgoProps {
-    pub target: DateTime<Utc>,
+    pub target: Timestamp,
 }
 
 /// Self-updating "<duration> ago" label relative to the browser clock.
@@ -120,7 +116,7 @@ pub fn relative_ago(props: &RelativeAgoProps) -> Html {
     html! { {relative_ago_label(props.target, now)} }
 }
 
-fn relative_ago_label(target: DateTime<Utc>, now: DateTime<Utc>) -> String {
+fn relative_ago_label(target: Timestamp, now: Timestamp) -> String {
     if target > now {
         format!("in {}", relative_time(now, target, TimeGranularity::Coarse))
     } else {
@@ -137,15 +133,13 @@ mod tests {
 
     #[test]
     fn relative_labels_distinguish_past_and_future() {
-        let now = DateTime::parse_from_rfc3339("2026-10-02T12:00:00Z")
-            .unwrap()
-            .to_utc();
+        let now = "2026-10-02T12:00:00Z".parse::<Timestamp>().unwrap();
         assert_eq!(
-            relative_ago_label(now - TimeDelta::minutes(5), now),
+            relative_ago_label(now - SignedDuration::from_mins(5), now),
             "5 mins ago"
         );
         assert_eq!(
-            relative_ago_label(now + TimeDelta::minutes(5), now),
+            relative_ago_label(now + SignedDuration::from_mins(5), now),
             "in 5 mins"
         );
     }

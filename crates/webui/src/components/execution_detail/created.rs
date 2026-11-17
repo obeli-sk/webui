@@ -7,12 +7,12 @@ use crate::components::json_tree::insert_json_into_tree;
 use crate::components::time_display::Timestamp;
 use crate::model::{ComponentTypeExt as _, FunctionFqnExt as _};
 use crate::tree::{Icon, InsertBehavior, Node, NodeData, TreeBuilder, TreeData};
-use chrono::{DateTime, Utc};
 use concepts::prefixed_ulid::DeploymentId;
 use concepts::storage::{Created, VersionType};
 use concepts::{
     ComponentId, ComponentType, ExecutionId, ExecutionMetadata, FunctionFqn, JoinSetId,
 };
+use jiff::Timestamp as JiffTimestamp;
 use serde_json::Value;
 use yew::Html;
 use yew::prelude::*;
@@ -78,7 +78,7 @@ impl CreatedEventProps {
 
 struct ProcessedProps {
     params: Vec<(String, Value)>,
-    scheduled_at: DateTime<Utc>,
+    scheduled_at: JiffTimestamp,
     ffqn: FunctionFqn,
     http_request: Option<String>,
     scheduled_by: Option<ExecutionId>,

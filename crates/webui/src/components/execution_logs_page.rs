@@ -6,10 +6,10 @@ use crate::{
     rest::{self, sse::SseStream},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use chrono::{DateTime, Utc};
 use concepts::{ExecutionId, prefixed_ulid::RunId};
 use futures::future::{AbortHandle, abortable};
 use gloo::net::http::Request;
+use jiff::Timestamp as JiffTimestamp;
 use log::debug;
 use rest_types::logs::{LogEntryRowSer, LogEntrySer, LogLevelSer, LogStreamTypeSer};
 use serde::{Deserialize, Serialize};
@@ -191,7 +191,7 @@ struct LogsState {
 
 #[derive(Clone, Debug, PartialEq)]
 struct LogEntry {
-    created_at: DateTime<Utc>,
+    created_at: JiffTimestamp,
     execution_id: ExecutionId,
     run_id: RunId,
     kind: LogKind,
@@ -1022,7 +1022,7 @@ mod tests {
         let old_generation = state.request_generation;
         let response = DecodedLogs {
             logs: vec![LogEntry {
-                created_at: Utc::now(),
+                created_at: JiffTimestamp::now(),
                 execution_id: execution_id.clone(),
                 run_id: RunId::generate(),
                 kind: LogKind::Log {

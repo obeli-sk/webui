@@ -8,8 +8,8 @@ use crate::{
     loader::get_server_info,
     rest,
 };
-use chrono::{DateTime, NaiveDateTime, Utc};
 use concepts::storage::SystemEventLevel;
+use jiff::Timestamp as JiffTimestamp;
 use log::error;
 use rest_types::admin::{SystemEventResponse as SystemEvent, SystemEventsResponse as EventPage};
 use serde::{Deserialize, Serialize};
@@ -114,17 +114,18 @@ fn selected_levels(query: &SystemEventQuery) -> Vec<SystemEventLevel> {
 }
 
 // `datetime-local` inputs omit the seconds when they are zero.
-fn parse_utc(value: &str) -> Result<DateTime<Utc>, String> {
-    NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
-        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))
-        .map(|naive| naive.and_utc())
+fn parse_utc(value: &str) -> Result<JiffTimestamp, String> {
+    value
+        .parse::<jiff::civil::DateTime>()
+        .and_then(|naive| naive.to_zoned(jiff::tz::TimeZone::UTC))
+        .map(|zoned| zoned.timestamp())
         .map_err(|_| format!("invalid UTC date and time `{value}`"))
 }
 
 fn parse_bound(value: Option<&String>) -> Result<Option<String>, String> {
     value
         .filter(|value| !value.is_empty())
-        .map(|value| parse_utc(value).map(|time| time.to_rfc3339()))
+        .map(|value| parse_utc(value).map(|time| time.to_string()))
         .transpose()
 }
 
