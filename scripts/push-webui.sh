@@ -5,12 +5,12 @@
 set -exuo pipefail
 cd "$(dirname "$0")/.."
 
-TAG="$1"
-OUTPUT_FILE="${2:-/dev/stdout}"
+TAG=$(git rev-parse --short HEAD)
+OUTPUT_FILE="${1:-/dev/stdout}"
 
 just build
 
-if [ "$TAG" != "dry-run" ]; then
+if [ "${1:-}" != "dry-run" ]; then
     TMP_DIR=$(mktemp -d)
     trap 'rm -rf "$TMP_DIR"' EXIT
     WASM=target/wasm32-wasip2/release/webui_proxy.wasm
