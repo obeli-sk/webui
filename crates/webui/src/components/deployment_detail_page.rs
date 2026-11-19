@@ -4,7 +4,7 @@ use crate::{
         component_graph::ComponentGraph,
         deployment_actions::DeploymentActions,
         deployment_config_view::{DeploymentConfigView, build_sections_from_manifest, toml_block},
-        execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
+        deployment_executions::DeploymentExecutions,
         http_servers::{HttpServerRoutes, http_server_routes},
         notification::{Notification, NotificationContext},
     },
@@ -16,14 +16,13 @@ use hashbrown::HashMap;
 use log::error;
 use rest_types::{
     components::ComponentConfig,
-    deployment::{DeploymentRecordSer, DeploymentStateSer, DeploymentStatusSer},
+    deployment::{DeploymentRecordSer, DeploymentStatusSer},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::ops::Deref;
 use std::rc::Rc;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use yew_router::{
     history::{BrowserHistory, History},
@@ -94,11 +93,9 @@ pub fn deployment_detail_page(
     let app_state = use_context::<AppState>().expect("AppState context must be provided");
 
     let deployment_state = use_state(|| None::<DeploymentRecordSer>);
-    let execution_summary = use_state(|| None::<DeploymentStateSer>);
     let components_by_name = use_state(|| Rc::new(HashMap::<String, ComponentConfig>::new()));
     // Bumped after a successful switch action to refetch the deployment.
     let refresh = use_state(|| 0u32);
-    let show_derived = use_state(|| false);
     let location = use_location().expect("location must be available inside a router");
     let active_tab = DeploymentTab::from_hash(location.hash());
     let focused_component = location
@@ -141,46 +138,6 @@ pub fn deployment_detail_page(
                 }
             });
         });
-    }
-
-    {
-        let deployment_id = *deployment_id;
-        let execution_summary = execution_summary.clone();
-        let notifications = notifications.clone();
-        use_effect_with(
-            (deployment_id, *show_derived, *refresh),
-            move |(deployment_id, show_derived, _)| {
-                let deployment_id = *deployment_id;
-                let show_derived = *show_derived;
-                execution_summary.set(None);
-                spawn_local(async move {
-                    let response = rest::deployments::list(
-                        Some(&deployment_id),
-                        "older",
-                        1,
-                        true,
-                        show_derived,
-                        false,
-                    )
-                    .await;
-                    match response {
-                        Ok(response) => {
-                            let summary = response
-                                .into_iter()
-                                .find(|summary| summary.deployment_id == deployment_id);
-                            execution_summary.set(summary);
-                        }
-                        Err(e) => {
-                            error!("Failed to load deployment execution summary: {e:?}");
-                            notifications.push(Notification::error(format!(
-                                "Failed to load deployment execution summary: {}",
-                                e
-                            )));
-                        }
-                    }
-                });
-            },
-        );
     }
 
     let Some(deployment) = deployment_state.deref().clone() else {
@@ -270,62 +227,6 @@ pub fn deployment_detail_page(
         Callback::from(move |()| refresh.set(*refresh + 1))
     };
 
-    let execution_summary_html = execution_summary.as_ref().map(|summary| {
-        let total = summary.locked
-            + summary.pending
-            + summary.scheduled
-            + summary.blocked
-            + summary.paused
-            + summary.cancelling
-            + summary.finished_ok
-            + summary.finished_error
-            + summary.finished_execution_failure;
-        let count_metric = |label: &'static str,
-                            count: u32,
-                            status: Option<StatusFilterList>| {
-            let query = ExecutionQuery {
-                deployment_id: Some(deployment_id.to_string()),
-                status,
-                show_derived: *show_derived,
-                ..Default::default()
-            };
-            html! {
-                <div class={classes!("execution-metric", (count == 0).then_some("empty"))}>
-                    <span>{label}</span>
-                    <strong>
-                        if count > 0 {
-                            <Link<Route, ExecutionQuery> to={Route::ExecutionList} query={query}>
-                                {count}
-                            </Link<Route, ExecutionQuery>>
-                        } else {
-                            {count}
-                        }
-                    </strong>
-                </div>
-            }
-        };
-        html! {
-            <div class="deployment-execution-summary">
-                { count_metric("Total", total, None) }
-                { count_metric("In progress", summary.locked + summary.pending + summary.blocked, Some(StatusFilterList::in_progress())) }
-                { count_metric("Scheduled", summary.scheduled, Some(StatusFilterList::single(StatusFilter::Scheduled))) }
-                { count_metric("Paused", summary.paused, Some(StatusFilterList::single(StatusFilter::Paused))) }
-                { count_metric("Cancelling", summary.cancelling, Some(StatusFilterList::single(StatusFilter::Cancelling))) }
-                { count_metric("Successful", summary.finished_ok, Some(StatusFilterList::single(StatusFilter::FinishedOk))) }
-                { count_metric("Errors", summary.finished_error, Some(StatusFilterList::single(StatusFilter::FinishedError))) }
-                { count_metric("Failures", summary.finished_execution_failure, Some(StatusFilterList::single(StatusFilter::FinishedExecutionFailure))) }
-            </div>
-        }
-    });
-
-    let on_toggle_derived = {
-        let show_derived = show_derived.clone();
-        Callback::from(move |event: Event| {
-            let input: HtmlInputElement = event.target_unchecked_into();
-            show_derived.set(input.checked());
-        })
-    };
-
     let tab_button = |label: &'static str, tab: DeploymentTab| {
         let tab_url = format!(
             "{}{}#{}",
@@ -349,28 +250,7 @@ pub fn deployment_detail_page(
 
     let overview_html = html! {
         <>
-        <section class="deployment-executions">
-            <div class="deployment-section-heading">
-                <h4>{"Executions"}</h4>
-                if !is_empty {
-                    <label>
-                        <input
-                            type="checkbox"
-                            checked={*show_derived}
-                            onchange={on_toggle_derived}
-                        />
-                        {" Include derived"}
-                    </label>
-                }
-            </div>
-            if is_empty {
-                <p class="secondary-text">{"This deployment contains no components."}</p>
-            } else if let Some(execution_summary_html) = execution_summary_html {
-                { execution_summary_html }
-            } else {
-                <p>{"Loading execution summary..."}</p>
-            }
-        </section>
+        <DeploymentExecutions deployment_id={*deployment_id} empty={is_empty} refresh={*refresh} />
         if !is_empty {
             <HttpServerRoutes
                 deployment_id={*deployment_id}

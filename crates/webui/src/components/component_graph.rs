@@ -5,7 +5,7 @@ use crate::{
             calls_dynamically, component_connections, component_link, component_name,
         },
         deployment_detail_page::DeploymentQuery,
-        http_servers::ServerRoute,
+        http_servers::{ServerRoute, WEBUI_COMPONENT},
     },
     model::{ComponentConfigExt as _, ComponentTypeExt as _},
 };
@@ -183,7 +183,10 @@ pub fn component_graph(
     let hovered = use_state(|| None::<usize>);
     let navigator = use_navigator().expect("navigator must be available inside a router");
 
-    let mut sorted_components = components_by_name.values().collect::<Vec<_>>();
+    let mut sorted_components = components_by_name
+        .values()
+        .filter(|component| component_name(component) != WEBUI_COMPONENT)
+        .collect::<Vec<_>>();
     sorted_components.sort_by(|a, b| component_name(a).cmp(component_name(b)));
     // Servers come first, so they lead the layout.
     let components = servers
@@ -359,7 +362,7 @@ pub fn component_graph(
         let name = node.name().to_string();
         let (x, y) = positions[graph_idx];
         let (kind, title, icon) = match node {
-            Node::Server(_) => ("http_server".to_string(), "HTTP server", "🌐"),
+            Node::Server(_) => ("http_server".to_string(), "HTTP server", "📡"),
             Node::Component(component) => {
                 let component_type = component.component_type();
                 (

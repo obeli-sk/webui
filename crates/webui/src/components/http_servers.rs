@@ -11,6 +11,9 @@ use std::rc::Rc;
 use yew::prelude::*;
 use yew_router::prelude::Link;
 
+/// Webhook endpoint serving this Web UI, added by the server configuration rather than the deployment.
+pub const WEBUI_COMPONENT: &str = "obelisk_webui";
+
 /// A route a webhook endpoint serves on an HTTP server.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerRoute {

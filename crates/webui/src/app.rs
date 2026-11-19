@@ -15,6 +15,7 @@ use crate::{
         execution_submit_page::ExecutionSubmitPage,
         not_found::NotFound,
         notification::{Notification, NotificationContext, NotificationProvider},
+        overview_page::OverviewPage,
         retention_page::RetentionPage,
         server_info_page::ServerInfoPage,
         system_events_page::SystemEventsPage,
@@ -185,7 +186,8 @@ pub enum Route {
 impl Route {
     pub fn render(route: Route) -> Html {
         match route {
-            Route::Home | Route::ExecutionList => html! { <ExecutionListPage /> },
+            Route::Home => html! { <OverviewPage /> },
+            Route::ExecutionList => html! { <ExecutionListPage /> },
             Route::DeploymentList => html! { <DeploymentListPage /> },
             Route::DeploymentDetail { deployment_id } => {
                 html! { <DeploymentDetailPage {deployment_id} /> }
@@ -396,8 +398,7 @@ fn app_nav() -> Html {
     let execution_active = matches!(
         route.as_ref(),
         Some(
-            Route::Home
-                | Route::ExecutionList
+            Route::ExecutionList
                 | Route::ExecutionNew
                 | Route::ExecutionSubmit { .. }
                 | Route::ExecutionStubResult { .. }
@@ -415,6 +416,7 @@ fn app_nav() -> Html {
 
     html! {
         <nav class="app-nav" aria-label="Main navigation">
+            <Link<Route> classes={classes!(matches!(route, Some(Route::Home)).then_some("active"))} to={Route::Home}>{"Overview"}</Link<Route>>
             <Link<Route> classes={classes!(deployment_active.then_some("active"))} to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
             <Link<Route> classes={classes!(execution_active.then_some("active"))} to={Route::ExecutionList}>{"Executions"}</Link<Route>>
             <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>
