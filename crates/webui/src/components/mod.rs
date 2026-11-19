@@ -23,6 +23,7 @@ pub mod execution_submit;
 pub mod execution_submit_page;
 pub mod ffqn_with_links;
 pub mod function_signature;
+pub mod http_servers;
 pub mod json_tree;
 pub mod not_found;
 pub mod notification;

@@ -5,6 +5,7 @@ use crate::{
         deployment_actions::DeploymentActions,
         deployment_config_view::{DeploymentConfigView, build_sections_from_manifest, toml_block},
         execution_list_page::{ExecutionQuery, StatusFilter, StatusFilterList},
+        http_servers::{HttpServerRoutes, http_server_routes},
         notification::{Notification, NotificationContext},
     },
     rest,
@@ -225,6 +226,13 @@ pub fn deployment_detail_page(
     let is_empty = matches!(&parsed_manifest, Ok(manifest)
         if build_sections_from_manifest(manifest, &deployment.files).is_empty());
 
+    let servers = Rc::new(
+        parsed_manifest
+            .as_ref()
+            .map(http_server_routes)
+            .unwrap_or_default(),
+    );
+
     let components_html = match &parsed_manifest {
         Err(parse_err) => {
             let raw = deployment.deployment_toml.clone();
@@ -363,6 +371,13 @@ pub fn deployment_detail_page(
                 <p>{"Loading execution summary..."}</p>
             }
         </section>
+        if !is_empty {
+            <HttpServerRoutes
+                deployment_id={*deployment_id}
+                servers={servers.clone()}
+                components_by_name={components_by_name.deref().clone()}
+            />
+        }
         <section class="deployment-components">
             <div class="deployment-section-heading">
                 <h4>{"Components"}</h4>
@@ -378,6 +393,7 @@ pub fn deployment_detail_page(
             <ComponentGraph
                 deployment_id={*deployment_id}
                 components_by_name={components_by_name.deref().clone()}
+                servers={servers}
             />
         },
         DeploymentTab::Toml => toml_html,
