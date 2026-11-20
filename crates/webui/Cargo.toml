@@ -61,3 +61,6 @@ syntect = { workspace = true, features = ["html"] }
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true
+
+# The workspace's pedantic clippy lints are not applied to the UI.
+[lints]
