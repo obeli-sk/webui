@@ -356,6 +356,40 @@
     max-width: none;
 }
 
+.deployment-http-servers {
+    margin-top: $spacing-xl;
+    padding-top: $spacing-md;
+    border-top: 1px solid $color-border-primary;
+}
+
+.http-server-routes {
+    border-collapse: collapse;
+
+    th, td {
+        padding: $spacing-xs $spacing-md $spacing-xs 0;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .server, .route {
+        font-family: $font-family-mono;
+    }
+
+    .public-url {
+        display: block;
+        font-size: 0.85em;
+        word-break: break-all;
+    }
+
+    .server-tag {
+        display: inline-block;
+        margin-top: $spacing-xs;
+        font-family: inherit;
+        font-size: 0.8em;
+        color: $color-text-secondary;
+    }
+}
+
 .deployment-components {
     margin-top: $spacing-xl;
     padding-top: $spacing-md;

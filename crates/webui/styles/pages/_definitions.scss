@@ -286,6 +286,8 @@
   &.workflow rect { stroke: $color-accent-purple; }
   &.activity rect { stroke: $color-accent-green; }
   &.webhook_endpoint rect { stroke: $color-accent-orange; }
+  &.http_server rect { stroke: $color-text-muted; fill: $color-bg-tertiary; }
+  &.http_server { cursor: default; }
   &.activity_stub rect,
   &.cron rect { stroke: $color-accent-cyan; }
 

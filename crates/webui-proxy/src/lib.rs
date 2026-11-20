@@ -6,6 +6,13 @@ async fn main(server_req: Request<Body>) -> Result<Response<Body>, Error> {
         path if let Some((content, content_type)) = static_asset(path) => {
             write_static_response(content, content_type)
         }
+        "/webui-settings.json" => {
+            // Set by Obelisk from server.toml `webui.deployment_switch`; older servers omit it.
+            let deployment_switch =
+                std::env::var("DEPLOYMENT_SWITCH").map_or(true, |v| v != "false");
+            let body = format!(r#"{{"deployment_switch":{deployment_switch}}}"#);
+            write_static_response(body.as_bytes(), "application/json")
+        }
         api_prefixed_path if api_prefixed_path.starts_with("/api") => {
             // Remove /api prefix
             let target_url =

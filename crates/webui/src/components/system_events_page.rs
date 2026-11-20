@@ -26,7 +26,7 @@ const FILTER_LEVELS: [SystemEventLevel; 4] = [
     SystemEventLevel::Warning,
     SystemEventLevel::Error,
 ];
-const DEFAULT_LEVELS: [SystemEventLevel; 3] = [
+pub(crate) const DEFAULT_LEVELS: [SystemEventLevel; 3] = [
     SystemEventLevel::Info,
     SystemEventLevel::Warning,
     SystemEventLevel::Error,
@@ -145,7 +145,7 @@ fn level_label(level: SystemEventLevel) -> &'static str {
     }
 }
 
-fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
+pub(crate) fn event_card(event: &SystemEvent, absolute_time: bool) -> Html {
     let created_at = event.created_at;
     let execution = event.execution_id.as_ref().map(|execution_id| {
         html! {

@@ -46,14 +46,16 @@ pub async fn load_components() -> Result<LoadedComponents, String> {
 }
 
 /// Fetches the current deployment ID from the server.
-pub async fn get_current_deployment_id() -> Result<DeploymentId, String> {
-    Ok(get_server_info().await?.deployment_id)
-}
-
 pub struct ServerInfo {
     response: ServerInfoResponse,
     pub deployment_id: DeploymentId,
     pub node_run_id: NodeRunId,
+}
+
+impl ServerInfo {
+    pub fn into_response(self) -> ServerInfoResponse {
+        self.response
+    }
 }
 
 impl std::ops::Deref for ServerInfo {
@@ -76,5 +78,39 @@ pub async fn get_server_info() -> Result<ServerInfo, String> {
             .parse::<NodeRunId>()
             .map_err(|err| err.to_string())?,
         response,
+    })
+}
+
+/// Settings of this Web UI from server.toml, served by the webui proxy.
+#[derive(serde::Deserialize)]
+pub struct WebuiSettings {
+    #[serde(default = "default_true")]
+    pub deployment_switch: bool,
+}
+
+impl Default for WebuiSettings {
+    fn default() -> Self {
+        Self {
+            deployment_switch: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Older servers and the dev server do not serve the settings, so they fall back to defaults.
+pub async fn get_webui_settings() -> WebuiSettings {
+    let response = match gloo::net::http::Request::get("/webui-settings.json")
+        .send()
+        .await
+    {
+        Ok(response) if response.ok() => response,
+        _ => return WebuiSettings::default(),
+    };
+    response.json().await.unwrap_or_else(|err| {
+        log::warn!("Ignoring invalid Web UI settings: {err}");
+        WebuiSettings::default()
     })
 }

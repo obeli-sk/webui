@@ -15,13 +15,14 @@ use crate::{
         execution_submit_page::ExecutionSubmitPage,
         not_found::NotFound,
         notification::{Notification, NotificationContext, NotificationProvider},
+        overview_page::OverviewPage,
         retention_page::RetentionPage,
         server_info_page::ServerInfoPage,
         system_events_page::SystemEventsPage,
         time_display::TimeDisplayProvider,
         trace::trace_view::TraceView,
     },
-    loader::{LoadedComponents, get_current_deployment_id, load_components},
+    loader::{LoadedComponents, get_server_info, load_components},
     model::ComponentConfigExt as _,
 };
 use concepts::{
@@ -31,6 +32,7 @@ use concepts::{
 use gloo::timers::callback::Interval;
 use hashbrown::HashMap;
 use log::{debug, error, info};
+use obelisk_api_types::ServerInfoResponse;
 use rest_types::components::{ComponentConfig, FunctionMetadataLite};
 use std::{fmt::Display, ops::Deref, rc::Rc, str::FromStr};
 use wasm_bindgen_futures::spawn_local;
@@ -39,6 +41,24 @@ use yew_router::prelude::*;
 
 /// Interval in milliseconds between deployment ID checks.
 const DEPLOYMENT_POLL_INTERVAL_MS: u32 = 5000;
+
+/// Latest `/v1/info`, refreshed by the poll and on demand.
+#[derive(Clone, PartialEq)]
+pub struct ServerContext {
+    pub info: Option<Rc<ServerInfoResponse>>,
+    pub refresh: Callback<()>,
+    /// `webui.deployment_switch` from server.toml.
+    pub deployment_switch: bool,
+}
+
+impl ServerContext {
+    /// `If-Match` value pinning a deployment switch to the server state the user saw.
+    pub fn switch_if_match(&self) -> Option<String> {
+        self.info
+            .as_ref()
+            .map(|info| format!("\"{}:{}\"", info.node_run_id, info.switch_count))
+    }
+}
 
 #[derive(Clone, PartialEq)]
 pub struct AppState {
@@ -185,7 +205,8 @@ pub enum Route {
 impl Route {
     pub fn render(route: Route) -> Html {
         match route {
-            Route::Home | Route::ExecutionList => html! { <ExecutionListPage /> },
+            Route::Home => html! { <OverviewPage /> },
+            Route::ExecutionList => html! { <ExecutionListPage /> },
             Route::DeploymentList => html! { <DeploymentListPage /> },
             Route::DeploymentDetail { deployment_id } => {
                 html! { <DeploymentDetailPage {deployment_id} /> }
@@ -227,6 +248,9 @@ impl Route {
 pub struct AppProps {
     pub initial_components: LoadedComponents,
     pub initial_deployment_id: Option<DeploymentId>,
+    pub initial_server_info: Option<Rc<ServerInfoResponse>>,
+    /// `webui.deployment_switch` from server.toml.
+    pub deployment_switch: bool,
     pub app_name: Option<String>,
 }
 
@@ -235,6 +259,8 @@ pub fn app(
     AppProps {
         initial_components,
         initial_deployment_id,
+        initial_server_info,
+        deployment_switch,
         app_name,
     }: &AppProps,
 ) -> Html {
@@ -245,6 +271,8 @@ pub fn app(
                     <AppInner
                         initial_components={initial_components.clone()}
                         initial_deployment_id={*initial_deployment_id}
+                        initial_server_info={initial_server_info.clone()}
+                        deployment_switch={*deployment_switch}
                         app_name={app_name.clone()}
                     />
                 </TimeDisplayProvider>
@@ -259,6 +287,8 @@ fn app_inner(
     AppProps {
         initial_components,
         initial_deployment_id,
+        initial_server_info,
+        deployment_switch,
         app_name,
     }: &AppProps,
 ) -> Html {
@@ -266,87 +296,104 @@ fn app_inner(
         .expect("NotificationContext should be provided by App");
 
     let app_state = use_state(|| AppState::from_loaded(initial_components, *initial_deployment_id));
+    let server_info = use_state_eq(|| initial_server_info.clone());
 
-    // Track deployment ID separately using a ref so the interval can read current value
+    // Track deployment ID separately using a ref so the refresh can read current value
     let deployment_id_ref = use_mut_ref(|| *initial_deployment_id);
 
     // Track connection state: true = connected, false = disconnected
     let was_connected_ref = use_mut_ref(|| true);
 
-    // Poll for deployment changes
-    {
+    // Fetches the server info, reloading components when the deployment changed.
+    let refresh = {
         let app_state = app_state.clone();
+        let server_info = server_info.clone();
         let deployment_id_ref = deployment_id_ref.clone();
         let was_connected_ref = was_connected_ref.clone();
         let notifications = notifications.clone();
-        use_effect_with((), move |()| {
-            let interval = Interval::new(DEPLOYMENT_POLL_INTERVAL_MS, move || {
-                let app_state = app_state.clone();
-                let deployment_id_ref = deployment_id_ref.clone();
-                let was_connected_ref = was_connected_ref.clone();
-                let notifications = notifications.clone();
-                if crate::visibility::document_visible() {
-                    spawn_local(async move {
-                        match get_current_deployment_id().await {
-                            Ok(new_deployment_id) => {
-                                // Check if we're reconnecting after a disconnect
-                                {
-                                    let mut was_connected = was_connected_ref.borrow_mut();
-                                    if !*was_connected {
-                                        info!("Connection to server re-established");
-                                        notifications.push(Notification::success(
-                                            "Connection to server established",
-                                        ));
-                                        *was_connected = true;
-                                    }
-                                }
-
-                                let should_reload = {
-                                    let current_id = deployment_id_ref.borrow();
-                                    let changed = current_id.as_ref() != Some(&new_deployment_id);
-                                    if changed {
-                                        debug!(
-                                            "Deployment changed from {:?} to {:?}, reloading components",
-                                            *current_id, new_deployment_id
-                                        );
-                                    }
-                                    changed
-                                };
-                                if should_reload {
-                                    match load_components().await {
-                                        Ok(loaded) => {
-                                            *deployment_id_ref.borrow_mut() =
-                                                Some(new_deployment_id);
-                                            app_state.set(AppState::from_loaded(
-                                                &loaded,
-                                                Some(new_deployment_id),
-                                            ));
-                                        }
-                                        Err(e) => {
-                                            error!("Failed to reload components: {e}");
-                                        }
-                                    }
-                                }
+        use_callback((), move |(), ()| {
+            let app_state = app_state.clone();
+            let server_info = server_info.clone();
+            let deployment_id_ref = deployment_id_ref.clone();
+            let was_connected_ref = was_connected_ref.clone();
+            let notifications = notifications.clone();
+            spawn_local(async move {
+                match get_server_info().await {
+                    Ok(info) => {
+                        let new_deployment_id = info.deployment_id;
+                        server_info.set(Some(Rc::new(info.into_response())));
+                        // Check if we're reconnecting after a disconnect
+                        {
+                            let mut was_connected = was_connected_ref.borrow_mut();
+                            if !*was_connected {
+                                info!("Connection to server re-established");
+                                notifications.push(Notification::success(
+                                    "Connection to server established",
+                                ));
+                                *was_connected = true;
                             }
-                            Err(e) => {
-                                // Check if this is a new disconnect
-                                let mut was_connected = was_connected_ref.borrow_mut();
-                                if *was_connected {
-                                    error!("Connection to server lost: {:?}", e);
-                                    notifications.push(Notification::error(
-                                        "Connection to server lost. Retrying...",
+                        }
+
+                        let should_reload = {
+                            let current_id = deployment_id_ref.borrow();
+                            let changed = current_id.as_ref() != Some(&new_deployment_id);
+                            if changed {
+                                debug!(
+                                    "Deployment changed from {:?} to {:?}, reloading components",
+                                    *current_id, new_deployment_id
+                                );
+                            }
+                            changed
+                        };
+                        if should_reload {
+                            match load_components().await {
+                                Ok(loaded) => {
+                                    *deployment_id_ref.borrow_mut() = Some(new_deployment_id);
+                                    app_state.set(AppState::from_loaded(
+                                        &loaded,
+                                        Some(new_deployment_id),
                                     ));
-                                    *was_connected = false;
+                                }
+                                Err(e) => {
+                                    error!("Failed to reload components: {e}");
                                 }
                             }
                         }
-                    });
+                    }
+                    Err(e) => {
+                        // Check if this is a new disconnect
+                        let mut was_connected = was_connected_ref.borrow_mut();
+                        if *was_connected {
+                            error!("Connection to server lost: {:?}", e);
+                            notifications.push(Notification::error(
+                                "Connection to server lost. Retrying...",
+                            ));
+                            *was_connected = false;
+                        }
+                    }
+                }
+            });
+        })
+    };
+
+    // Poll for deployment changes
+    {
+        let refresh = refresh.clone();
+        use_effect_with((), move |()| {
+            let interval = Interval::new(DEPLOYMENT_POLL_INTERVAL_MS, move || {
+                if crate::visibility::document_visible() {
+                    refresh.emit(());
                 }
             });
             // Return cleanup closure that drops the interval
             move || drop(interval)
         });
     }
+    let server_context = ServerContext {
+        info: (*server_info).clone(),
+        refresh,
+        deployment_switch: *deployment_switch,
+    };
 
     let status_hub = use_memo((), |()| crate::status_hub::StatusHub::default());
     let visible = crate::visibility::use_document_visible();
@@ -357,6 +404,7 @@ fn app_inner(
 
     html! {
         <ContextProvider<AppState> context={app_state.deref().clone()}>
+        <ContextProvider<ServerContext> context={server_context}>
         <ContextProvider<crate::status_hub::StatusHub> context={(*status_hub).clone()}>
             <BrowserRouter>
                 <div class="app-shell">
@@ -382,6 +430,7 @@ fn app_inner(
                 </div>
             </BrowserRouter>
         </ContextProvider<crate::status_hub::StatusHub>>
+        </ContextProvider<ServerContext>>
         </ContextProvider<AppState>>
     }
 }
@@ -396,8 +445,7 @@ fn app_nav() -> Html {
     let execution_active = matches!(
         route.as_ref(),
         Some(
-            Route::Home
-                | Route::ExecutionList
+            Route::ExecutionList
                 | Route::ExecutionNew
                 | Route::ExecutionSubmit { .. }
                 | Route::ExecutionStubResult { .. }
@@ -415,6 +463,7 @@ fn app_nav() -> Html {
 
     html! {
         <nav class="app-nav" aria-label="Main navigation">
+            <Link<Route> classes={classes!(matches!(route, Some(Route::Home)).then_some("active"))} to={Route::Home}>{"Overview"}</Link<Route>>
             <Link<Route> classes={classes!(deployment_active.then_some("active"))} to={Route::DeploymentList}>{"Deployments"}</Link<Route>>
             <Link<Route> classes={classes!(execution_active.then_some("active"))} to={Route::ExecutionList}>{"Executions"}</Link<Route>>
             <Link<Route> classes={classes!(system_active.then_some("active"))} to={Route::SystemEvents}>{"System"}</Link<Route>>

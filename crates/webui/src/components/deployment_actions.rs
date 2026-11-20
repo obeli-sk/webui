@@ -1,4 +1,5 @@
 use crate::{
+    app::ServerContext,
     components::notification::{Notification, NotificationContext},
     rest,
 };
@@ -28,7 +29,7 @@ enum ArmedAction {
 }
 
 /// Buttons to apply a deployment immediately or enqueue it for later activation:
-/// a standalone server activates it on restart, a cloud app on its next apply.
+/// the server activates an enqueued deployment on restart.
 #[component(DeploymentActions)]
 pub fn deployment_actions(
     DeploymentActionsProps {
@@ -43,8 +44,9 @@ pub fn deployment_actions(
     let armed = use_state(|| None::<ArmedAction>);
     // Dropping the previous timeout cancels it when another button is armed.
     let disarm_timer = use_mut_ref(|| None::<Timeout>);
+    let server = use_context::<ServerContext>().expect("ServerContext should be provided");
 
-    if *status == DeploymentStatusSer::Active {
+    if *status == DeploymentStatusSer::Active || !server.deployment_switch {
         return html! {};
     }
 
@@ -69,8 +71,12 @@ pub fn deployment_actions(
         let in_flight = in_flight.clone();
         let armed = armed.clone();
         let disarm_timer = disarm_timer.clone();
+        let if_match = server.switch_if_match();
+        let refresh_server = server.refresh.clone();
         // `allow_unavailable` only matters for enqueueing; apply is always strict.
         move |apply: bool, allow_unavailable: bool| {
+            let if_match = if_match.clone();
+            let refresh_server = refresh_server.clone();
             let notifications = notifications.clone();
             let on_switched = on_switched.clone();
             let in_flight = in_flight.clone();
@@ -79,13 +85,17 @@ pub fn deployment_actions(
             Callback::from(move |_| {
                 armed.set(None);
                 *disarm_timer.borrow_mut() = None;
+                let if_match = if_match.clone();
+                let refresh_server = refresh_server.clone();
                 let notifications = notifications.clone();
                 let on_switched = on_switched.clone();
                 let in_flight = in_flight.clone();
                 in_flight.set(true);
                 spawn_local(async move {
-                    let response = rest::put::<_, DeploymentSwitchResponse>(
+                    // Fails with 412 if another switch happened since the last poll.
+                    let response = rest::put_if_match::<_, DeploymentSwitchResponse>(
                         &format!("/v1/deployments/{deployment_id}/switch"),
+                        if_match.as_deref(),
                         &DeploymentSwitchPayload {
                             allow_unavailable_runtime_config: allow_unavailable,
                             apply,
@@ -93,6 +103,7 @@ pub fn deployment_actions(
                     )
                     .await;
                     in_flight.set(false);
+                    refresh_server.emit(());
                     match response {
                         Ok(DeploymentSwitchResponse { ok }) => {
                             match ok {
@@ -103,10 +114,16 @@ pub fn deployment_actions(
                                 }
                                 DeploymentSwitchOutcome::RestartRequired => {
                                     notifications.push(Notification::info(
-                                        "Deployment enqueued, it activates on the next server restart, or on the next apply of a cloud app",
+                                        "Deployment enqueued, it activates on the next server restart",
                                     ))
                                 }
                             }
+                            on_switched.emit(());
+                        }
+                        Err(e) if e.starts_with("HTTP 412") => {
+                            notifications.push(Notification::error(
+                                "Another deployment switch happened in the meantime, review the current state and try again",
+                            ));
                             on_switched.emit(());
                         }
                         Err(e) => {
@@ -140,7 +157,7 @@ pub fn deployment_actions(
                     }
                 }
                 disabled={*in_flight}
-                title="Activates the deployment now; a cloud app also applies its other staged changes"
+                title="Activates the deployment now"
             >
                 { if apply_armed { "Confirm apply" } else { "Apply" } }
             </button>
@@ -149,7 +166,7 @@ pub fn deployment_actions(
                     class="action-button confirm"
                     onclick={switch(false, false)}
                     disabled={enqueue_disabled}
-                    title="Enqueues the deployment for the next server restart or cloud app apply, failing if any runtime requirement is unavailable"
+                    title="Enqueues the deployment for the next server restart, failing if any runtime requirement is unavailable"
                 >
                     {"Confirm enqueue"}
                 </button>
@@ -166,7 +183,7 @@ pub fn deployment_actions(
                     class="action-button"
                     onclick={arm(ArmedAction::Enqueue)}
                     disabled={enqueue_disabled}
-                    title="Enqueues the deployment for the next server restart, or stages it for the next cloud app apply"
+                    title="Enqueues the deployment for the next server restart"
                 >
                     {"Enqueue"}
                 </button>

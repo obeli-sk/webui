@@ -5,13 +5,15 @@ use crate::{
             calls_dynamically, component_connections, component_link, component_name,
         },
         deployment_detail_page::DeploymentQuery,
+        http_servers::{ServerRoute, WEBUI_COMPONENT},
     },
     model::{ComponentConfigExt as _, ComponentTypeExt as _},
 };
-use concepts::{FunctionFqn, prefixed_ulid::DeploymentId};
+use concepts::prefixed_ulid::DeploymentId;
 use hashbrown::HashMap;
 use log::error;
 use rest_types::components::ComponentConfig;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew_router::hooks::use_navigator;
@@ -25,12 +27,34 @@ const CHAR_WIDTH: f64 = 7.9;
 const NODE_CHROME: f64 = 44.0;
 const BACK_EDGE_BULGE: f64 = 40.0;
 
-/// A caller importing functions exported by its dependency.
+/// A caller importing functions exported by its dependency, or an HTTP server routing to a webhook.
 #[derive(Debug, PartialEq)]
 struct GraphEdge {
     from: usize,
     to: usize,
-    functions: Vec<FunctionFqn>,
+    /// Imported functions, or routes.
+    labels: Vec<String>,
+}
+
+enum Node<'a> {
+    Server(&'a str),
+    Component(&'a ComponentConfig),
+}
+
+impl Node<'_> {
+    fn name(&self) -> &str {
+        match self {
+            Self::Server(name) => name,
+            Self::Component(component) => component_name(component),
+        }
+    }
+
+    fn component(&self) -> Option<&ComponentConfig> {
+        match self {
+            Self::Server(_) => None,
+            Self::Component(component) => Some(component),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -145,6 +169,7 @@ fn layout_graph(node_count: usize, edges: &[(usize, usize)]) -> GraphLayout {
 pub struct ComponentGraphProps {
     pub deployment_id: DeploymentId,
     pub components_by_name: Rc<HashMap<String, ComponentConfig>>,
+    pub servers: Rc<BTreeMap<String, Vec<ServerRoute>>>,
 }
 
 #[component(ComponentGraph)]
@@ -152,33 +177,63 @@ pub fn component_graph(
     ComponentGraphProps {
         deployment_id,
         components_by_name,
+        servers,
     }: &ComponentGraphProps,
 ) -> Html {
     let hovered = use_state(|| None::<usize>);
     let navigator = use_navigator().expect("navigator must be available inside a router");
 
-    let mut components = components_by_name.values().collect::<Vec<_>>();
-    components.sort_by(|a, b| component_name(a).cmp(component_name(b)));
+    let mut sorted_components = components_by_name
+        .values()
+        .filter(|component| component_name(component) != WEBUI_COMPONENT)
+        .collect::<Vec<_>>();
+    sorted_components.sort_by(|a, b| component_name(a).cmp(component_name(b)));
+    // Servers come first, so they lead the layout.
+    let components = servers
+        .keys()
+        .map(|server| Node::Server(server))
+        .chain(sorted_components.into_iter().map(Node::Component))
+        .collect::<Vec<_>>();
     let index_of = components
         .iter()
         .enumerate()
-        .map(|(idx, component)| (component_name(component), idx))
+        .filter(|(_, node)| node.component().is_some())
+        .map(|(idx, node)| (node.name(), idx))
         .collect::<HashMap<_, _>>();
-    let all_edges = components
-        .iter()
-        .enumerate()
-        .flat_map(|(from, component)| {
-            component_connections(component, components_by_name)
-                .dependencies
-                .into_iter()
-                .map(|dependency| GraphEdge {
-                    from,
-                    to: index_of[component_name(dependency.component)],
-                    functions: dependency.functions,
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+    let server_edges = servers.values().enumerate().flat_map(|(from, routes)| {
+        let mut by_webhook = BTreeMap::<&str, Vec<String>>::new();
+        for route in routes {
+            by_webhook
+                .entry(route.webhook.as_str())
+                .or_default()
+                .push(route.label());
+        }
+        by_webhook
+            .into_iter()
+            .filter_map(|(webhook, labels)| {
+                index_of
+                    .get(webhook)
+                    .map(|&to| GraphEdge { from, to, labels })
+            })
+            .collect::<Vec<_>>()
+    });
+    let component_edges = components.iter().enumerate().flat_map(|(from, node)| {
+        node.component()
+            .map(|component| component_connections(component, components_by_name).dependencies)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|dependency| GraphEdge {
+                from,
+                to: index_of[component_name(dependency.component)],
+                labels: dependency
+                    .functions
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            })
+            .collect::<Vec<_>>()
+    });
+    let all_edges = server_edges.chain(component_edges).collect::<Vec<_>>();
 
     // Only connected components are drawn; the rest are listed below the graph.
     let mut connected = vec![false; components.len()];
@@ -191,15 +246,15 @@ pub fn component_graph(
         .collect::<Vec<_>>();
     let dynamic = components
         .iter()
-        .map(|component| calls_dynamically(component))
+        .map(|node| node.component().is_some_and(calls_dynamically))
         .collect::<Vec<_>>();
     let dynamic_components = (0..components.len())
         .filter(|&idx| dynamic[idx])
-        .map(|idx| components[idx])
+        .filter_map(|idx| components[idx].component())
         .collect::<Vec<_>>();
     let unconnected = (0..components.len())
         .filter(|&idx| !connected[idx] && !dynamic[idx])
-        .map(|idx| components[idx])
+        .filter_map(|idx| components[idx].component())
         .collect::<Vec<_>>();
     let graph_index = graph_nodes
         .iter()
@@ -214,11 +269,7 @@ pub fn component_graph(
 
     // Geometry: each layer is as wide as its longest label, layers are centered vertically.
     let node_width = |graph_idx: usize| {
-        component_name(components[graph_nodes[graph_idx]])
-            .chars()
-            .count() as f64
-            * CHAR_WIDTH
-            + NODE_CHROME
+        components[graph_nodes[graph_idx]].name().chars().count() as f64 * CHAR_WIDTH + NODE_CHROME
     };
     let layer_widths = layout
         .rows
@@ -288,10 +339,10 @@ pub fn component_graph(
         let edge = &all_edges[idx];
         let tooltip = std::iter::once(format!(
             "{} → {}",
-            component_name(components[edge.from]),
-            component_name(components[edge.to])
+            components[edge.from].name(),
+            components[edge.to].name()
         ))
-        .chain(edge.functions.iter().map(ToString::to_string))
+        .chain(edge.labels.iter().cloned())
         .collect::<Vec<_>>()
         .join("\n");
         let marker = if state == Some("active") {
@@ -307,11 +358,21 @@ pub fn component_graph(
     });
 
     let nodes_html = graph_nodes.iter().enumerate().map(|(graph_idx, &idx)| {
-        let component = components[idx];
-        let name = component_name(component).to_string();
+        let node = &components[idx];
+        let name = node.name().to_string();
         let (x, y) = positions[graph_idx];
-        let component_type = component.component_type();
-        let onclick = {
+        let (kind, title, icon) = match node {
+            Node::Server(_) => ("http_server".to_string(), "HTTP server", "📡"),
+            Node::Component(component) => {
+                let component_type = component.component_type();
+                (
+                    component_type.to_string(),
+                    component_type.as_label(),
+                    component_type.as_icon().as_char(),
+                )
+            }
+        };
+        let onclick = node.component().map(|_| {
             let navigator = navigator.clone();
             let deployment_id = *deployment_id;
             let name = name.clone();
@@ -326,7 +387,7 @@ pub fn component_graph(
                     error!("Cannot open the component: {err:?}");
                 }
             })
-        };
+        });
         let onmouseenter = {
             let hovered = hovered.clone();
             Callback::from(move |_: MouseEvent| hovered.set(Some(graph_idx)))
@@ -339,7 +400,7 @@ pub fn component_graph(
             <g
                 class={classes!(
                     "component-graph-node",
-                    component_type.to_string(),
+                    kind,
                     dynamic[idx].then_some("dynamic"),
                     (!is_adjacent(graph_idx)).then_some("dimmed"),
                 )}
@@ -349,14 +410,14 @@ pub fn component_graph(
                 {onmouseleave}
             >
                 <title>
-                    {format!("{} {name}", component_type.as_label())}
+                    {format!("{title} {name}")}
                     if dynamic[idx] {
                         {", calls functions dynamically"}
                     }
                 </title>
                 <rect width={node_width(graph_idx).to_string()} height={NODE_HEIGHT.to_string()} rx="6" />
                 <text x="10" y={(NODE_HEIGHT / 2.0).to_string()}>
-                    {format!("{} {name}", component_type.as_icon().as_char())}
+                    {format!("{icon} {name}")}
                 </text>
             </g>
         }
@@ -369,10 +430,10 @@ pub fn component_graph(
     html! {
         <section class="component-graph">
             if graph_nodes.is_empty() {
-                <p class="component-empty-state">{"No component imports functions of another component."}</p>
+                <p class="component-empty-state">{"No component imports functions of another component, and no webhook endpoint is bound to an HTTP server."}</p>
             } else {
                 <p class="component-section-help">
-                    {"Arrows point from a caller to the component exporting the functions it imports. Dashed components call functions dynamically. Click a component to open it."}
+                    {"Arrows point from an HTTP server to the webhook endpoints serving its routes, and from a caller to the component exporting the functions it imports. Dashed components call functions dynamically. Click a component to open it."}
                 </p>
                 <div class="component-graph-scroll">
                     <svg
@@ -409,7 +470,7 @@ pub fn component_graph(
             if !unconnected.is_empty() {
                 <h4>{"Not connected"}</h4>
                 <p class="component-section-help">
-                    {"Components neither importing from nor exporting to another component of this deployment, nor calling functions dynamically."}
+                    {"Components neither bound to an HTTP server, importing from nor exporting to another component of this deployment, nor calling functions dynamically."}
                 </p>
                 <ul class="component-graph-unconnected">
                     { for unconnected.into_iter().map(link) }
