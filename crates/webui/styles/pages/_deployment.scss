@@ -374,6 +374,20 @@
     .server, .route {
         font-family: $font-family-mono;
     }
+
+    .public-url {
+        display: block;
+        font-size: 0.85em;
+        word-break: break-all;
+    }
+
+    .server-tag {
+        display: inline-block;
+        margin-top: $spacing-xs;
+        font-family: inherit;
+        font-size: 0.8em;
+        color: $color-text-secondary;
+    }
 }
 
 .deployment-components {
