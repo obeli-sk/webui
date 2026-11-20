@@ -24,6 +24,10 @@ fn main() {
             .inspect_err(|e| error!("Failed to fetch server info: {e}"))
             .ok();
         let deployment_id = server_info.as_ref().map(|info| info.deployment_id);
+        let http_servers = server_info
+            .as_ref()
+            .map(|info| info.http_servers.clone())
+            .unwrap_or_default();
         let app_name = server_info.map(|info| info.app_name.clone());
         if let Some(app_name) = &app_name {
             gloo::utils::document().set_title(&format!("{app_name} | Obelisk WebUI"));
@@ -32,6 +36,7 @@ fn main() {
         yew::Renderer::<App>::with_props(AppProps {
             initial_components: loaded,
             initial_deployment_id: deployment_id,
+            initial_http_servers: http_servers,
             app_name,
         })
         .render();

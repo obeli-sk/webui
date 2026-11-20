@@ -82,6 +82,10 @@ pub fn http_server_routes(manifest: &Value) -> BTreeMap<String, Vec<ServerRoute>
     servers
 }
 
+/// HTTP servers this Obelisk server runs, from `/v1/info`. Empty if the server does not report them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RunningHttpServers(pub Rc<Vec<ServerInfoHttpServer>>);
+
 /// Built-in server serving this Web UI.
 const WEBUI_SERVER: &str = "webui";
 
@@ -97,12 +101,6 @@ pub struct HttpServerRoutesProps {
     pub deployment_id: DeploymentId,
     pub servers: Rc<BTreeMap<String, Vec<ServerRoute>>>,
     pub components_by_name: Rc<HashMap<String, ComponentConfig>>,
-    /// Servers running on this Obelisk server, from `/v1/info`.
-    #[prop_or_default]
-    pub running: Option<Rc<Vec<ServerInfoHttpServer>>>,
-    /// Whether `deployment_id` is the active deployment, so `has_routes` applies to it.
-    #[prop_or_default]
-    pub active: bool,
 }
 
 #[component(HttpServerRoutes)]
@@ -111,10 +109,9 @@ pub fn http_server_routes_view(
         deployment_id,
         servers,
         components_by_name,
-        running,
-        active,
     }: &HttpServerRoutesProps,
 ) -> Html {
+    let running = use_context::<RunningHttpServers>().unwrap_or_default();
     let webhook_link = |name: &str| match components_by_name.get(name) {
         Some(component) => component_link(component, deployment_id),
         None => html! {
@@ -127,7 +124,7 @@ pub fn http_server_routes_view(
         },
     };
     // Servers older than `http_servers` in `/v1/info` report an empty list.
-    let running = running.as_deref().filter(|running| !running.is_empty());
+    let running = Some(running.0.as_slice()).filter(|running| !running.is_empty());
     let mut names: BTreeSet<&str> = servers.keys().map(String::as_str).collect();
     names.extend(
         running
@@ -141,11 +138,6 @@ pub fn http_server_routes_view(
         let info = running.and_then(|running| running.iter().find(|server| server.name == name));
         let public_url = info.and_then(|info| info.public_url.as_deref());
         let routes = servers.get(name).map_or(no_routes, Vec::as_slice);
-        let routes = if *active && info.is_some_and(|info| !info.has_routes) {
-            no_routes
-        } else {
-            routes
-        };
         let server_cell = html! {
             <td class="server" rowspan={routes.len().max(1).to_string()}>
                 <div>{name.to_string()}</div>

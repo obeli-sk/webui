@@ -46,10 +46,6 @@ pub async fn load_components() -> Result<LoadedComponents, String> {
 }
 
 /// Fetches the current deployment ID from the server.
-pub async fn get_current_deployment_id() -> Result<DeploymentId, String> {
-    Ok(get_server_info().await?.deployment_id)
-}
-
 pub struct ServerInfo {
     response: ServerInfoResponse,
     pub deployment_id: DeploymentId,

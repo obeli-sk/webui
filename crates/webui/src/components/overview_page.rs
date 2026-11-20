@@ -149,8 +149,6 @@ pub fn overview_page() -> Html {
                         {deployment_id}
                         {servers}
                         components_by_name={(*components_by_name).clone()}
-                        running={info.as_ref().map(|info| Rc::new(info.http_servers.clone()))}
-                        active=true
                     />
                 }
             }

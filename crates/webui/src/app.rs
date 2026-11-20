@@ -13,6 +13,7 @@ use crate::{
         execution_new_page::ExecutionNewPage,
         execution_stub_submit_page::ExecutionStubResultPage,
         execution_submit_page::ExecutionSubmitPage,
+        http_servers::RunningHttpServers,
         not_found::NotFound,
         notification::{Notification, NotificationContext, NotificationProvider},
         overview_page::OverviewPage,
@@ -22,7 +23,7 @@ use crate::{
         time_display::TimeDisplayProvider,
         trace::trace_view::TraceView,
     },
-    loader::{LoadedComponents, get_current_deployment_id, load_components},
+    loader::{LoadedComponents, get_server_info, load_components},
     model::ComponentConfigExt as _,
 };
 use concepts::{
@@ -32,6 +33,7 @@ use concepts::{
 use gloo::timers::callback::Interval;
 use hashbrown::HashMap;
 use log::{debug, error, info};
+use obelisk_api_types::ServerInfoHttpServer;
 use rest_types::components::{ComponentConfig, FunctionMetadataLite};
 use std::{fmt::Display, ops::Deref, rc::Rc, str::FromStr};
 use wasm_bindgen_futures::spawn_local;
@@ -229,6 +231,7 @@ impl Route {
 pub struct AppProps {
     pub initial_components: LoadedComponents,
     pub initial_deployment_id: Option<DeploymentId>,
+    pub initial_http_servers: Vec<ServerInfoHttpServer>,
     pub app_name: Option<String>,
 }
 
@@ -237,6 +240,7 @@ pub fn app(
     AppProps {
         initial_components,
         initial_deployment_id,
+        initial_http_servers,
         app_name,
     }: &AppProps,
 ) -> Html {
@@ -247,6 +251,7 @@ pub fn app(
                     <AppInner
                         initial_components={initial_components.clone()}
                         initial_deployment_id={*initial_deployment_id}
+                        initial_http_servers={initial_http_servers.clone()}
                         app_name={app_name.clone()}
                     />
                 </TimeDisplayProvider>
@@ -261,6 +266,7 @@ fn app_inner(
     AppProps {
         initial_components,
         initial_deployment_id,
+        initial_http_servers,
         app_name,
     }: &AppProps,
 ) -> Html {
@@ -268,6 +274,7 @@ fn app_inner(
         .expect("NotificationContext should be provided by App");
 
     let app_state = use_state(|| AppState::from_loaded(initial_components, *initial_deployment_id));
+    let http_servers = use_state_eq(|| RunningHttpServers(Rc::new(initial_http_servers.clone())));
 
     // Track deployment ID separately using a ref so the interval can read current value
     let deployment_id_ref = use_mut_ref(|| *initial_deployment_id);
@@ -278,19 +285,24 @@ fn app_inner(
     // Poll for deployment changes
     {
         let app_state = app_state.clone();
+        let http_servers = http_servers.clone();
         let deployment_id_ref = deployment_id_ref.clone();
         let was_connected_ref = was_connected_ref.clone();
         let notifications = notifications.clone();
         use_effect_with((), move |()| {
             let interval = Interval::new(DEPLOYMENT_POLL_INTERVAL_MS, move || {
                 let app_state = app_state.clone();
+                let http_servers = http_servers.clone();
                 let deployment_id_ref = deployment_id_ref.clone();
                 let was_connected_ref = was_connected_ref.clone();
                 let notifications = notifications.clone();
                 if crate::visibility::document_visible() {
                     spawn_local(async move {
-                        match get_current_deployment_id().await {
-                            Ok(new_deployment_id) => {
+                        match get_server_info().await {
+                            Ok(info) => {
+                                let new_deployment_id = info.deployment_id;
+                                http_servers
+                                    .set(RunningHttpServers(Rc::new(info.http_servers.clone())));
                                 // Check if we're reconnecting after a disconnect
                                 {
                                     let mut was_connected = was_connected_ref.borrow_mut();
@@ -359,6 +371,7 @@ fn app_inner(
 
     html! {
         <ContextProvider<AppState> context={app_state.deref().clone()}>
+        <ContextProvider<RunningHttpServers> context={http_servers.deref().clone()}>
         <ContextProvider<crate::status_hub::StatusHub> context={(*status_hub).clone()}>
             <BrowserRouter>
                 <div class="app-shell">
@@ -384,6 +397,7 @@ fn app_inner(
                 </div>
             </BrowserRouter>
         </ContextProvider<crate::status_hub::StatusHub>>
+        </ContextProvider<RunningHttpServers>>
         </ContextProvider<AppState>>
     }
 }

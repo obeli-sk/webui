@@ -8,14 +8,12 @@ use crate::{
         http_servers::{HttpServerRoutes, http_server_routes},
         notification::{Notification, NotificationContext},
     },
-    loader::get_server_info,
     rest,
     util::time::format_date,
 };
 use concepts::prefixed_ulid::DeploymentId;
 use hashbrown::HashMap;
 use log::error;
-use obelisk_api_types::ServerInfoHttpServer;
 use rest_types::{
     components::ComponentConfig,
     deployment::{DeploymentRecordSer, DeploymentStatusSer},
@@ -96,8 +94,6 @@ pub fn deployment_detail_page(
 
     let deployment_state = use_state(|| None::<DeploymentRecordSer>);
     let components_by_name = use_state(|| Rc::new(HashMap::<String, ComponentConfig>::new()));
-    // HTTP servers running on this Obelisk server and its active deployment.
-    let running_servers = use_state(|| None::<(DeploymentId, Rc<Vec<ServerInfoHttpServer>>)>);
     // Bumped after a successful switch action to refetch the deployment.
     let refresh = use_state(|| 0u32);
     let location = use_location().expect("location must be available inside a router");
@@ -110,7 +106,6 @@ pub fn deployment_detail_page(
     {
         let deployment_state = deployment_state.clone();
         let components_by_name = components_by_name.clone();
-        let running_servers = running_servers.clone();
         let notifications = notifications.clone();
         use_effect_with((*deployment_id, *refresh), move |(deployment_id, _)| {
             let deployment_id = *deployment_id;
@@ -140,13 +135,6 @@ pub fn deployment_detail_page(
                         // Components may be unavailable for old deployments; not fatal.
                         error!("Failed to list components of the deployment: {e:?}");
                     }
-                }
-                match get_server_info().await {
-                    Ok(info) => running_servers.set(Some((
-                        info.deployment_id,
-                        Rc::new(info.http_servers.clone()),
-                    ))),
-                    Err(e) => error!("Failed to get server info: {e:?}"),
                 }
             });
         });
@@ -268,8 +256,6 @@ pub fn deployment_detail_page(
                 deployment_id={*deployment_id}
                 servers={servers.clone()}
                 components_by_name={components_by_name.deref().clone()}
-                running={running_servers.as_ref().map(|(_, servers)| servers.clone())}
-                active={running_servers.as_ref().is_some_and(|(active, _)| active == deployment_id)}
             />
         }
         <section class="deployment-components">
