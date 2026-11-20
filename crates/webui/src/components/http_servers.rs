@@ -1,10 +1,9 @@
-use crate::app::Route;
+use crate::app::{Route, ServerContext};
 use crate::components::{
     component_detail::component_link, deployment_detail_page::DeploymentQuery,
 };
 use concepts::prefixed_ulid::DeploymentId;
 use hashbrown::HashMap;
-use obelisk_api_types::ServerInfoHttpServer;
 use rest_types::components::ComponentConfig;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -82,10 +81,6 @@ pub fn http_server_routes(manifest: &Value) -> BTreeMap<String, Vec<ServerRoute>
     servers
 }
 
-/// HTTP servers this Obelisk server runs, from `/v1/info`. Empty if the server does not report them.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct RunningHttpServers(pub Rc<Vec<ServerInfoHttpServer>>);
-
 /// Built-in server serving this Web UI.
 const WEBUI_SERVER: &str = "webui";
 
@@ -111,7 +106,7 @@ pub fn http_server_routes_view(
         components_by_name,
     }: &HttpServerRoutesProps,
 ) -> Html {
-    let running = use_context::<RunningHttpServers>().unwrap_or_default();
+    let server = use_context::<ServerContext>();
     let webhook_link = |name: &str| match components_by_name.get(name) {
         Some(component) => component_link(component, deployment_id),
         None => html! {
@@ -124,7 +119,11 @@ pub fn http_server_routes_view(
         },
     };
     // Servers older than `http_servers` in `/v1/info` report an empty list.
-    let running = Some(running.0.as_slice()).filter(|running| !running.is_empty());
+    let running = server
+        .as_ref()
+        .and_then(|server| server.info.as_deref())
+        .map(|info| info.http_servers.as_slice())
+        .filter(|running| !running.is_empty());
     let mut names: BTreeSet<&str> = servers.keys().map(String::as_str).collect();
     names.extend(
         running

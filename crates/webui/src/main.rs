@@ -1,7 +1,7 @@
 use log::error;
 use webui::{
     app::{App, AppProps},
-    loader::{get_server_info, load_components},
+    loader::{get_server_info, get_webui_settings, load_components},
 };
 
 fn main() {
@@ -23,12 +23,10 @@ fn main() {
             .await
             .inspect_err(|e| error!("Failed to fetch server info: {e}"))
             .ok();
+        let settings = get_webui_settings().await;
         let deployment_id = server_info.as_ref().map(|info| info.deployment_id);
-        let http_servers = server_info
-            .as_ref()
-            .map(|info| info.http_servers.clone())
-            .unwrap_or_default();
-        let app_name = server_info.map(|info| info.app_name.clone());
+        let app_name = server_info.as_ref().map(|info| info.app_name.clone());
+        let server_info = server_info.map(|info| std::rc::Rc::new(info.into_response()));
         if let Some(app_name) = &app_name {
             gloo::utils::document().set_title(&format!("{app_name} | Obelisk WebUI"));
         }
@@ -36,7 +34,8 @@ fn main() {
         yew::Renderer::<App>::with_props(AppProps {
             initial_components: loaded,
             initial_deployment_id: deployment_id,
-            initial_http_servers: http_servers,
+            initial_server_info: server_info,
+            deployment_switch: settings.deployment_switch,
             app_name,
         })
         .render();

@@ -88,8 +88,19 @@ pub async fn put<B: Serialize + ?Sized, T: DeserializeOwned>(
     path: &str,
     body: &B,
 ) -> Result<T, String> {
+    put_if_match(path, None, body).await
+}
+
+pub async fn put_if_match<B: Serialize + ?Sized, T: DeserializeOwned>(
+    path: &str,
+    if_match: Option<&str>,
+    body: &B,
+) -> Result<T, String> {
     let mut request =
         Request::put(&format!("{}{}", crate::BASE_URL, path)).header("Accept", "application/json");
+    if let Some(if_match) = if_match {
+        request = request.header("If-Match", if_match);
+    }
     if let Some(token) = crate::auth::token() {
         request = request.header("Authorization", &format!("Bearer {token}"));
     }
