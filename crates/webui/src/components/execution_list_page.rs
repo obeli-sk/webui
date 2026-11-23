@@ -7,11 +7,12 @@ use crate::{
         pagination::page_link,
         time_display::{TimeDisplayControl, TimeMode, Timestamp},
     },
+    model::ComponentConfigExt,
     model::{ComponentTypeExt as _, ExecutionIdExt as _},
     rest,
     util::time::{TimeGranularity, human_formatted_timedelta},
 };
-use concepts::{FunctionFqn, storage::PendingState};
+use concepts::{FunctionFqn, IfcFqnName, component_id::ComponentType, storage::PendingState};
 use gloo::timers::callback::Timeout;
 use hashbrown::{HashMap, HashSet};
 use jiff::Timestamp as JiffTimestamp;
@@ -217,16 +218,32 @@ struct FunctionPrefixPickerData {
     functions_by_interface: BTreeMap<String, Vec<String>>,
 }
 
+/// Mirrors the server's `cron_ffqn`: the FFQN of a cron's tracker executions.
+fn cron_ffqn(target: &FunctionFqn) -> FunctionFqn {
+    FunctionFqn {
+        ifc_fqn: IfcFqnName::new_arc(format!("obelisk-cron-{}", target.ifc_fqn).into()),
+        function_name: target.function_name.clone(),
+    }
+}
+
 fn build_function_prefix_picker_data(app_state: &AppState) -> FunctionPrefixPickerData {
     let mut packages = HashSet::new();
     let mut interfaces_by_package: HashMap<String, HashSet<String>> = HashMap::new();
     let mut functions_by_interface: HashMap<String, HashSet<String>> = HashMap::new();
 
-    for ffqn in app_state.ffqns_to_details.keys() {
-        if ffqn.ifc_fqn.is_extension() {
-            continue;
-        }
-
+    let exported = app_state
+        .ffqns_to_details
+        .keys()
+        .filter(|ffqn| !ffqn.ifc_fqn.is_extension())
+        .cloned();
+    // Cron tracker executions run under `obelisk-cron-<target>`; the server lists a cron's target as its import.
+    let crons = app_state
+        .components_by_id
+        .values()
+        .filter(|component| component.component_type() == ComponentType::Cron)
+        .flat_map(|component| component.imported_fns())
+        .map(|import| cron_ffqn(&import.ffqn));
+    for ffqn in exported.chain(crons) {
         let package = ffqn.ifc_fqn.pkg_fqn_name().to_string();
         let interface = ffqn.ifc_fqn.to_string();
         let function = ffqn.to_string();
